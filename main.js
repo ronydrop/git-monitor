@@ -596,25 +596,61 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
         const gh = parseGithubOwnerRepo(remoteUrl);
         if (!gh) return { phase: 'no-github' };
 
-        const checkRes = await githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/check-runs`);
-        if (checkRes.statusCode !== 200) return { phase: 'error', detail: `HTTP ${checkRes.statusCode}` };
+        // Busca check-runs (GitHub Actions) e commit statuses (Vercel, Render, etc.) em paralelo
+        const [checkRes, statusRes] = await Promise.all([
+          githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/check-runs`),
+          githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/status`)
+        ]);
 
-        const runs = checkRes.data.check_runs || [];
-        if (runs.length === 0) return { phase: 'waiting' };
+        const hasCheckAccess  = checkRes.statusCode === 200;
+        const hasStatusAccess = statusRes.statusCode === 200;
 
-        const pending = runs.filter(r => r.status !== 'completed');
-        const failed  = runs.filter(r => r.conclusion === 'failure' || r.conclusion === 'cancelled' || r.conclusion === 'timed_out');
-        const running = runs.find(r => r.status === 'in_progress');
+        if (!hasCheckAccess && !hasStatusAccess) {
+          return { phase: 'error', detail: `HTTP ${checkRes.statusCode}` };
+        }
 
-        if (pending.length > 0) {
+        // --- GitHub Actions (check-runs) ---
+        const runs = (hasCheckAccess && checkRes.data.check_runs) ? checkRes.data.check_runs : [];
+        const pendingRuns = runs.filter(r => r.status !== 'completed');
+        const failedRuns  = runs.filter(r => ['failure','cancelled','timed_out'].includes(r.conclusion));
+        const runningJob  = runs.find(r => r.status === 'in_progress');
+
+        // --- Commit statuses (Vercel, Render, Netlify etc.) ---
+        const statuses = (hasStatusAccess && statusRes.data.statuses) ? statusRes.data.statuses : [];
+        const combinedState = hasStatusAccess ? statusRes.data.state : null;
+        const pendingStatuses = statuses.filter(s => s.state === 'pending');
+        const failedStatuses  = statuses.filter(s => s.state === 'failure' || s.state === 'error');
+        const runningStatus   = pendingStatuses[0];
+
+        // Determina resultado combinado
+        const anyPending = pendingRuns.length > 0 || pendingStatuses.length > 0;
+        const anyFailed  = failedRuns.length > 0 || failedStatuses.length > 0;
+        const hasData    = runs.length > 0 || statuses.length > 0;
+
+        if (!hasData) return { phase: 'waiting' };
+
+        if (anyPending) {
+          const job = runningJob
+            ? runningJob.name
+            : runningStatus
+              ? (runningStatus.context || 'Deploy em andamento')
+              : `${pendingRuns.length + pendingStatuses.length} em andamento`;
           return {
             phase: 'running',
-            job: running ? running.name : `${pending.length} job(s) em andamento`,
-            total: runs.length,
-            done: runs.length - pending.length
+            job,
+            total: runs.length + statuses.length,
+            done: (runs.length - pendingRuns.length) + (statuses.length - pendingStatuses.length)
           };
         }
-        if (failed.length > 0) return { phase: 'failure', detail: failed.map(r => r.name).join(', ') };
+
+        if (anyFailed) {
+          const failedNames = [
+            ...failedRuns.map(r => r.name),
+            ...failedStatuses.map(s => s.context || s.description || 'deploy')
+          ];
+          return { phase: 'failure', detail: failedNames.join(', ') };
+        }
+
         return { phase: 'success' };
       } catch (e) {
         return { phase: 'error', detail: e.message };
