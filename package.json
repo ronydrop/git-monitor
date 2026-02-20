@@ -1,6 +1,6 @@
 {
   "name": "git-monitor",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Mini widget desktop para monitorar repositórios Git em tempo real",
   "main": "main.js",
   "author": {
