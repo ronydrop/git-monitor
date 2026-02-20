@@ -199,12 +199,21 @@ async function checkRepo(repoPath) {
     const changedFiles = hasChanges ? statusOutput.split('\n').length : 0;
 
     let status, detail;
-    if (hasChanges && ahead > 0) {
+    if (hasChanges && ahead > 0 && behind > 0) {
+      status = 'diverged';
+      detail = `Divergido — faça pull antes de push`;
+    } else if (hasChanges && ahead > 0) {
       status = 'dirty-ahead';
       detail = `${changedFiles} modificado(s), ${ahead} não pushed`;
+    } else if (hasChanges && behind > 0) {
+      status = 'dirty';
+      detail = `${changedFiles} modificado(s) — pull pendente`;
     } else if (hasChanges) {
       status = 'dirty';
       detail = `${changedFiles} arquivo(s) modificado(s)`;
+    } else if (ahead > 0 && behind > 0) {
+      status = 'diverged';
+      detail = `Divergido — ${ahead} push, ${behind} pull pendentes`;
     } else if (ahead > 0) {
       status = 'ahead';
       detail = `${ahead} commit(s) para push`;
@@ -554,6 +563,87 @@ ${diffTruncated}
 
 ipcMain.handle('open-folder', (_, folderPath) => {
   shell.openPath(folderPath);
+});
+
+// Deploy watchers ativos por repoPath
+const deployWatchers = {};
+
+ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
+  if (deployWatchers[repoPath]) clearTimeout(deployWatchers[repoPath].timer);
+
+  let attempts = 0;
+  const maxAttempts = 60;
+
+  const send = (payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('deploy-update', { repoPath, repoName, ...payload });
+    }
+  };
+
+  const check = async () => {
+    if (!config.githubToken) {
+      send({ phase: 'no-token' });
+      return;
+    }
+
+    attempts++;
+    const res = await (async () => {
+      try {
+        const sha = (await execAsync('git rev-parse HEAD', { cwd: repoPath, timeout: 5000 })).trim();
+        let remoteUrl = '';
+        try { remoteUrl = (await execAsync('git config --get remote.origin.url', { cwd: repoPath, timeout: 3000 })).trim(); } catch (e) { }
+        const gh = parseGithubOwnerRepo(remoteUrl);
+        if (!gh) return { phase: 'no-github' };
+
+        const checkRes = await githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/check-runs`);
+        if (checkRes.statusCode !== 200) return { phase: 'error', detail: `HTTP ${checkRes.statusCode}` };
+
+        const runs = checkRes.data.check_runs || [];
+        if (runs.length === 0) return { phase: 'waiting' };
+
+        const pending = runs.filter(r => r.status !== 'completed');
+        const failed  = runs.filter(r => r.conclusion === 'failure' || r.conclusion === 'cancelled' || r.conclusion === 'timed_out');
+        const running = runs.find(r => r.status === 'in_progress');
+
+        if (pending.length > 0) {
+          return {
+            phase: 'running',
+            job: running ? running.name : `${pending.length} job(s) em andamento`,
+            total: runs.length,
+            done: runs.length - pending.length
+          };
+        }
+        if (failed.length > 0) return { phase: 'failure', detail: failed.map(r => r.name).join(', ') };
+        return { phase: 'success' };
+      } catch (e) {
+        return { phase: 'error', detail: e.message };
+      }
+    })();
+
+    send(res);
+
+    if (res.phase === 'waiting' || res.phase === 'running') {
+      if (attempts < maxAttempts) {
+        deployWatchers[repoPath] = { timer: setTimeout(check, 4000) };
+      } else {
+        send({ phase: 'timeout' });
+        delete deployWatchers[repoPath];
+      }
+    } else {
+      delete deployWatchers[repoPath];
+    }
+  };
+
+  // Aguarda CI iniciar (3s) e começa polling
+  send({ phase: 'waiting' });
+  deployWatchers[repoPath] = { timer: setTimeout(check, 3000) };
+});
+
+ipcMain.on('watch-deploy-stop', (_, repoPath) => {
+  if (deployWatchers[repoPath]) {
+    clearTimeout(deployWatchers[repoPath].timer);
+    delete deployWatchers[repoPath];
+  }
 });
 
 ipcMain.handle('git-pull', async (_, repoPath) => {

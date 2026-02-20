@@ -301,6 +301,42 @@
   .badge-ahead { background: var(--blue-bg); color: var(--blue); }
   .badge-behind { background: var(--blue-bg); color: var(--blue); }
   .badge-error { background: var(--red-bg); color: var(--red); }
+  .badge-diverged { background: var(--red-bg); color: var(--red); }
+  .repo-dot.diverged { background: var(--red); }
+
+  /* ---- Deploy indicator ---- */
+  .deploy-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    border-radius: 0 0 4px 4px;
+    transition: background 0.3s;
+    animation: deploy-pulse 1.2s ease-in-out infinite;
+  }
+  .deploy-bar.waiting  { background: var(--text-dim); }
+  .deploy-bar.running  { background: var(--yellow); }
+  .deploy-bar.success  { background: var(--green); animation: none; }
+  .deploy-bar.failure  { background: var(--red); animation: none; }
+
+  @keyframes deploy-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .repo-item { position: relative; }
+
+  .deploy-label {
+    font-size: 8.5px;
+    color: var(--text-dim);
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+  }
+  .deploy-label.running { color: var(--yellow); }
+  .deploy-label.success { color: var(--green); }
+  .deploy-label.failure { color: var(--red); }
 
   /* ---- Push All button ---- */
   .btn-push-all {
@@ -696,6 +732,7 @@
     'dirty-ahead': 'MOD+PUSH',
     'ahead': 'PUSH',
     'behind': 'PULL',
+    'diverged': 'DIVERGIDO',
     'error': 'ERRO'
   };
 
@@ -729,12 +766,13 @@
         ? `<input type="checkbox" class="repo-check" data-path="${esc(r.path)}" data-name="${esc(r.name)}" checked title="Incluir no Push All">`
         : '';
       return `
-      <div class="repo-item" title="${r.path}\n${r.detail}">
+      <div class="repo-item" data-repo-path="${esc(r.path)}" title="${r.path}\n${r.detail}">
         ${checkbox}
         <div class="repo-dot ${r.status}"></div>
         <div class="repo-info">
           <div class="repo-name">${r.name}</div>
           <div class="repo-detail">${r.branch ? `${r.branch} · ` : ''}${r.detail}</div>
+          <div class="deploy-label" id="deploy-label-${btoa(r.path).replace(/=/g,'')}"></div>
         </div>
         <span class="repo-badge badge-${r.status}">${BADGE_LABELS[r.status] || '?'}</span>
         <div class="repo-actions">
@@ -742,6 +780,7 @@
           <button class="btn-repo-action" title="Abrir terminal" onclick="openTerminal('${esc(r.path)}', '${esc(r.name)}')">⌨</button>
           ${commitBtn}
         </div>
+        <div class="deploy-bar" id="deploy-bar-${btoa(r.path).replace(/=/g,'')}" style="display:none"></div>
       </div>`;
     }).join('');
   }
@@ -879,81 +918,93 @@
 
     if (result.ok) {
       showCommitToast('ok', `✓ ${repoName}\n${result.title}`);
-      // Monitora deploy
       btn.className = 'btn-commit deploying';
       btn.innerHTML = '<span>↻</span>';
-      pollDeploy(btn, repoPath, repoName);
+      startDeployWatch(btn, repoPath, repoName);
     } else {
       btn.className = 'btn-commit fail';
       btn.innerHTML = '<span>✕</span>';
       showCommitToast('err', `✕ ${repoName}: ${result.error}`);
-      setTimeout(() => {
-        btn.className = 'btn-commit';
-        btn.innerHTML = '<span>⬆</span>';
-      }, 4000);
+      setTimeout(() => { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; }, 4000);
     }
   }
 
-  async function pollDeploy(btn, repoPath, repoName) {
-    let attempts = 0;
-    const maxAttempts = 60; // ~5 min
-    const interval = 5000;
+  // Mapa de commits em andamento: repoPath → btn element
+  const activeDeployBtns = {};
 
-    // Espera inicial para o CI/CD iniciar
-    await new Promise(r => setTimeout(r, 3000));
+  function deployId(repoPath) {
+    return btoa(repoPath).replace(/=/g, '');
+  }
 
-    const poll = async () => {
-      attempts++;
-      const res = await ipcRenderer.invoke('check-deploy-status', repoPath);
+  function startDeployWatch(btn, repoPath, repoName) {
+    activeDeployBtns[repoPath] = { btn, repoName };
+    ipcRenderer.send('watch-deploy-start', { repoPath, repoName });
+  }
 
-      if (res.status === 'success') {
-        btn.className = 'btn-commit deployed';
-        btn.innerHTML = '<span>✓</span>';
-        showCommitToast('ok', `✓ ${repoName}: Deploy concluído!`);
-        setTimeout(() => checkRepos(), 3000);
-        return;
-      }
+  // Recebe updates em tempo real do main process
+  ipcRenderer.on('deploy-update', (_, data) => {
+    const { repoPath, repoName, phase, job, detail, done, total } = data;
+    const id = deployId(repoPath);
+    const bar   = document.getElementById(`deploy-bar-${id}`);
+    const label = document.getElementById(`deploy-label-${id}`);
+    const entry = activeDeployBtns[repoPath];
+    const btn   = entry ? entry.btn : null;
 
-      if (res.status === 'failure') {
-        btn.className = 'btn-commit deploy-fail';
-        btn.innerHTML = '<span>✕</span>';
-        showCommitToast('err', `✕ ${repoName}: Deploy falhou — ${res.detail || ''}`);
-        setTimeout(() => { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; }, 6000);
-        return;
-      }
-
-      if (res.status === 'no-token' || res.status === 'none') {
-        btn.className = 'btn-commit deployed';
-        btn.innerHTML = '<span>✓</span>';
-        setTimeout(() => checkRepos(), 3000);
-        return;
-      }
-
-      if (res.status === 'error') {
-        btn.className = 'btn-commit';
-        btn.innerHTML = '<span>⚠</span>';
-        showCommitToast('err', `⚠ ${repoName}: ${res.detail || 'Erro ao verificar deploy'}`);
-        setTimeout(() => { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; }, 5000);
-        return;
-      }
-
-      // Ainda pending — continua polling
-      if (res.status === 'pending' && attempts < maxAttempts) {
-        setTimeout(poll, interval);
-        return;
-      }
-
-      // Timeout ou status desconhecido — encerra como sucesso
-      btn.className = 'btn-commit deployed';
-      btn.innerHTML = '<span>✓</span>';
-      if (attempts >= maxAttempts) {
-        showCommitToast('err', `⏱ ${repoName}: Timeout aguardando deploy`);
-      }
-      setTimeout(() => checkRepos(), 3000);
+    const showBar = (cls, text) => {
+      if (bar)   { bar.style.display = ''; bar.className = `deploy-bar ${cls}`; }
+      if (label) { label.className = `deploy-label ${cls}`; label.textContent = text; }
     };
 
-    poll();
-  }
+    const hideBar = () => {
+      setTimeout(() => {
+        if (bar)   { bar.style.display = 'none'; bar.className = 'deploy-bar'; }
+        if (label) { label.textContent = ''; label.className = 'deploy-label'; }
+      }, 4000);
+    };
+
+    if (phase === 'waiting') {
+      showBar('waiting', '⏳ Aguardando CI iniciar...');
+      if (btn) { btn.className = 'btn-commit deploying'; btn.innerHTML = '<span>↻</span>'; }
+
+    } else if (phase === 'running') {
+      const prog = total ? ` (${done}/${total})` : '';
+      showBar('running', `⚡ ${job || 'Rodando'}${prog}`);
+      if (btn) { btn.className = 'btn-commit deploying'; btn.innerHTML = '<span>↻</span>'; }
+
+    } else if (phase === 'success') {
+      showBar('success', '✓ Deploy concluído!');
+      if (btn) { btn.className = 'btn-commit deployed'; btn.innerHTML = '<span>✓</span>'; }
+      showCommitToast('ok', `✓ ${repoName || ''}: Deploy concluído!`);
+      hideBar();
+      delete activeDeployBtns[repoPath];
+      setTimeout(() => checkRepos(), 3000);
+
+    } else if (phase === 'failure') {
+      showBar('failure', `✕ Deploy falhou: ${detail || ''}`);
+      if (btn) { btn.className = 'btn-commit deploy-fail'; btn.innerHTML = '<span>✕</span>'; }
+      showCommitToast('err', `✕ ${repoName || ''}: Deploy falhou — ${detail || ''}`);
+      hideBar();
+      delete activeDeployBtns[repoPath];
+      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; } }, 6000);
+
+    } else if (phase === 'no-token' || phase === 'no-github' || phase === 'none') {
+      if (btn) { btn.className = 'btn-commit deployed'; btn.innerHTML = '<span>✓</span>'; }
+      delete activeDeployBtns[repoPath];
+      setTimeout(() => checkRepos(), 3000);
+
+    } else if (phase === 'error') {
+      if (btn) { btn.className = 'btn-commit'; btn.innerHTML = '<span>⚠</span>'; }
+      showCommitToast('err', `⚠ ${repoName || ''}: ${detail || 'Erro'}`);
+      delete activeDeployBtns[repoPath];
+      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; } }, 5000);
+
+    } else if (phase === 'timeout') {
+      if (btn) { btn.className = 'btn-commit deployed'; btn.innerHTML = '<span>✓</span>'; }
+      showCommitToast('err', `⏱ ${repoName || ''}: Timeout aguardando deploy`);
+      delete activeDeployBtns[repoPath];
+      setTimeout(() => checkRepos(), 3000);
+    }
+  });
 
   let commitToastTimer = null;
   function showCommitToast(type, msg) {
