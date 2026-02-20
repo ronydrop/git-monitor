@@ -676,8 +676,8 @@ app.whenReady().then(() => {
   }
 
   const iconPath = app.isPackaged
-    ? path.join(path.dirname(process.execPath), 'icon.png')
-    : path.join(__dirname, 'icon.png');
+    ? path.join(path.dirname(process.execPath), 'icon.ico')
+    : path.join(__dirname, 'icon.ico');
   const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
   tray = new Tray(icon);
   tray.setToolTip('Git Monitor');

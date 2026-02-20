@@ -29,6 +29,7 @@
       "index.html",
       "config.html",
       "zone-select.html",
+      "icon.ico",
       "icon.png",
       "package.json",
       "node_modules/**/*"
@@ -38,7 +39,7 @@
         "portable",
         "nsis"
       ],
-      "icon": "icon.png",
+      "icon": "icon.ico",
       "signAndEditExecutable": false,
       "signingHashAlgorithms": null
     },
