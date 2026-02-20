@@ -3,6 +3,7 @@ const path = require('path');
 const { exec } = require('child_process');
 const fs = require('fs');
 const Anthropic = require('@anthropic-ai/sdk');
+const { autoUpdater } = require('electron-updater');
 
 function execAsync(cmd, opts) {
   return new Promise((resolve, reject) => {
@@ -16,7 +17,22 @@ function execAsync(cmd, opts) {
 // ============================================================
 // CONFIGURAÇÃO
 // ============================================================
-const CONFIG_FILE = path.join(app.isPackaged ? path.dirname(process.execPath) : __dirname, 'config.json');
+// Em produção: AppData\Roaming\Git Monitor\config.json (sobrevive a atualizações)
+// Em dev: pasta do projeto
+const CONFIG_FILE = app.isPackaged
+  ? path.join(app.getPath('userData'), 'config.json')
+  : path.join(__dirname, 'config.json');
+
+function migrateConfigIfNeeded() {
+  if (!app.isPackaged) return;
+  const oldPath = path.join(path.dirname(process.execPath), 'config.json');
+  if (fs.existsSync(oldPath) && !fs.existsSync(CONFIG_FILE)) {
+    try {
+      fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
+      fs.copyFileSync(oldPath, CONFIG_FILE);
+    } catch (e) { }
+  }
+}
 
 function getDefaultConfig() {
   return {
@@ -238,6 +254,7 @@ ipcMain.handle('set-interval', (_, seconds) => {
 });
 
 ipcMain.handle('close-app', () => app.quit());
+ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
 
 // ---- Zone select ----
 let zoneWindow = null;
@@ -382,11 +399,34 @@ ipcMain.handle('set-locked', (_, locked) => {
   mainWindow.setMovable(!locked);
 });
 
-ipcMain.handle('resize-height', (_, height) => {
-  const h = Math.max(150, Math.min(900, Math.round(height)));
-  mainWindow.setSize(300, h);
-  config.windowHeight = h;
-  saveConfig(config);
+let resizeInterval = null;
+
+ipcMain.on('resize-start', () => {
+  if (resizeInterval) clearInterval(resizeInterval);
+  const startCursorY = screen.getCursorScreenPoint().y;
+  const startHeight = mainWindow.getSize()[1];
+
+  resizeInterval = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      clearInterval(resizeInterval);
+      return;
+    }
+    const cursorY = screen.getCursorScreenPoint().y;
+    const delta = cursorY - startCursorY;
+    const newH = Math.max(150, Math.min(900, Math.round(startHeight + delta)));
+    mainWindow.setSize(300, newH);
+  }, 16); // ~60fps
+});
+
+ipcMain.on('resize-stop', () => {
+  if (resizeInterval) {
+    clearInterval(resizeInterval);
+    resizeInterval = null;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    config.windowHeight = mainWindow.getSize()[1];
+    saveConfig(config);
+  }
 });
 
 ipcMain.handle('save-anthropic-key', (_, key) => {
@@ -587,6 +627,7 @@ ipcMain.handle('check-deploy-status', async (_, repoPath) => {
 // App
 // ============================================================
 app.whenReady().then(() => {
+  migrateConfigIfNeeded();
   config = loadConfig();
   createWindow();
 
@@ -602,8 +643,38 @@ app.whenReady().then(() => {
   tray.setToolTip('Git Monitor');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Mostrar', click: () => { mainWindow.show(); mainWindow.focus(); } },
+    { label: 'Verificar atualizações', click: () => autoUpdater.checkForUpdates() },
+    { type: 'separator' },
     { label: 'Sair', click: () => app.quit() }
   ]));
+
+  // ---- Auto-updater ----
+  if (app.isPackaged) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-available', (info) => {
+      mainWindow.webContents.send('update-status', {
+        type: 'available',
+        version: info.version
+      });
+    });
+
+    autoUpdater.on('update-downloaded', () => {
+      mainWindow.webContents.send('update-status', { type: 'ready' });
+    });
+
+    autoUpdater.on('error', (err) => {
+      mainWindow.webContents.send('update-status', {
+        type: 'error',
+        msg: err.message
+      });
+    });
+
+    // Checa ao iniciar e a cada 4 horas
+    autoUpdater.checkForUpdates();
+    setInterval(() => autoUpdater.checkForUpdates(), 4 * 60 * 60 * 1000);
+  }
 
   // Ctrl+Shift+G — esconder/mostrar o Git Monitor
   let windowHidden = false;

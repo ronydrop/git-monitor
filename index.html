@@ -42,7 +42,38 @@
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
   }
+
+  /* ---- Update banner ---- */
+  .update-banner {
+    display: none;
+    padding: 6px 12px;
+    background: var(--blue-bg);
+    border-bottom: 1px solid var(--blue);
+    font-size: 9.5px;
+    color: var(--blue);
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .update-banner.show { display: flex; }
+  .update-banner button {
+    padding: 2px 8px;
+    border: 1px solid var(--blue);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--blue);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 9px;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .update-banner button:hover { background: var(--blue); color: var(--bg); }
 
   /* ---- Title bar ---- */
   .titlebar {
@@ -136,10 +167,36 @@
 
   /* ---- Repo list ---- */
   .repo-list {
-    max-height: 300px;
     overflow-y: auto;
+    flex: 1;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
+  }
+
+  /* ---- Resize handle ---- */
+  .resize-handle {
+    height: 6px;
+    background: transparent;
+    cursor: ns-resize;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .resize-handle:hover, .resize-handle.dragging {
+    background: var(--border);
+  }
+  .resize-handle::after {
+    content: '';
+    width: 30px;
+    height: 2px;
+    background: var(--border);
+    border-radius: 2px;
+    transition: background 0.15s;
+  }
+  .resize-handle:hover::after, .resize-handle.dragging::after {
+    background: var(--text-dim);
   }
 
   .repo-list::-webkit-scrollbar { width: 4px; }
@@ -512,6 +569,12 @@
     </div>
   </div>
 
+  <!-- Update banner -->
+  <div class="update-banner" id="updateBanner">
+    <span id="updateMsg">Nova versão disponível!</span>
+    <button id="updateBtn" onclick="installUpdate()">Instalar</button>
+  </div>
+
   <!-- Controls bar -->
   <div class="controls-bar">
     <button class="btn-lock" id="lockBtn" onclick="toggleLock()" title="Travar posição">🔒</button>
@@ -554,6 +617,9 @@
     <div class="loading-shimmer"></div>
     <div class="loading-shimmer"></div>
   </div>
+
+  <!-- Resize handle -->
+  <div class="resize-handle" id="resizeHandle"></div>
 </div>
 
 <div class="commit-toast" id="commitToast"></div>
@@ -889,6 +955,46 @@
 
   ipcRenderer.on('ghost-zone-updated', (_, zone) => {
     updateZoneBtn(zone);
+  });
+
+  // ---- Auto-update ----
+  ipcRenderer.on('update-status', (_, status) => {
+    const banner = document.getElementById('updateBanner');
+    const msg = document.getElementById('updateMsg');
+    const btn = document.getElementById('updateBtn');
+
+    if (status.type === 'available') {
+      msg.textContent = `Nova versão v${status.version} disponível, baixando...`;
+      btn.style.display = 'none';
+      banner.classList.add('show');
+    } else if (status.type === 'ready') {
+      msg.textContent = 'Atualização pronta! Reinicie para aplicar.';
+      btn.textContent = 'Reiniciar agora';
+      btn.style.display = '';
+      banner.classList.add('show');
+    } else if (status.type === 'error') {
+      banner.classList.remove('show');
+    }
+  });
+
+  function installUpdate() {
+    ipcRenderer.invoke('install-update');
+  }
+
+  // ---- Resize handle (delegado ao main process para precisão de DPI) ----
+  const resizeHandle = document.getElementById('resizeHandle');
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    resizeHandle.classList.add('dragging');
+    ipcRenderer.send('resize-start');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (resizeHandle.classList.contains('dragging')) {
+      resizeHandle.classList.remove('dragging');
+      ipcRenderer.send('resize-stop');
+    }
   });
 
   init();

@@ -15,7 +15,11 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win portable",
-    "build-installer": "electron-builder --win nsis"
+    "build-installer": "electron-builder --win nsis",
+    "release": "electron-builder --win portable nsis --publish always",
+    "version:patch": "npm version patch && git push && git push --tags",
+    "version:minor": "npm version minor && git push && git push --tags",
+    "version:major": "npm version major && git push && git push --tags"
   },
   "build": {
     "appId": "com.rony.git-monitor",
@@ -30,13 +34,31 @@
       "node_modules/**/*"
     ],
     "win": {
-      "target": "portable",
+      "target": [
+        "portable",
+        "nsis"
+      ],
       "icon": "icon.png",
       "signAndEditExecutable": false,
       "signingHashAlgorithms": null
     },
     "portable": {
-      "artifactName": "GitMonitor.exe"
+      "artifactName": "GitMonitor-portable.exe"
+    },
+    "nsis": {
+      "artifactName": "GitMonitor-Setup-${version}.exe",
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Git Monitor"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "ronydrop",
+      "repo": "git-monitor"
     }
   },
   "devDependencies": {
@@ -44,6 +66,7 @@
     "electron-builder": "^25.0.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.77.0"
+    "@anthropic-ai/sdk": "^0.77.0",
+    "electron-updater": "^6.8.3"
   }
 }
