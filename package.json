@@ -1,0 +1,49 @@
+{
+  "name": "git-monitor",
+  "version": "1.0.0",
+  "description": "Mini widget desktop para monitorar repositórios Git em tempo real",
+  "main": "main.js",
+  "author": {
+    "name": "Rony Drop",
+    "url": "https://github.com/ronydrop"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ronydrop/git-monitor"
+  },
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable",
+    "build-installer": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.rony.git-monitor",
+    "productName": "Git Monitor",
+    "files": [
+      "main.js",
+      "index.html",
+      "config.html",
+      "zone-select.html",
+      "icon.png",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "icon.png",
+      "signAndEditExecutable": false,
+      "signingHashAlgorithms": null
+    },
+    "portable": {
+      "artifactName": "GitMonitor.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.77.0"
+  }
+}

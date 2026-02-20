@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Selecionar zona</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: rgba(0, 0, 0, 0.25);
+    cursor: crosshair;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Segoe UI', sans-serif;
+    user-select: none;
+  }
+
+  .hint {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(13, 17, 23, 0.92);
+    border: 1px solid #58a6ff;
+    border-radius: 10px;
+    padding: 18px 28px;
+    color: #e6edf3;
+    font-size: 14px;
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+    line-height: 1.6;
+    transition: opacity 0.2s;
+  }
+
+  .hint kbd {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 12px;
+    font-family: monospace;
+  }
+
+  .selection-rect {
+    position: fixed;
+    border: 2px solid #58a6ff;
+    background: rgba(88, 166, 255, 0.12);
+    border-radius: 4px;
+    pointer-events: none;
+    display: none;
+    z-index: 5;
+  }
+
+  .selection-rect .size-label {
+    position: absolute;
+    bottom: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(13, 17, 23, 0.9);
+    color: #58a6ff;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    font-family: monospace;
+  }
+</style>
+</head>
+<body>
+
+<div class="hint" id="hint">
+  Clique e arraste para selecionar a zona de detecção<br>
+  <kbd>ESC</kbd> para cancelar
+</div>
+
+<div class="selection-rect" id="rect">
+  <div class="size-label" id="sizeLabel"></div>
+</div>
+
+<script>
+  const { ipcRenderer } = require('electron');
+
+  const hintEl = document.getElementById('hint');
+  const rectEl = document.getElementById('rect');
+  const sizeLabel = document.getElementById('sizeLabel');
+
+  let startX = 0, startY = 0;
+  let dragging = false;
+
+  document.addEventListener('mousedown', (e) => {
+    dragging = true;
+    startX = e.screenX;
+    startY = e.screenY;
+    hintEl.style.opacity = '0';
+    rectEl.style.display = 'block';
+    updateRect(e);
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    updateRect(e);
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    if (!dragging) return;
+    dragging = false;
+
+    const zone = getZone(e);
+    if (zone.width > 30 && zone.height > 30) {
+      ipcRenderer.send('zone-selected', zone);
+    } else {
+      ipcRenderer.send('zone-cancelled');
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      ipcRenderer.send('zone-cancelled');
+    }
+  });
+
+  function getZone(e) {
+    const x = Math.min(startX, e.screenX);
+    const y = Math.min(startY, e.screenY);
+    const w = Math.abs(e.screenX - startX);
+    const h = Math.abs(e.screenY - startY);
+    return { x, y, width: w, height: h };
+  }
+
+  function updateRect(e) {
+    const cx = Math.min(e.clientX, startX - window.screenX);
+    const cy = Math.min(e.clientY, startY - window.screenY);
+    const w = Math.abs(e.screenX - startX);
+    const h = Math.abs(e.screenY - startY);
+
+    // Usa coordenadas de tela convertidas para client
+    const left = Math.min(startX - window.screenX, e.clientX);
+    const top = Math.min(startY - window.screenY, e.clientY);
+
+    rectEl.style.left = left + 'px';
+    rectEl.style.top = top + 'px';
+    rectEl.style.width = w + 'px';
+    rectEl.style.height = h + 'px';
+    sizeLabel.textContent = `${w} × ${h}`;
+  }
+</script>
+</body>
+</html>

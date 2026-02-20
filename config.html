@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Git Monitor — Configurações</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --bg-hover: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #7d8590;
+    --green: #3fb950;
+    --green-bg: rgba(63, 185, 80, 0.1);
+    --yellow: #d29922;
+    --yellow-bg: rgba(210, 153, 34, 0.1);
+    --red: #f85149;
+    --red-bg: rgba(248, 81, 73, 0.1);
+    --blue: #58a6ff;
+    --blue-bg: rgba(88, 166, 255, 0.1);
+    --orange: #db6d28;
+  }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ---- Title bar ---- */
+  .titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    -webkit-app-region: drag;
+    flex-shrink: 0;
+  }
+
+  .titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .titlebar-icon {
+    width: 15px;
+    height: 15px;
+    fill: var(--green);
+  }
+
+  .titlebar h1 {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .btn-close-titlebar {
+    -webkit-app-region: no-drag;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+  .btn-close-titlebar:hover { background: var(--red-bg); color: var(--red); }
+
+  /* ---- Main content ---- */
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .content::-webkit-scrollbar { width: 4px; }
+  .content::-webkit-scrollbar-track { background: transparent; }
+  .content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ---- Section ---- */
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 10px;
+  }
+
+  /* ---- Interval ---- */
+  .interval-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .interval-section label {
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  .interval-section select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-size: 11px;
+    font-family: inherit;
+    padding: 4px 8px;
+    cursor: pointer;
+    outline: none;
+  }
+  .interval-section select:focus { border-color: var(--blue); }
+
+  /* ---- Repo list ---- */
+  .repos-section { margin-bottom: 14px; }
+
+  .repo-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+    transition: border-color 0.15s;
+    position: relative;
+  }
+
+  .repo-card:hover { border-color: #3d444d; }
+  .repo-card.drag-over { border-color: var(--blue); background: rgba(88,166,255,0.05); }
+  .repo-card.dragging { opacity: 0.4; }
+
+  .repo-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .drag-handle {
+    color: var(--text-dim);
+    font-size: 14px;
+    cursor: grab;
+    padding: 0 2px;
+    user-select: none;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .drag-handle:active { cursor: grabbing; }
+
+  .repo-num {
+    font-size: 10px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    width: 16px;
+    text-align: center;
+  }
+
+  .name-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text);
+    outline: none;
+    font-weight: 600;
+  }
+  .name-input:focus { border-color: var(--blue); }
+  .name-input::placeholder { color: var(--text-dim); font-weight: 400; }
+
+  .btn-remove {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--red);
+    cursor: pointer;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .btn-remove:hover { background: var(--red-bg); border-color: var(--red); }
+
+  .path-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 24px;
+  }
+
+  .path-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-family: inherit;
+    font-size: 10.5px;
+    color: var(--text-dim);
+    outline: none;
+  }
+  .path-input:focus { border-color: var(--blue); color: var(--text); }
+  .path-input::placeholder { color: var(--text-dim); }
+
+  .btn-browse {
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    font-family: inherit;
+    font-size: 10px;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .btn-browse:hover { background: var(--bg-hover); color: var(--text); border-color: #3d444d; }
+
+  .btn-test {
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    transition: all 0.15s;
+    flex-shrink: 0;
+    color: var(--text-dim);
+  }
+  .btn-test:hover { background: var(--bg-hover); color: var(--text); border-color: #3d444d; }
+  .btn-test.testing { color: var(--yellow); border-color: var(--yellow); }
+  .btn-test.ok { color: var(--green); border-color: var(--green); background: var(--green-bg); }
+  .btn-test.fail { color: var(--red); border-color: var(--red); background: var(--red-bg); }
+
+  /* ---- Add button ---- */
+  .btn-add-repo {
+    width: 100%;
+    padding: 10px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .btn-add-repo:hover { background: var(--bg-hover); color: var(--blue); border-color: var(--blue); border-style: solid; }
+
+  /* ---- Footer ---- */
+  .footer {
+    display: flex;
+    gap: 8px;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-card);
+    flex-shrink: 0;
+  }
+
+  .btn-save {
+    flex: 1;
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid var(--green);
+    background: var(--green-bg);
+    color: var(--green);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-save:hover { background: rgba(63, 185, 80, 0.2); }
+
+  .btn-cancel {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-cancel:hover { background: var(--bg-hover); color: var(--text); }
+
+  /* ---- Toast ---- */
+  .toast {
+    position: fixed;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 11px;
+    color: var(--text);
+    opacity: 0;
+    transition: all 0.2s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.success { border-color: var(--green); color: var(--green); }
+  .toast.error { border-color: var(--red); color: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <div class="titlebar-left">
+    <svg class="titlebar-icon" viewBox="0 0 16 16">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+    </svg>
+    <h1>Configurações</h1>
+  </div>
+  <button class="btn-close-titlebar" onclick="cancelAndClose()" title="Fechar">✕</button>
+</div>
+
+<div class="content">
+
+  <!-- Anthropic API Key -->
+  <div class="section-label">IA para commits</div>
+  <div class="interval-section" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+    <label style="color: var(--text-dim); font-size: 10px;">Chave API da Anthropic (Claude) — usada para gerar mensagens de commit</label>
+    <div style="display: flex; gap: 6px; width: 100%;">
+      <input type="password" id="anthropicKey" placeholder="sk-ant-..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
+      <button onclick="toggleKeyVisibility()" id="btnShowKey" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit; white-space: nowrap;">👁</button>
+    </div>
+    <a href="https://console.anthropic.com/settings/keys" target="_blank" style="font-size: 9.5px; color: var(--blue); text-decoration: none;">↗ Obter chave em console.anthropic.com</a>
+  </div>
+
+  <!-- GitHub Token -->
+  <div class="section-label" style="margin-top: 14px;">Deploy status</div>
+  <div class="interval-section" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+    <label style="color: var(--text-dim); font-size: 10px;">Token GitHub — para monitorar CI/CD após push</label>
+    <div style="display: flex; gap: 6px; width: 100%;">
+      <input type="password" id="githubToken" placeholder="ghp_..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
+      <button onclick="toggleGhVisibility()" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit; white-space: nowrap;">👁</button>
+    </div>
+    <a href="https://github.com/settings/tokens" target="_blank" style="font-size: 9.5px; color: var(--blue); text-decoration: none;">↗ Criar token em github.com/settings/tokens (escopo: repo)</a>
+  </div>
+
+  <!-- Interval -->
+  <div class="section-label">Intervalo de atualização</div>
+  <div class="interval-section">
+    <label>Verificar repositórios a cada</label>
+    <select id="intervalSelect">
+      <option value="10">10 segundos</option>
+      <option value="30">30 segundos</option>
+      <option value="60">1 minuto</option>
+      <option value="120">2 minutos</option>
+      <option value="300">5 minutos</option>
+    </select>
+  </div>
+
+  <!-- Atalho -->
+  <div class="section-label">Atalho do teclado</div>
+  <div class="interval-section" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+    <label style="color: var(--text-dim); font-size: 10px;">Esconder / Mostrar o Git Monitor</label>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <kbd style="background: #21262d; border: 1px solid #30363d; border-radius: 4px; padding: 4px 8px; font-family: monospace; font-size: 12px; color: var(--text);">Ctrl + Shift + G</kbd>
+      <span style="font-size: 10px; color: var(--text-dim);">global — funciona em qualquer janela</span>
+    </div>
+  </div>
+
+  <!-- Repos -->
+  <div class="section-label">Repositórios</div>
+  <div class="repos-section" id="repoList"></div>
+
+  <button class="btn-add-repo" onclick="addRepo()">
+    <span>+</span> Adicionar repositório
+  </button>
+
+</div>
+
+<div class="footer">
+  <button class="btn-save" onclick="save()">✓ Salvar configurações</button>
+  <button class="btn-cancel" onclick="cancelAndClose()">Cancelar</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const { ipcRenderer } = require('electron');
+
+  let dragSrc = null;
+
+  // ---- Init ----
+  async function init() {
+    const config = await ipcRenderer.invoke('get-config');
+    document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
+    document.getElementById('anthropicKey').value = config.anthropicKey || '';
+    document.getElementById('githubToken').value = config.githubToken || '';
+    const list = document.getElementById('repoList');
+    list.innerHTML = '';
+    (config.repos || []).forEach(r => addRepo(r.name, r.path));
+    if (!config.repos || config.repos.length === 0) addRepo();
+  }
+
+  function toggleKeyVisibility() {
+    const inp = document.getElementById('anthropicKey');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+  }
+
+  function toggleGhVisibility() {
+    const inp = document.getElementById('githubToken');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+  }
+
+  // ---- Add repo card ----
+  function addRepo(name = '', repoPath = '') {
+    const list = document.getElementById('repoList');
+    const card = document.createElement('div');
+    card.className = 'repo-card';
+    card.draggable = true;
+    card.innerHTML = `
+      <div class="repo-card-header">
+        <span class="drag-handle" title="Arrastar para reordenar">⠿</span>
+        <span class="repo-num">${list.children.length + 1}</span>
+        <input type="text" class="name-input" placeholder="Nome do projeto" value="${escHtml(name)}" />
+        <button class="btn-remove" onclick="this.closest('.repo-card').remove(); renumber()" title="Remover">×</button>
+      </div>
+      <div class="path-row">
+        <input type="text" class="path-input" placeholder="C:\\caminho\\do\\repositorio" value="${escHtml(repoPath)}" />
+        <button class="btn-browse" onclick="browse(this)" title="Escolher pasta">📁 Procurar</button>
+        <button class="btn-test" onclick="testRepo(this)" title="Testar caminho">⚡ Testar</button>
+      </div>
+    `;
+
+    // Drag & drop
+    card.addEventListener('dragstart', e => {
+      dragSrc = card;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      document.querySelectorAll('.repo-card').forEach(c => c.classList.remove('drag-over'));
+      renumber();
+    });
+    card.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (dragSrc && dragSrc !== card) {
+        document.querySelectorAll('.repo-card').forEach(c => c.classList.remove('drag-over'));
+        card.classList.add('drag-over');
+      }
+    });
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      if (dragSrc && dragSrc !== card) {
+        const list = document.getElementById('repoList');
+        const cards = [...list.children];
+        const srcIdx = cards.indexOf(dragSrc);
+        const dstIdx = cards.indexOf(card);
+        if (srcIdx < dstIdx) {
+          list.insertBefore(dragSrc, card.nextSibling);
+        } else {
+          list.insertBefore(dragSrc, card);
+        }
+      }
+      document.querySelectorAll('.repo-card').forEach(c => c.classList.remove('drag-over'));
+    });
+
+    list.appendChild(card);
+  }
+
+  function renumber() {
+    document.querySelectorAll('.repo-num').forEach((el, i) => { el.textContent = i + 1; });
+  }
+
+  // ---- Browse folder ----
+  async function browse(btn) {
+    const result = await ipcRenderer.invoke('open-dialog');
+    if (result) {
+      btn.closest('.path-row').querySelector('.path-input').value = result;
+      resetTestBtn(btn.closest('.path-row').querySelector('.btn-test'));
+    }
+  }
+
+  // ---- Test repo ----
+  async function testRepo(btn) {
+    const pathInput = btn.closest('.path-row').querySelector('.path-input');
+    const repoPath = pathInput.value.trim();
+    if (!repoPath) { showToast('Digite um caminho primeiro', 'error'); return; }
+
+    btn.textContent = '⏳ Testando...';
+    btn.className = 'btn-test testing';
+    btn.disabled = true;
+
+    const ok = await ipcRenderer.invoke('test-repo', repoPath);
+    btn.disabled = false;
+    if (ok) {
+      btn.textContent = '✓ Válido';
+      btn.className = 'btn-test ok';
+    } else {
+      btn.textContent = '✕ Inválido';
+      btn.className = 'btn-test fail';
+    }
+  }
+
+  function resetTestBtn(btn) {
+    btn.textContent = '⚡ Testar';
+    btn.className = 'btn-test';
+  }
+
+  // ---- Save ----
+  async function save() {
+    const cards = document.querySelectorAll('.repo-card');
+    const repos = [];
+    cards.forEach(card => {
+      const name = card.querySelector('.name-input').value.trim();
+      const path = card.querySelector('.path-input').value.trim();
+      if (name && path) repos.push({ name, path });
+    });
+
+    const interval = parseInt(document.getElementById('intervalSelect').value);
+    const anthropicKey = document.getElementById('anthropicKey').value.trim();
+    await ipcRenderer.invoke('save-repos', repos);
+    await ipcRenderer.invoke('set-interval', interval);
+    const githubToken = document.getElementById('githubToken').value.trim();
+    await ipcRenderer.invoke('save-anthropic-key', anthropicKey);
+    await ipcRenderer.invoke('save-github-token', githubToken);
+    showToast('Configurações salvas!', 'success');
+    setTimeout(() => ipcRenderer.invoke('close-config-window'), 700);
+  }
+
+  function cancelAndClose() {
+    ipcRenderer.invoke('close-config-window');
+  }
+
+  // ---- Helpers ----
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function showToast(msg, type = '') {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.className = 'toast show' + (type ? ' ' + type : '');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { toast.className = 'toast'; }, 2200);
+  }
+
+  init();
+</script>
+</body>
+</html>

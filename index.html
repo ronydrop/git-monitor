@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Git Monitor</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --bg-hover: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #7d8590;
+    --green: #3fb950;
+    --green-bg: rgba(63, 185, 80, 0.1);
+    --yellow: #d29922;
+    --yellow-bg: rgba(210, 153, 34, 0.1);
+    --orange: #db6d28;
+    --orange-bg: rgba(219, 109, 40, 0.1);
+    --red: #f85149;
+    --red-bg: rgba(248, 81, 73, 0.1);
+    --blue: #58a6ff;
+    --blue-bg: rgba(88, 166, 255, 0.1);
+  }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: transparent;
+    color: var(--text);
+    font-size: 11px;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .container {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+  }
+
+  /* ---- Title bar ---- */
+  .titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    -webkit-app-region: drag;
+    cursor: grab;
+  }
+
+  .titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .titlebar-icon {
+    width: 14px;
+    height: 14px;
+    fill: var(--green);
+  }
+
+  .titlebar h1 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .titlebar-actions {
+    display: flex;
+    gap: 4px;
+    -webkit-app-region: no-drag;
+  }
+
+  .titlebar-actions button {
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+
+  .titlebar-actions button:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .btn-close:hover { background: var(--red-bg) !important; color: var(--red) !important; }
+
+  /* ---- Status bar ---- */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .status-bar .interval-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    -webkit-app-region: no-drag;
+  }
+
+  .status-bar select {
+    background: var(--bg-card);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: inherit;
+    padding: 1px 4px;
+    cursor: pointer;
+  }
+
+  /* ---- Repo list ---- */
+  .repo-list {
+    max-height: 300px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .repo-list::-webkit-scrollbar { width: 4px; }
+  .repo-list::-webkit-scrollbar-track { background: transparent; }
+  .repo-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .repo-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+    gap: 8px;
+  }
+
+  .repo-item:last-child { border-bottom: none; }
+  .repo-item:hover { background: var(--bg-hover); }
+
+  .repo-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .repo-dot.clean { background: var(--green); animation: none; }
+  .repo-dot.dirty { background: var(--yellow); }
+  .repo-dot.dirty-ahead { background: var(--orange); }
+  .repo-dot.ahead { background: var(--blue); animation: none; }
+  .repo-dot.behind { background: var(--blue); }
+  .repo-dot.error { background: var(--red); animation: none; }
+
+  .repo-info { flex: 1; min-width: 0; }
+
+  .repo-name {
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .repo-detail {
+    font-size: 9.5px;
+    color: var(--text-dim);
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .repo-badge {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 10px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .badge-clean { background: var(--green-bg); color: var(--green); }
+  .badge-dirty { background: var(--yellow-bg); color: var(--yellow); }
+  .badge-dirty-ahead { background: var(--orange-bg); color: var(--orange); }
+  .badge-ahead { background: var(--blue-bg); color: var(--blue); }
+  .badge-behind { background: var(--blue-bg); color: var(--blue); }
+  .badge-error { background: var(--red-bg); color: var(--red); }
+
+  /* ---- Push All button ---- */
+  .btn-push-all {
+    padding: 2px 7px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 9px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .btn-push-all:hover { background: var(--green-bg); color: var(--green); border-color: var(--green); }
+  .btn-push-all span { display: inline-block; }
+  .btn-push-all.running { color: var(--yellow); border-color: var(--yellow); pointer-events: none; }
+  .btn-push-all.running span { animation: spin 0.8s linear infinite; }
+  .btn-push-all.done { color: var(--green); border-color: var(--green); background: var(--green-bg); pointer-events: none; }
+
+  /* ---- Repo action buttons ---- */
+  .repo-actions {
+    display: flex;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+
+  .btn-repo-action {
+    width: 20px;
+    height: 20px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    padding: 0;
+  }
+  .btn-repo-action:hover { background: var(--bg-hover); color: var(--text); border-color: #3d444d; }
+
+  /* ---- Commit button ---- */
+  .btn-commit {
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    padding: 0;
+  }
+  .btn-commit:hover { background: var(--green-bg); color: var(--green); border-color: var(--green); }
+  .btn-commit.loading  { color: var(--yellow); border-color: var(--yellow); pointer-events: none; }
+  .btn-commit.loading span { animation: spin 0.8s linear infinite; }
+  .btn-commit.deploying { color: var(--blue); border-color: var(--blue); background: var(--blue-bg); pointer-events: none; }
+  .btn-commit.deploying span { animation: spin 1.2s linear infinite; }
+  .btn-commit.deployed  { color: var(--green); border-color: var(--green); background: var(--green-bg); pointer-events: none; }
+  .btn-commit.deploy-fail { color: var(--red); border-color: var(--red); background: var(--red-bg); pointer-events: none; }
+  .btn-commit.fail     { color: var(--red);   border-color: var(--red);   background: var(--red-bg);   }
+
+  /* ---- Commit toast ---- */
+  .commit-toast {
+    position: fixed;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    padding: 8px 12px;
+    border-radius: 7px;
+    font-size: 10px;
+    line-height: 1.4;
+    z-index: 50;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: all 0.2s;
+    pointer-events: none;
+    word-break: break-word;
+  }
+  .commit-toast.show { opacity: 1; transform: translateY(0); }
+  .commit-toast.ok  { background: var(--green-bg); border: 1px solid var(--green); color: var(--green); }
+  .commit-toast.err { background: var(--red-bg);   border: 1px solid var(--red);   color: var(--red); }
+
+  /* ---- Empty state ---- */
+  .empty-state {
+    text-align: center;
+    padding: 24px 16px;
+    color: var(--text-dim);
+  }
+
+  .empty-state .icon { font-size: 28px; margin-bottom: 8px; }
+  .empty-state p { font-size: 10px; line-height: 1.5; }
+
+  .btn-config {
+    margin-top: 10px;
+    padding: 5px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-config:hover { background: var(--bg-hover); border-color: var(--blue); }
+
+
+  /* ---- Controls bar ---- */
+  .controls-bar {
+    display: flex;
+    align-items: center;
+    padding: 5px 8px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    gap: 4px;
+    -webkit-app-region: no-drag;
+    flex-wrap: wrap;
+  }
+
+  .btn-lock {
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .btn-lock:hover { background: var(--bg-hover); }
+  .btn-lock.locked { color: var(--orange); border-color: var(--orange); background: var(--orange-bg); }
+
+  .opacity-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+  }
+
+  input[type="range"].opacity-slider {
+    flex: 1;
+    height: 3px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"].opacity-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--blue);
+    cursor: pointer;
+    transition: transform 0.1s;
+  }
+  input[type="range"].opacity-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+  .opacity-val {
+    font-size: 8px;
+    color: var(--text-dim);
+    width: 24px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .ctrl-sep {
+    width: 1px;
+    height: 14px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  .corner-btns {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  .btn-corner {
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    line-height: 1;
+  }
+  .btn-corner:hover { background: var(--bg-hover); color: var(--blue); border-color: var(--blue); }
+  .btn-corner:active { transform: scale(0.9); }
+
+  .btn-zone {
+    height: 18px;
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 9px;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .btn-zone:hover { background: var(--bg-hover); color: var(--text); border-color: #3d444d; }
+  .btn-zone.active { color: var(--green); border-color: var(--green); background: var(--green-bg); }
+
+  /* ---- Refresh animation ---- */
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .btn-refresh {
+    transition: background 0.15s, color 0.15s !important;
+  }
+  .btn-refresh span {
+    display: inline-block;
+  }
+  .btn-refresh.spinning span {
+    animation: spin 0.6s linear infinite;
+  }
+
+  /* ---- Collapsed ---- */
+  .container.collapsed .repo-list,
+  .container.collapsed .status-bar,
+  .container.collapsed .controls-bar {
+    display: none;
+  }
+
+  /* ---- Loading shimmer ---- */
+  .loading-shimmer {
+    background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-hover) 50%, var(--bg-card) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    height: 36px;
+    margin: 4px 12px;
+    border-radius: 6px;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container" id="container">
+  <!-- Title bar -->
+  <div class="titlebar">
+    <div class="titlebar-left">
+      <svg class="titlebar-icon" viewBox="0 0 16 16">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
+      <h1>Git Monitor</h1>
+    </div>
+    <div class="titlebar-actions">
+      <button class="btn-refresh" id="refreshBtn" onclick="refreshNow()" title="Atualizar"><span>↻</span></button>
+      <button onclick="openConfig()" title="Configurar">⚙</button>
+      <button onclick="toggleCollapse()" title="Minimizar">─</button>
+      <button class="btn-close" onclick="closeApp()" title="Fechar">✕</button>
+    </div>
+  </div>
+
+  <!-- Controls bar -->
+  <div class="controls-bar">
+    <button class="btn-lock" id="lockBtn" onclick="toggleLock()" title="Travar posição">🔒</button>
+    <div class="opacity-ctrl">
+      <input type="range" class="opacity-slider" id="opacitySlider" min="15" max="100" value="100" oninput="changeOpacity(this.value)" title="Opacidade" />
+      <span class="opacity-val" id="opacityVal">100%</span>
+    </div>
+    <div class="ctrl-sep"></div>
+    <div class="corner-btns">
+      <button class="btn-corner" onclick="snapCorner('tl')" title="Canto superior esquerdo">↖</button>
+      <button class="btn-corner" onclick="snapCorner('tr')" title="Canto superior direito">↗</button>
+      <button class="btn-corner" onclick="snapCorner('bl')" title="Canto inferior esquerdo">↙</button>
+      <button class="btn-corner" onclick="snapCorner('br')" title="Canto inferior direito">↘</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <button class="btn-zone" id="zoneBtn" onclick="toggleZone()" title="Definir zona de detecção ghost">👻 Zona</button>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <span id="lastCheck">Verificando...</span>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <button class="btn-push-all" id="pushAllBtn" onclick="pushAll()" title="Commit + Push todos os repos modificados"><span>⬆</span> Push All</button>
+      <div class="interval-ctrl">
+        <span>⏱</span>
+        <select id="intervalSelect" onchange="changeInterval(this.value)">
+          <option value="10">10s</option>
+          <option value="30" selected>30s</option>
+          <option value="60">1min</option>
+          <option value="120">2min</option>
+          <option value="300">5min</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Repo list -->
+  <div class="repo-list" id="repoList">
+    <div class="loading-shimmer"></div>
+    <div class="loading-shimmer"></div>
+    <div class="loading-shimmer"></div>
+  </div>
+</div>
+
+<div class="commit-toast" id="commitToast"></div>
+
+<script>
+  const { ipcRenderer } = require('electron');
+
+  let intervalId = null;
+  let config = {};
+  let lastResults = [];
+
+  const BADGE_LABELS = {
+    'clean': 'OK',
+    'dirty': 'MODIFIED',
+    'dirty-ahead': 'MOD+PUSH',
+    'ahead': 'PUSH',
+    'behind': 'PULL',
+    'error': 'ERRO'
+  };
+
+  // ---- Render repos ----
+  function renderRepos(results) {
+    const list = document.getElementById('repoList');
+
+    if (!results || results.length === 0) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">📂</div>
+          <p>Nenhum repositório configurado.<br>Clique em ⚙ para adicionar.</p>
+          <button class="btn-config" onclick="openConfig()">Configurar Repos</button>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = results.map(r => {
+      const esc = s => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const hasChanges = r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead';
+      const commitBtn = hasChanges
+        ? `<button class="btn-commit" title="Commit + Push com IA" onclick="doCommit(this, '${esc(r.path)}', '${esc(r.name)}')"><span>⬆</span></button>`
+        : '';
+      const gitBtn = r.remoteUrl
+        ? `<button class="btn-repo-action" title="Abrir no GitHub" onclick="openGitUrl('${esc(r.remoteUrl)}')">🔗</button>`
+        : '';
+      return `
+      <div class="repo-item" title="${r.path}\n${r.detail}">
+        <div class="repo-dot ${r.status}"></div>
+        <div class="repo-info">
+          <div class="repo-name">${r.name}</div>
+          <div class="repo-detail">${r.branch ? `${r.branch} · ` : ''}${r.detail}</div>
+        </div>
+        <span class="repo-badge badge-${r.status}">${BADGE_LABELS[r.status] || '?'}</span>
+        <div class="repo-actions">
+          ${gitBtn}
+          <button class="btn-repo-action" title="Abrir terminal" onclick="openTerminal('${esc(r.path)}', '${esc(r.name)}')">⌨</button>
+          ${commitBtn}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ---- Check repos ----
+  async function checkRepos() {
+    const btn = document.getElementById('refreshBtn');
+    btn.classList.add('spinning');
+    const results = await ipcRenderer.invoke('check-repos');
+    lastResults = results || [];
+    renderRepos(results);
+    document.getElementById('lastCheck').textContent = `Último: ${new Date().toLocaleTimeString('pt-BR')}`;
+    setTimeout(() => btn.classList.remove('spinning'), 600);
+  }
+
+  function refreshNow() {
+    checkRepos();
+  }
+
+  // ---- Interval ----
+  function startInterval(seconds) {
+    if (intervalId) clearInterval(intervalId);
+    intervalId = setInterval(checkRepos, seconds * 1000);
+  }
+
+  function changeInterval(val) {
+    const seconds = parseInt(val);
+    startInterval(seconds);
+    ipcRenderer.invoke('set-interval', seconds);
+  }
+
+  // ---- Collapse ----
+  async function toggleCollapse() {
+    const collapsed = await ipcRenderer.invoke('minimize-app');
+    document.getElementById('container').classList.toggle('collapsed', collapsed);
+  }
+
+  // ---- Close ----
+  function closeApp() {
+    ipcRenderer.invoke('close-app');
+  }
+
+  // ---- Push All ----
+  async function pushAll() {
+    const modified = lastResults.filter(r => r.status === 'dirty' || r.status === 'dirty-ahead');
+    if (modified.length === 0) {
+      showCommitToast('err', 'Nenhum repo com mudanças para commit');
+      return;
+    }
+
+    const btn = document.getElementById('pushAllBtn');
+    btn.className = 'btn-push-all running';
+    btn.innerHTML = '<span>↻</span> 0/' + modified.length;
+
+    let doneCount = 0;
+    const results = [];
+    for (const r of modified) {
+      const res = await ipcRenderer.invoke('commit-and-push', r.path);
+      results.push(res);
+      doneCount++;
+      btn.innerHTML = `<span>↻</span> ${doneCount}/${modified.length}`;
+    }
+
+    const ok = results.filter(r => r.ok);
+    const fail = results.filter(r => !r.ok);
+
+    btn.className = 'btn-push-all done';
+    btn.innerHTML = `<span>✓</span> ${ok.length}/${modified.length}`;
+
+    if (fail.length > 0) {
+      showCommitToast('err', `✕ ${fail.length} falharam: ${fail.map(r => r.error).join('; ').substring(0, 120)}`);
+    } else {
+      showCommitToast('ok', `✓ ${ok.length} repos commitados e pushed!`);
+    }
+
+    setTimeout(() => {
+      btn.className = 'btn-push-all';
+      btn.innerHTML = '<span>⬆</span> Push All';
+      checkRepos();
+    }, 4000);
+  }
+
+  // ---- Config window ----
+  function openConfig() {
+    ipcRenderer.invoke('open-config-window');
+  }
+
+  // ---- Repo shortcuts ----
+  function openGitUrl(url) {
+    ipcRenderer.invoke('open-git-url', url);
+  }
+
+  function openTerminal(repoPath, name) {
+    ipcRenderer.invoke('open-terminal', repoPath, name);
+  }
+
+  // ---- Commit with AI ----
+  async function doCommit(btn, repoPath, repoName) {
+    btn.className = 'btn-commit loading';
+    btn.innerHTML = '<span>↻</span>';
+
+    const result = await ipcRenderer.invoke('commit-and-push', repoPath);
+
+    if (result.ok) {
+      showCommitToast('ok', `✓ ${repoName}\n${result.title}`);
+      // Monitora deploy
+      btn.className = 'btn-commit deploying';
+      btn.innerHTML = '<span>↻</span>';
+      pollDeploy(btn, repoPath, repoName);
+    } else {
+      btn.className = 'btn-commit fail';
+      btn.innerHTML = '<span>✕</span>';
+      showCommitToast('err', `✕ ${repoName}: ${result.error}`);
+      setTimeout(() => {
+        btn.className = 'btn-commit';
+        btn.innerHTML = '<span>⬆</span>';
+      }, 4000);
+    }
+  }
+
+  async function pollDeploy(btn, repoPath, repoName) {
+    let attempts = 0;
+    const maxAttempts = 60; // ~5 min
+    const interval = 5000;
+
+    // Espera inicial para o CI/CD iniciar
+    await new Promise(r => setTimeout(r, 3000));
+
+    const poll = async () => {
+      attempts++;
+      const res = await ipcRenderer.invoke('check-deploy-status', repoPath);
+
+      if (res.status === 'success') {
+        btn.className = 'btn-commit deployed';
+        btn.innerHTML = '<span>✓</span>';
+        showCommitToast('ok', `✓ ${repoName}: Deploy concluído!`);
+        setTimeout(() => checkRepos(), 3000);
+        return;
+      }
+
+      if (res.status === 'failure') {
+        btn.className = 'btn-commit deploy-fail';
+        btn.innerHTML = '<span>✕</span>';
+        showCommitToast('err', `✕ ${repoName}: Deploy falhou — ${res.detail || ''}`);
+        setTimeout(() => { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; }, 6000);
+        return;
+      }
+
+      if (res.status === 'no-token' || res.status === 'none') {
+        btn.className = 'btn-commit deployed';
+        btn.innerHTML = '<span>✓</span>';
+        setTimeout(() => checkRepos(), 3000);
+        return;
+      }
+
+      if (res.status === 'error') {
+        btn.className = 'btn-commit';
+        btn.innerHTML = '<span>⚠</span>';
+        showCommitToast('err', `⚠ ${repoName}: ${res.detail || 'Erro ao verificar deploy'}`);
+        setTimeout(() => { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; }, 5000);
+        return;
+      }
+
+      // Ainda pending — continua polling
+      if (res.status === 'pending' && attempts < maxAttempts) {
+        setTimeout(poll, interval);
+        return;
+      }
+
+      // Timeout ou status desconhecido — encerra como sucesso
+      btn.className = 'btn-commit deployed';
+      btn.innerHTML = '<span>✓</span>';
+      if (attempts >= maxAttempts) {
+        showCommitToast('err', `⏱ ${repoName}: Timeout aguardando deploy`);
+      }
+      setTimeout(() => checkRepos(), 3000);
+    };
+
+    poll();
+  }
+
+  let commitToastTimer = null;
+  function showCommitToast(type, msg) {
+    const el = document.getElementById('commitToast');
+    el.textContent = msg;
+    el.className = `commit-toast show ${type}`;
+    clearTimeout(commitToastTimer);
+    commitToastTimer = setTimeout(() => { el.className = 'commit-toast'; }, 4000);
+  }
+
+  // ---- Lock position ----
+  let locked = false;
+
+  function toggleLock() {
+    locked = !locked;
+    applyLock();
+    ipcRenderer.invoke('set-locked', locked);
+  }
+
+  function applyLock() {
+    const titlebar = document.querySelector('.titlebar');
+    const btn = document.getElementById('lockBtn');
+    titlebar.style.webkitAppRegion = locked ? 'no-drag' : 'drag';
+    btn.classList.toggle('locked', locked);
+    btn.title = locked ? 'Desbloquear posição' : 'Travar posição';
+    btn.textContent = locked ? '🔐' : '🔒';
+  }
+
+  // ---- Opacity ----
+  function changeOpacity(val) {
+    document.getElementById('opacityVal').textContent = val + '%';
+    ipcRenderer.invoke('set-opacity', val / 100);
+  }
+
+  // ---- Corner snap ----
+  function snapCorner(corner) {
+    ipcRenderer.invoke('snap-corner', corner);
+  }
+
+  // ---- Init ----
+  async function init() {
+    config = await ipcRenderer.invoke('get-config');
+    document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
+
+    // Restaura opacidade
+    const opacityPct = Math.round((config.opacity || 1.0) * 100);
+    document.getElementById('opacitySlider').value = opacityPct;
+    document.getElementById('opacityVal').textContent = opacityPct + '%';
+
+    // Restaura lock
+    locked = config.locked || false;
+    applyLock();
+
+    // Restaura zona ghost
+    updateZoneBtn(config.ghostZone);
+
+    if (config.collapsed) {
+      document.getElementById('container').classList.add('collapsed');
+    }
+    startInterval(config.intervalSeconds || 30);
+    checkRepos();
+  }
+
+  // Recarrega quando config é salvo na janela de configuração
+  ipcRenderer.on('config-saved', async () => {
+    config = await ipcRenderer.invoke('get-config');
+    document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
+    startInterval(config.intervalSeconds || 30);
+    checkRepos();
+  });
+
+
+  // ---- Zone selection ----
+  let hasZone = false;
+
+  function toggleZone() {
+    if (hasZone) {
+      ipcRenderer.invoke('clear-ghost-zone');
+    } else {
+      ipcRenderer.invoke('start-zone-select');
+    }
+  }
+
+  function updateZoneBtn(zone) {
+    const btn = document.getElementById('zoneBtn');
+    hasZone = !!zone;
+    if (hasZone) {
+      btn.classList.add('active');
+      btn.textContent = '👻 Ativa';
+      btn.title = 'Clique para desativar zona ghost';
+    } else {
+      btn.classList.remove('active');
+      btn.textContent = '👻 Zona';
+      btn.title = 'Definir zona de detecção ghost';
+    }
+  }
+
+  ipcRenderer.on('ghost-zone-updated', (_, zone) => {
+    updateZoneBtn(zone);
+  });
+
+  init();
+</script>
+
+</body>
+</html>
