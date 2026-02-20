@@ -106,6 +106,7 @@ function createWindow() {
 
   // Salva posição ao mover manualmente
   mainWindow.on('moved', () => {
+    if (resizeInterval) return; // ignora durante resize
     const [x, y] = mainWindow.getPosition();
     config.windowX = x;
     config.windowY = y;
@@ -405,6 +406,8 @@ ipcMain.on('resize-start', () => {
   if (resizeInterval) clearInterval(resizeInterval);
   const startCursorY = screen.getCursorScreenPoint().y;
   const startHeight = mainWindow.getSize()[1];
+  // Congela X/Y para que só a altura mude, sem a janela se mover
+  const [fixedX, fixedY] = mainWindow.getPosition();
 
   resizeInterval = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -414,8 +417,9 @@ ipcMain.on('resize-start', () => {
     const cursorY = screen.getCursorScreenPoint().y;
     const delta = cursorY - startCursorY;
     const newH = Math.max(150, Math.min(900, Math.round(startHeight + delta)));
-    mainWindow.setSize(300, newH);
-  }, 16); // ~60fps
+    // setBounds mantém X/Y fixos, só altera a altura
+    mainWindow.setBounds({ x: fixedX, y: fixedY, width: 300, height: newH }, false);
+  }, 16);
 });
 
 ipcMain.on('resize-stop', () => {
