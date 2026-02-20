@@ -215,6 +215,35 @@
   .repo-item:last-child { border-bottom: none; }
   .repo-item:hover { background: var(--bg-hover); }
 
+  /* ---- Repo checkbox ---- */
+  .repo-check {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 13px;
+    height: 13px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    transition: all 0.15s;
+  }
+  .repo-check:checked {
+    background: var(--green);
+    border-color: var(--green);
+  }
+  .repo-check:checked::after {
+    content: '✓';
+    position: absolute;
+    top: -1px;
+    left: 1px;
+    font-size: 9px;
+    color: #0d1117;
+    font-weight: 700;
+  }
+  .repo-check:hover { border-color: var(--green); }
+
   .repo-dot {
     width: 8px;
     height: 8px;
@@ -345,6 +374,29 @@
   .btn-commit.deployed  { color: var(--green); border-color: var(--green); background: var(--green-bg); pointer-events: none; }
   .btn-commit.deploy-fail { color: var(--red); border-color: var(--red); background: var(--red-bg); pointer-events: none; }
   .btn-commit.fail     { color: var(--red);   border-color: var(--red);   background: var(--red-bg);   }
+
+  .btn-pull {
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--blue);
+    border-radius: 5px;
+    background: var(--blue-bg);
+    color: var(--blue);
+    cursor: pointer;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+    padding: 0;
+  }
+  .btn-pull span { display: inline-block; }
+  .btn-pull:hover { background: var(--blue); color: var(--bg); }
+  .btn-pull.loading { pointer-events: none; }
+  .btn-pull.loading span { animation: spin 0.8s linear infinite; }
+  .btn-pull.done { color: var(--green); border-color: var(--green); background: var(--green-bg); pointer-events: none; }
+  .btn-pull.fail { color: var(--red); border-color: var(--red); background: var(--red-bg); }
 
   /* ---- Commit toast ---- */
   .commit-toast {
@@ -566,7 +618,7 @@
     <div class="titlebar-actions">
       <button class="btn-refresh" id="refreshBtn" onclick="refreshNow()" title="Atualizar"><span>↻</span></button>
       <button onclick="openConfig()" title="Configurar">⚙</button>
-      <button onclick="toggleCollapse()" title="Minimizar">─</button>
+      <button id="collapseBtn" onclick="toggleCollapse()" title="Minimizar">─</button>
       <button class="btn-close" onclick="closeApp()" title="Fechar">✕</button>
     </div>
   </div>
@@ -664,14 +716,21 @@
     list.innerHTML = results.map(r => {
       const esc = s => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const hasChanges = r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead';
+      const needsPull  = r.status === 'behind';
       const commitBtn = hasChanges
         ? `<button class="btn-commit" title="Commit + Push com IA" onclick="doCommit(this, '${esc(r.path)}', '${esc(r.name)}')"><span>⬆</span></button>`
-        : '';
+        : needsPull
+          ? `<button class="btn-pull" title="Git Pull" onclick="doPull(this, '${esc(r.path)}', '${esc(r.name)}')"><span>⬇</span></button>`
+          : '';
       const gitBtn = r.remoteUrl
-        ? `<button class="btn-repo-action" title="Abrir no GitHub" onclick="openGitUrl('${esc(r.remoteUrl)}')">🔗</button>`
+        ? `<button class="btn-repo-action" title="Abrir no GitHub" onclick="openGitUrl('${esc(r.remoteUrl)}')" style="padding:0;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></button>`
+        : '';
+      const checkbox = hasChanges
+        ? `<input type="checkbox" class="repo-check" data-path="${esc(r.path)}" data-name="${esc(r.name)}" checked title="Incluir no Push All">`
         : '';
       return `
       <div class="repo-item" title="${r.path}\n${r.detail}">
+        ${checkbox}
         <div class="repo-dot ${r.status}"></div>
         <div class="repo-info">
           <div class="repo-name">${r.name}</div>
@@ -718,6 +777,9 @@
   async function toggleCollapse() {
     const collapsed = await ipcRenderer.invoke('minimize-app');
     document.getElementById('container').classList.toggle('collapsed', collapsed);
+    const btn = document.getElementById('collapseBtn');
+    btn.textContent = collapsed ? '▢' : '─';
+    btn.title = collapsed ? 'Expandir' : 'Minimizar';
   }
 
   // ---- Close ----
@@ -727,11 +789,18 @@
 
   // ---- Push All ----
   async function pushAll() {
-    const modified = lastResults.filter(r => r.status === 'dirty' || r.status === 'dirty-ahead');
-    if (modified.length === 0) {
-      showCommitToast('err', 'Nenhum repo com mudanças para commit');
+    // Pega apenas os repos com checkbox marcado
+    const checked = [...document.querySelectorAll('.repo-check:checked')].map(el => ({
+      path: el.dataset.path,
+      name: el.dataset.name
+    }));
+
+    if (checked.length === 0) {
+      showCommitToast('err', 'Nenhum repo selecionado para push');
       return;
     }
+
+    const modified = checked;
 
     const btn = document.getElementById('pushAllBtn');
     btn.className = 'btn-push-all running';
@@ -773,6 +842,28 @@
   // ---- Repo shortcuts ----
   function openGitUrl(url) {
     ipcRenderer.invoke('open-git-url', url);
+  }
+
+  async function doPull(btn, repoPath, repoName) {
+    btn.className = 'btn-pull loading';
+    btn.innerHTML = '<span>↻</span>';
+
+    const result = await ipcRenderer.invoke('git-pull', repoPath);
+
+    if (result.ok) {
+      btn.className = 'btn-pull done';
+      btn.innerHTML = '<span>✓</span>';
+      showCommitToast('ok', `✓ ${repoName}: Pull concluído!`);
+      setTimeout(() => checkRepos(), 2000);
+    } else {
+      btn.className = 'btn-pull fail';
+      btn.innerHTML = '<span>✕</span>';
+      showCommitToast('err', `✕ ${repoName}: ${result.error}`);
+      setTimeout(() => {
+        btn.className = 'btn-pull';
+        btn.innerHTML = '<span>⬇</span>';
+      }, 4000);
+    }
   }
 
   function openTerminal(repoPath, name) {
@@ -921,6 +1012,9 @@
 
     if (config.collapsed) {
       document.getElementById('container').classList.add('collapsed');
+      const btn = document.getElementById('collapseBtn');
+      btn.textContent = '▢';
+      btn.title = 'Expandir';
     }
     startInterval(config.intervalSeconds || 30);
     checkRepos();

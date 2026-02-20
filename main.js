@@ -549,6 +549,15 @@ ipcMain.handle('open-folder', (_, folderPath) => {
   shell.openPath(folderPath);
 });
 
+ipcMain.handle('git-pull', async (_, repoPath) => {
+  try {
+    await execAsync('git pull', { cwd: repoPath, timeout: 30000 });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message ? e.message.substring(0, 200) : String(e) };
+  }
+});
+
 ipcMain.handle('open-terminal', (_, folderPath, projectName) => {
   const t = projectName || folderPath;
   const tab1 = `new-tab -d "${folderPath}" cmd /k "claude --resume && title ${t}"`;
