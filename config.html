@@ -597,11 +597,45 @@
     const btn = document.getElementById('btnCheckUpdate');
     btn.textContent = '⏳ Verificando...';
     btn.disabled = true;
-    await ipcRenderer.invoke('check-for-updates');
+
+    ipcRenderer.invoke('check-for-updates');
+
+    const onResult = (_, status) => {
+      ipcRenderer.removeListener('update-check-result', onResult);
+      if (status.type === 'latest') {
+        btn.textContent = '✓ Já está atualizado';
+        btn.style.color = 'var(--green)';
+      } else if (status.type === 'available') {
+        btn.textContent = `⬇ v${status.version} disponível!`;
+        btn.style.color = 'var(--blue)';
+      } else if (status.type === 'ready') {
+        btn.textContent = '✓ Pronto para instalar';
+        btn.style.color = 'var(--green)';
+      } else if (status.type === 'dev') {
+        btn.textContent = '⚠ Indisponível em dev mode';
+        btn.style.color = 'var(--yellow)';
+      } else if (status.type === 'error') {
+        btn.textContent = '✕ Erro: sem release publicado';
+        btn.style.color = 'var(--red)';
+      }
+      setTimeout(() => {
+        btn.textContent = '↻ Verificar atualizações';
+        btn.style.color = '';
+        btn.disabled = false;
+      }, 4000);
+    };
+
+    ipcRenderer.on('update-check-result', onResult);
+
+    // Timeout de segurança
     setTimeout(() => {
-      btn.textContent = '↻ Atualizar';
-      btn.disabled = false;
-    }, 3000);
+      ipcRenderer.removeListener('update-check-result', onResult);
+      if (btn.disabled) {
+        btn.textContent = '↻ Verificar atualizações';
+        btn.style.color = '';
+        btn.disabled = false;
+      }
+    }, 15000);
   }
 
   // ---- Helpers ----

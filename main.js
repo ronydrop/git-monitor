@@ -257,7 +257,14 @@ ipcMain.handle('set-interval', (_, seconds) => {
 ipcMain.handle('close-app', () => app.quit());
 ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
 ipcMain.handle('check-for-updates', () => {
-  if (app.isPackaged) autoUpdater.checkForUpdates();
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdates();
+  } else {
+    // Em dev mode, simula resposta
+    if (configWindow && !configWindow.isDestroyed()) {
+      configWindow.webContents.send('update-check-result', { type: 'dev' });
+    }
+  }
 });
 
 // ---- Zone select ----
@@ -702,22 +709,25 @@ app.whenReady().then(() => {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 
+    const sendUpdate = (payload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-status', payload);
+      if (configWindow && !configWindow.isDestroyed()) configWindow.webContents.send('update-check-result', payload);
+    };
+
     autoUpdater.on('update-available', (info) => {
-      mainWindow.webContents.send('update-status', {
-        type: 'available',
-        version: info.version
-      });
+      sendUpdate({ type: 'available', version: info.version });
+    });
+
+    autoUpdater.on('update-not-available', () => {
+      sendUpdate({ type: 'latest' });
     });
 
     autoUpdater.on('update-downloaded', () => {
-      mainWindow.webContents.send('update-status', { type: 'ready' });
+      sendUpdate({ type: 'ready' });
     });
 
     autoUpdater.on('error', (err) => {
-      mainWindow.webContents.send('update-status', {
-        type: 'error',
-        msg: err.message
-      });
+      sendUpdate({ type: 'error', msg: err.message });
     });
 
     // Checa ao iniciar e a cada 4 horas
