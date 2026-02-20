@@ -21,12 +21,7 @@ const CONFIG_FILE = path.join(app.isPackaged ? path.dirname(process.execPath) : 
 function getDefaultConfig() {
   return {
     repos: [
-      { name: "Aprovei Checkout", path: "C:\\Users\\ronyo\\Desktop\\Rony\\Aprovei Checkout\\aprovei-checkout" },
-      { name: "Use Matias", path: "C:\\xampp\\www\\use-matias" },
-      { name: "Hotly", path: "C:\\xampp\\www\\hotly-ia" },
-      { name: "Deusa Tips", path: "C:\\xampp\\www\\bot_sinais" },
-      { name: "Zeno DJ AI", path: "C:\\xampp\\www\\zeno-dj-ai" },
-      { name: "Jarvis Bot", path: "C:\\xampp\\www\\jarvis-bot" },
+      { name: "Meu Projeto", path: "C:\\caminho\\do\\repositorio" },
     ],
     intervalSeconds: 30,
     collapsed: false,
@@ -34,6 +29,7 @@ function getDefaultConfig() {
     locked: false,
     windowX: null,
     windowY: null,
+    windowHeight: 420,
     anthropicKey: '',
     githubToken: '',
     ghostZone: null
@@ -70,7 +66,7 @@ function createWindow() {
 
   mainWindow = new BrowserWindow({
     width: 300,
-    height: 420,
+    height: config.windowHeight || 420,
     x: winX,
     y: winY,
     frame: false,
@@ -350,7 +346,7 @@ ipcMain.handle('test-repo', (_, repoPath) => {
 ipcMain.handle('minimize-app', () => {
   config.collapsed = !config.collapsed;
   saveConfig(config);
-  mainWindow.setSize(300, config.collapsed ? 38 : 420);
+  mainWindow.setSize(300, config.collapsed ? 38 : (config.windowHeight || 420));
   return config.collapsed;
 });
 
@@ -384,6 +380,13 @@ ipcMain.handle('set-locked', (_, locked) => {
   config.locked = locked;
   saveConfig(config);
   mainWindow.setMovable(!locked);
+});
+
+ipcMain.handle('resize-height', (_, height) => {
+  const h = Math.max(150, Math.min(900, Math.round(height)));
+  mainWindow.setSize(300, h);
+  config.windowHeight = h;
+  saveConfig(config);
 });
 
 ipcMain.handle('save-anthropic-key', (_, key) => {
