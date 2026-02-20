@@ -264,6 +264,7 @@ ipcMain.handle('set-interval', (_, seconds) => {
 });
 
 ipcMain.handle('close-app', () => app.quit());
+ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
 ipcMain.handle('check-for-updates', () => {
   if (app.isPackaged) {

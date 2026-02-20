@@ -404,6 +404,18 @@
     </select>
   </div>
 
+  <!-- Versão -->
+  <div class="interval-section" style="justify-content: space-between; margin-bottom: 14px;">
+    <div>
+      <div style="font-size: 11px; color: var(--text); font-weight: 600;">Git Monitor</div>
+      <div style="font-size: 10px; color: var(--text-dim); margin-top: 2px;">by <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://github.com/ronydrop')" style="color:var(--blue); text-decoration:none;">@rony_drop</a></div>
+    </div>
+    <div style="text-align: right;">
+      <div style="font-size: 11px; color: var(--text-dim);">versão</div>
+      <div style="font-size: 13px; color: var(--text); font-weight: 600;" id="appVersion">...</div>
+    </div>
+  </div>
+
   <!-- Atalho -->
   <div class="section-label">Atalho do teclado</div>
   <div class="interval-section" style="flex-direction: column; align-items: flex-start; gap: 6px;">
@@ -439,6 +451,9 @@
 
   // ---- Init ----
   async function init() {
+    const version = await ipcRenderer.invoke('get-app-version');
+    document.getElementById('appVersion').textContent = `v${version}`;
+
     const config = await ipcRenderer.invoke('get-config');
     document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
     document.getElementById('anthropicKey').value = config.anthropicKey || '';
