@@ -364,7 +364,9 @@ ipcMain.handle('test-repo', (_, repoPath) => {
 ipcMain.handle('minimize-app', () => {
   config.collapsed = !config.collapsed;
   saveConfig(config);
-  mainWindow.setSize(300, config.collapsed ? 38 : (config.windowHeight || 420));
+  const [x, y] = mainWindow.getPosition();
+  const newH = config.collapsed ? 38 : (config.windowHeight || 420);
+  mainWindow.setBounds({ x, y, width: 300, height: newH }, false);
   return config.collapsed;
 });
 
@@ -636,7 +638,8 @@ app.whenReady().then(() => {
   createWindow();
 
   if (config.collapsed) {
-    mainWindow.setSize(300, 38);
+    const [x, y] = mainWindow.getPosition();
+    mainWindow.setBounds({ x, y, width: 300, height: 38 }, false);
   }
 
   const iconPath = app.isPackaged
