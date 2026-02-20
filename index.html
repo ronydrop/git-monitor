@@ -530,7 +530,9 @@
   /* ---- Collapsed ---- */
   .container.collapsed .repo-list,
   .container.collapsed .status-bar,
-  .container.collapsed .controls-bar {
+  .container.collapsed .controls-bar,
+  .container.collapsed .resize-handle,
+  .container.collapsed .credits {
     display: none;
   }
 
@@ -620,6 +622,11 @@
 
   <!-- Resize handle -->
   <div class="resize-handle" id="resizeHandle"></div>
+
+  <!-- Credits -->
+  <div style="text-align:center; padding: 3px 0 4px; font-size: 8px; color: var(--text-dim); letter-spacing: 0.3px; flex-shrink:0; -webkit-app-region: no-drag;">
+    by <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://github.com/ronydrop')" style="color:var(--text-dim); text-decoration:none;">@rony_drop</a>
+  </div>
 </div>
 
 <div class="commit-toast" id="commitToast"></div>

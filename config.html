@@ -426,6 +426,7 @@
 
 <div class="footer">
   <button class="btn-save" onclick="save()">✓ Salvar configurações</button>
+  <button class="btn-cancel" id="btnCheckUpdate" onclick="checkUpdate()" style="color: var(--blue); border-color: var(--border);" title="Verificar atualizações">↻ Atualizar</button>
   <button class="btn-cancel" onclick="cancelAndClose()">Cancelar</button>
 </div>
 
@@ -523,9 +524,21 @@
   // ---- Browse folder ----
   async function browse(btn) {
     const result = await ipcRenderer.invoke('open-dialog');
-    if (result) {
-      btn.closest('.path-row').querySelector('.path-input').value = result;
-      resetTestBtn(btn.closest('.path-row').querySelector('.btn-test'));
+    if (!result) return;
+
+    const card = btn.closest('.repo-card');
+    card.querySelector('.path-input').value = result;
+    resetTestBtn(card.querySelector('.btn-test'));
+
+    // Preenche o nome automaticamente se ainda estiver vazio
+    const nameInput = card.querySelector('.name-input');
+    if (!nameInput.value.trim()) {
+      const name = await ipcRenderer.invoke('read-project-name', result);
+      if (name) {
+        nameInput.value = name;
+        nameInput.style.borderColor = 'var(--green)';
+        setTimeout(() => { nameInput.style.borderColor = ''; }, 2000);
+      }
     }
   }
 
@@ -578,6 +591,17 @@
 
   function cancelAndClose() {
     ipcRenderer.invoke('close-config-window');
+  }
+
+  async function checkUpdate() {
+    const btn = document.getElementById('btnCheckUpdate');
+    btn.textContent = '⏳ Verificando...';
+    btn.disabled = true;
+    await ipcRenderer.invoke('check-for-updates');
+    setTimeout(() => {
+      btn.textContent = '↻ Atualizar';
+      btn.disabled = false;
+    }, 3000);
   }
 
   // ---- Helpers ----

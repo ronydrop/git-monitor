@@ -256,6 +256,9 @@ ipcMain.handle('set-interval', (_, seconds) => {
 
 ipcMain.handle('close-app', () => app.quit());
 ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
+ipcMain.handle('check-for-updates', () => {
+  if (app.isPackaged) autoUpdater.checkForUpdates();
+});
 
 // ---- Zone select ----
 let zoneWindow = null;
@@ -361,6 +364,35 @@ ipcMain.handle('test-repo', (_, repoPath) => {
   }
 });
 
+ipcMain.handle('read-project-name', (_, repoPath) => {
+  // Variáveis comuns de nome de projeto em .env
+  const nameKeys = [
+    'APP_NAME', 'NEXT_PUBLIC_APP_NAME', 'VITE_APP_NAME',
+    'PROJECT_NAME', 'APPLICATION_NAME', 'REACT_APP_NAME',
+    'APP_TITLE', 'SITE_NAME', 'NAME'
+  ];
+
+  // Arquivos .env a tentar (em ordem de prioridade)
+  const envFiles = ['.env', '.env.local', '.env.development', '.env.production'];
+
+  for (const envFile of envFiles) {
+    const envPath = path.join(repoPath, envFile);
+    if (!fs.existsSync(envPath)) continue;
+    try {
+      const content = fs.readFileSync(envPath, 'utf8');
+      for (const key of nameKeys) {
+        const match = content.match(new RegExp(`^${key}\\s*=\\s*["']?([^"'\\r\\n]+)["']?`, 'm'));
+        if (match && match[1].trim()) {
+          return match[1].trim().replace(/^["']|["']$/g, '');
+        }
+      }
+    } catch (e) { }
+  }
+
+  // Fallback: nome da pasta do projeto
+  return path.basename(repoPath);
+});
+
 ipcMain.handle('minimize-app', () => {
   config.collapsed = !config.collapsed;
   saveConfig(config);
@@ -406,10 +438,12 @@ let resizeInterval = null;
 
 ipcMain.on('resize-start', () => {
   if (resizeInterval) clearInterval(resizeInterval);
+
   const startCursorY = screen.getCursorScreenPoint().y;
-  const startHeight = mainWindow.getSize()[1];
-  // Congela X/Y para que só a altura mude, sem a janela se mover
+  const startHeight  = mainWindow.getSize()[1];
   const [fixedX, fixedY] = mainWindow.getPosition();
+  // scaleFactor converte pixels físicos (cursor) → pixels lógicos (janela)
+  const scaleFactor = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).scaleFactor;
 
   resizeInterval = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -417,10 +451,9 @@ ipcMain.on('resize-start', () => {
       return;
     }
     const cursorY = screen.getCursorScreenPoint().y;
-    const delta = cursorY - startCursorY;
+    const delta = (cursorY - startCursorY) / scaleFactor;
     const newH = Math.max(150, Math.min(900, Math.round(startHeight + delta)));
-    // setBounds mantém X/Y fixos, só altera a altura
-    mainWindow.setBounds({ x: fixedX, y: fixedY, width: 300, height: newH }, false);
+    mainWindow.setBounds({ x: fixedX, y: fixedY, width: 300, height: newH });
   }, 16);
 });
 
