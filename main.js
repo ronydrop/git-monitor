@@ -3,6 +3,7 @@ const path = require('path');
 const { exec } = require('child_process');
 const fs = require('fs');
 const Anthropic = require('@anthropic-ai/sdk');
+const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
 
 function execAsync(cmd, opts) {
@@ -47,6 +48,8 @@ function getDefaultConfig() {
     windowY: null,
     windowHeight: 420,
     anthropicKey: '',
+    openaiKey: '',
+    aiProvider: 'anthropic',
     githubToken: '',
     ghostZone: null
   };
@@ -490,41 +493,17 @@ ipcMain.handle('save-anthropic-key', (_, key) => {
   saveConfig(config);
 });
 
-ipcMain.handle('commit-and-push', async (_, repoPath) => {
-  try {
-    // Checa se há mudanças não commitadas
-    const statusOutput = (await execAsync('git status --porcelain', { cwd: repoPath, timeout: 5000 })).trim();
-    const hasUncommitted = statusOutput.length > 0;
+ipcMain.handle('save-openai-key', (_, key) => {
+  config.openaiKey = key;
+  saveConfig(config);
+});
 
-    if (hasUncommitted && !config.anthropicKey) {
-      return { ok: false, error: 'API key da Anthropic não configurada.' };
-    }
+ipcMain.handle('save-ai-provider', (_, provider) => {
+  config.aiProvider = provider;
+  saveConfig(config);
+});
 
-    let title = 'Push de commits pendentes';
-    let body = '';
-
-    if (hasUncommitted) {
-      // Coleta o diff atual (staged + unstaged)
-      let diff = '';
-      try {
-        const staged   = await execAsync('git diff --cached', { cwd: repoPath, timeout: 8000 });
-        const unstaged = await execAsync('git diff', { cwd: repoPath, timeout: 8000 });
-        diff = (staged + unstaged).trim();
-      } catch (e) { diff = ''; }
-
-      if (!diff) {
-        diff = statusOutput || 'Mudanças sem diff disponível';
-      }
-
-      const diffTruncated = diff.length > 6000 ? diff.substring(0, 6000) + '\n\n[diff truncado por tamanho]' : diff;
-
-      const client = new Anthropic({ apiKey: config.anthropicKey });
-      const msg = await client.messages.create({
-        model: 'claude-haiku-4-5',
-        max_tokens: 300,
-        messages: [{
-          role: 'user',
-          content: `Você é um especialista em Git. Analise as mudanças abaixo e gere uma mensagem de commit em PORTUGUÊS BRASILEIRO.
+const COMMIT_PROMPT = (diff) => `Você é um especialista em Git. Analise as mudanças abaixo e gere uma mensagem de commit em PORTUGUÊS BRASILEIRO.
 
 Formato obrigatório (responda APENAS com a mensagem, sem explicações adicionais):
 Linha 1: título curto e direto (máximo 60 caracteres), no imperativo (ex: "Adiciona", "Corrige", "Atualiza")
@@ -533,12 +512,74 @@ Linhas seguintes: descrição concisa das principais mudanças (máximo 3 linhas
 
 Mudanças:
 \`\`\`
-${diffTruncated}
-\`\`\``
-        }]
-      });
+${diff}
+\`\`\``;
 
-      const commitMsg = msg.content[0].text.trim();
+async function generateCommitMessage(diff) {
+  const primary   = config.aiProvider || 'anthropic';
+  const secondary = primary === 'anthropic' ? 'openai' : 'anthropic';
+
+  const tryAnthropic = async () => {
+    if (!config.anthropicKey) throw new Error('Anthropic key não configurada');
+    const client = new Anthropic({ apiKey: config.anthropicKey });
+    const msg = await client.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }]
+    });
+    return msg.content[0].text.trim();
+  };
+
+  const tryOpenAI = async () => {
+    if (!config.openaiKey) throw new Error('OpenAI key não configurada');
+    const client = new OpenAI({ apiKey: config.openaiKey });
+    const msg = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }]
+    });
+    return msg.choices[0].message.content.trim();
+  };
+
+  const providers = { anthropic: tryAnthropic, openai: tryOpenAI };
+
+  try {
+    return await providers[primary]();
+  } catch (primaryErr) {
+    try {
+      const result = await providers[secondary]();
+      return result; // retornou pelo fallback
+    } catch (secondaryErr) {
+      throw new Error(`Ambos os providers falharam. ${primary}: ${primaryErr.message}. ${secondary}: ${secondaryErr.message}`);
+    }
+  }
+}
+
+ipcMain.handle('commit-and-push', async (_, repoPath) => {
+  try {
+    // Checa se há mudanças não commitadas
+    const statusOutput = (await execAsync('git status --porcelain', { cwd: repoPath, timeout: 5000 })).trim();
+    const hasUncommitted = statusOutput.length > 0;
+
+    if (hasUncommitted && !config.anthropicKey && !config.openaiKey) {
+      return { ok: false, error: 'Nenhuma API key de IA configurada (Anthropic ou OpenAI).' };
+    }
+
+    let title = 'Push de commits pendentes';
+    let body = '';
+
+    if (hasUncommitted) {
+      let diff = '';
+      try {
+        const staged   = await execAsync('git diff --cached', { cwd: repoPath, timeout: 8000 });
+        const unstaged = await execAsync('git diff', { cwd: repoPath, timeout: 8000 });
+        diff = (staged + unstaged).trim();
+      } catch (e) { diff = ''; }
+
+      if (!diff) diff = statusOutput || 'Mudanças sem diff disponível';
+
+      const diffTruncated = diff.length > 6000 ? diff.substring(0, 6000) + '\n\n[diff truncado]' : diff;
+      const commitMsg = await generateCommitMessage(diffTruncated);
       const lines = commitMsg.split('\n');
       title = lines[0].trim();
       body = lines.slice(1).join('\n').trim();

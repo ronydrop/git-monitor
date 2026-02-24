@@ -371,13 +371,36 @@
 
   <!-- Anthropic API Key -->
   <div class="section-label">IA para commits</div>
-  <div class="interval-section" style="flex-direction: column; align-items: flex-start; gap: 8px;">
-    <label style="color: var(--text-dim); font-size: 10px;">Chave API da Anthropic (Claude) — usada para gerar mensagens de commit</label>
-    <div style="display: flex; gap: 6px; width: 100%;">
-      <input type="password" id="anthropicKey" placeholder="sk-ant-..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
-      <button onclick="toggleKeyVisibility()" id="btnShowKey" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit; white-space: nowrap;">👁</button>
+  <div class="interval-section" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+
+    <!-- Provider selector -->
+    <div style="width: 100%;">
+      <label style="color: var(--text-dim); font-size: 10px; display: block; margin-bottom: 6px;">Provider principal (fallback automático para o outro)</label>
+      <div style="display: flex; gap: 6px;">
+        <button id="btnProviderAnthropic" onclick="setProvider('anthropic')" style="flex:1; padding: 5px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; font-family: inherit; font-size: 10px; transition: all 0.15s;">Claude (Anthropic)</button>
+        <button id="btnProviderOpenai" onclick="setProvider('openai')" style="flex:1; padding: 5px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; font-family: inherit; font-size: 10px; transition: all 0.15s;">GPT-4o mini (OpenAI)</button>
+      </div>
     </div>
-    <a href="https://console.anthropic.com/settings/keys" target="_blank" style="font-size: 9.5px; color: var(--blue); text-decoration: none;">↗ Obter chave em console.anthropic.com</a>
+
+    <!-- Anthropic -->
+    <div style="width: 100%;">
+      <label style="color: var(--text-dim); font-size: 10px; display: block; margin-bottom: 4px;">Anthropic API Key</label>
+      <div style="display: flex; gap: 6px;">
+        <input type="password" id="anthropicKey" placeholder="sk-ant-..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
+        <button onclick="toggleKeyVisibility()" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit;">👁</button>
+      </div>
+      <a href="https://console.anthropic.com/settings/keys" target="_blank" style="font-size: 9px; color: var(--blue); text-decoration: none;">↗ console.anthropic.com</a>
+    </div>
+
+    <!-- OpenAI -->
+    <div style="width: 100%;">
+      <label style="color: var(--text-dim); font-size: 10px; display: block; margin-bottom: 4px;">OpenAI API Key (fallback)</label>
+      <div style="display: flex; gap: 6px;">
+        <input type="password" id="openaiKey" placeholder="sk-..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
+        <button onclick="toggleOpenaiVisibility()" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit;">👁</button>
+      </div>
+      <a href="https://platform.openai.com/api-keys" target="_blank" style="font-size: 9px; color: var(--blue); text-decoration: none;">↗ platform.openai.com</a>
+    </div>
   </div>
 
   <!-- GitHub Token -->
@@ -457,7 +480,9 @@
     const config = await ipcRenderer.invoke('get-config');
     document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
     document.getElementById('anthropicKey').value = config.anthropicKey || '';
+    document.getElementById('openaiKey').value = config.openaiKey || '';
     document.getElementById('githubToken').value = config.githubToken || '';
+    setProvider(config.aiProvider || 'anthropic');
     const list = document.getElementById('repoList');
     list.innerHTML = '';
     (config.repos || []).forEach(r => addRepo(r.name, r.path));
@@ -469,9 +494,27 @@
     inp.type = inp.type === 'password' ? 'text' : 'password';
   }
 
+  function toggleOpenaiVisibility() {
+    const inp = document.getElementById('openaiKey');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+  }
+
   function toggleGhVisibility() {
     const inp = document.getElementById('githubToken');
     inp.type = inp.type === 'password' ? 'text' : 'password';
+  }
+
+  function setProvider(provider) {
+    const btnA = document.getElementById('btnProviderAnthropic');
+    const btnO = document.getElementById('btnProviderOpenai');
+    const isAnthropic = provider === 'anthropic';
+    btnA.style.background = isAnthropic ? 'var(--blue-bg)' : 'transparent';
+    btnA.style.color      = isAnthropic ? 'var(--blue)' : 'var(--text-dim)';
+    btnA.style.borderColor = isAnthropic ? 'var(--blue)' : 'var(--border)';
+    btnO.style.background = !isAnthropic ? 'var(--blue-bg)' : 'transparent';
+    btnO.style.color      = !isAnthropic ? 'var(--blue)' : 'var(--text-dim)';
+    btnO.style.borderColor = !isAnthropic ? 'var(--blue)' : 'var(--border)';
+    ipcRenderer.invoke('save-ai-provider', provider);
   }
 
   // ---- Add repo card ----
@@ -595,10 +638,12 @@
 
     const interval = parseInt(document.getElementById('intervalSelect').value);
     const anthropicKey = document.getElementById('anthropicKey').value.trim();
+    const openaiKey    = document.getElementById('openaiKey').value.trim();
+    const githubToken  = document.getElementById('githubToken').value.trim();
     await ipcRenderer.invoke('save-repos', repos);
     await ipcRenderer.invoke('set-interval', interval);
-    const githubToken = document.getElementById('githubToken').value.trim();
     await ipcRenderer.invoke('save-anthropic-key', anthropicKey);
+    await ipcRenderer.invoke('save-openai-key', openaiKey);
     await ipcRenderer.invoke('save-github-token', githubToken);
     showToast('Configurações salvas!', 'success');
     setTimeout(() => ipcRenderer.invoke('close-config-window'), 700);
