@@ -6,6 +6,20 @@ const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
 
+// Garante que o PATH inclui locais comuns do Git no Windows
+const GIT_PATHS = [
+  'C:\\Program Files\\Git\\cmd',
+  'C:\\Program Files\\Git\\bin',
+  'C:\\Program Files (x86)\\Git\\cmd',
+  'C:\\Program Files (x86)\\Git\\bin',
+  path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Git', 'cmd'),
+  path.join(process.env.USERPROFILE  || '', 'AppData', 'Local', 'Programs', 'Git', 'cmd'),
+];
+const extraPaths = GIT_PATHS.filter(p => fs.existsSync(p)).join(path.delimiter);
+if (extraPaths) {
+  process.env.PATH = extraPaths + path.delimiter + (process.env.PATH || '');
+}
+
 function execAsync(cmd, opts) {
   return new Promise((resolve, reject) => {
     exec(cmd, { windowsHide: true, ...opts }, (err, stdout) => {
