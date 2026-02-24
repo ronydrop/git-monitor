@@ -1116,18 +1116,25 @@
   // ---- Auto-update ----
   ipcRenderer.on('update-status', (_, status) => {
     const banner = document.getElementById('updateBanner');
-    const msg = document.getElementById('updateMsg');
-    const btn = document.getElementById('updateBtn');
+    const msg    = document.getElementById('updateMsg');
+    const btn    = document.getElementById('updateBtn');
 
     if (status.type === 'available') {
-      msg.textContent = `Nova versão v${status.version} disponível, baixando...`;
+      msg.textContent = `v${status.version} disponível — iniciando download...`;
       btn.style.display = 'none';
       banner.classList.add('show');
+
+    } else if (status.type === 'downloading') {
+      msg.textContent = `Baixando v${status.version || ''}... ${status.percent}%`;
+      btn.style.display = 'none';
+      banner.classList.add('show');
+
     } else if (status.type === 'ready') {
-      msg.textContent = 'Atualização pronta! Reinicie para aplicar.';
-      btn.textContent = 'Reiniciar agora';
+      msg.textContent = `v${status.version || ''} pronta — reinicie para aplicar`;
+      btn.textContent = '↻ Reiniciar agora';
       btn.style.display = '';
       banner.classList.add('show');
+
     } else if (status.type === 'error') {
       banner.classList.remove('show');
     }

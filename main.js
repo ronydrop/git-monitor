@@ -966,8 +966,13 @@ app.whenReady().then(() => {
       sendUpdate({ type: 'latest' });
     });
 
-    autoUpdater.on('update-downloaded', () => {
-      sendUpdate({ type: 'ready' });
+    autoUpdater.on('download-progress', (info) => {
+      const pct = Math.round(info.percent);
+      sendUpdate({ type: 'downloading', version: info.version, percent: pct });
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+      sendUpdate({ type: 'ready', version: info.version });
     });
 
     autoUpdater.on('error', (err) => {
