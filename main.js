@@ -122,20 +122,32 @@ function createWindow() {
   let fadeAnim = null;
 
   function fadeOpacity(from, to, durationMs) {
-    if (fadeAnim) clearInterval(fadeAnim);
+    if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
+    if (!mainWindow || mainWindow.isDestroyed()) return;
     const steps = 10;
     const stepMs = durationMs / steps;
     let step = 0;
     fadeAnim = setInterval(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        clearInterval(fadeAnim);
+        fadeAnim = null;
+        return;
+      }
       step++;
       const t = step / steps;
-      // ease-out
       const ease = 1 - Math.pow(1 - t, 2);
       const val = from + (to - from) * ease;
-      mainWindow.setOpacity(Math.max(0.05, Math.min(1, val)));
+      try {
+        mainWindow.setOpacity(Math.max(0.05, Math.min(1, val)));
+      } catch (e) { clearInterval(fadeAnim); fadeAnim = null; }
       if (step >= steps) { clearInterval(fadeAnim); fadeAnim = null; }
     }, stepMs);
   }
+
+  // Limpa tudo ao fechar a janela
+  mainWindow.on('closed', () => {
+    if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
+  });
 
   setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
