@@ -118,17 +118,20 @@ function createWindow() {
 
   // ---- Ghost mode: polling de cursor vs zona definida ----
   let isGhost = false;
+  let isHovered = false;
   let fadeAnim = null;
 
   function fadeOpacity(from, to, durationMs) {
     if (fadeAnim) clearInterval(fadeAnim);
-    const steps = 8;
+    const steps = 10;
     const stepMs = durationMs / steps;
     let step = 0;
     fadeAnim = setInterval(() => {
       step++;
       const t = step / steps;
-      const val = from + (to - from) * t;
+      // ease-out
+      const ease = 1 - Math.pow(1 - t, 2);
+      const val = from + (to - from) * ease;
       mainWindow.setOpacity(Math.max(0.05, Math.min(1, val)));
       if (step >= steps) { clearInterval(fadeAnim); fadeAnim = null; }
     }, stepMs);
@@ -136,20 +139,36 @@ function createWindow() {
 
   setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (configWindow && !configWindow.isDestroyed()) {
-      if (isGhost) { isGhost = false; fadeOpacity(0.08, config.opacity || 1.0, 180); }
-      return;
-    }
-    if (!config.ghostZone) {
-      if (isGhost) { isGhost = false; fadeOpacity(0.08, config.opacity || 1.0, 180); }
-      return;
-    }
 
     const cursor = screen.getCursorScreenPoint();
-
     const wb = mainWindow.getBounds();
     const onWidget = cursor.x >= wb.x && cursor.x < wb.x + wb.width
                   && cursor.y >= wb.y && cursor.y < wb.y + wb.height;
+
+    // Mouse entrou no widget → sempre 100% com fade suave
+    if (onWidget && !isHovered) {
+      isHovered = true;
+      isGhost = false;
+      const current = mainWindow.getOpacity();
+      if (current < 0.99) fadeOpacity(current, 1.0, 180);
+      return;
+    }
+
+    // Mouse saiu do widget → volta à opacidade configurada
+    if (!onWidget && isHovered) {
+      isHovered = false;
+      const target = config.opacity || 1.0;
+      fadeOpacity(1.0, target, 200);
+    }
+
+    if (configWindow && !configWindow.isDestroyed()) {
+      if (isGhost) { isGhost = false; fadeOpacity(mainWindow.getOpacity(), config.opacity || 1.0, 180); }
+      return;
+    }
+    if (!config.ghostZone || onWidget) {
+      if (isGhost) { isGhost = false; fadeOpacity(mainWindow.getOpacity(), config.opacity || 1.0, 180); }
+      return;
+    }
 
     const z = config.ghostZone;
     const inZone = cursor.x >= z.x && cursor.x < z.x + z.width
@@ -159,7 +178,7 @@ function createWindow() {
 
     if (shouldGhost && !isGhost) {
       isGhost = true;
-      fadeOpacity(config.opacity || 1.0, 0.08, 200);
+      fadeOpacity(config.opacity || 1.0, 0.08, 220);
     } else if (!shouldGhost && isGhost) {
       isGhost = false;
       fadeOpacity(0.08, config.opacity || 1.0, 180);
@@ -515,6 +534,26 @@ Mudanças:
 ${diff}
 \`\`\``;
 
+function friendlyAiError(provider, err) {
+  const msg = err.message || String(err);
+  // Extrai mensagem legível de erros JSON da API
+  try {
+    const json = JSON.parse(msg.match(/\{.*\}/s)?.[0] || '{}');
+    const detail = json?.error?.message || json?.message || '';
+    if (detail) {
+      if (/credit|balance|billing|quota|insufficient/i.test(detail)) return `${provider}: saldo insuficiente — verifique seu plano`;
+      if (/invalid.*key|api.key|authentication|unauthorized/i.test(detail)) return `${provider}: API key inválida`;
+      if (/rate.limit|too many/i.test(detail)) return `${provider}: limite de requisições atingido`;
+      return `${provider}: ${detail.substring(0, 80)}`;
+    }
+  } catch (_) {}
+  if (/key não configurada/i.test(msg)) return `${provider}: key não configurada`;
+  if (/credit|balance|billing/i.test(msg)) return `${provider}: saldo insuficiente`;
+  if (/invalid.*key|authentication|401/i.test(msg)) return `${provider}: API key inválida`;
+  if (/rate.limit|429/i.test(msg)) return `${provider}: limite atingido`;
+  return `${provider}: erro ao gerar commit`;
+}
+
 async function generateCommitMessage(diff) {
   const primary   = config.aiProvider || 'anthropic';
   const secondary = primary === 'anthropic' ? 'openai' : 'anthropic';
@@ -547,10 +586,11 @@ async function generateCommitMessage(diff) {
     return await providers[primary]();
   } catch (primaryErr) {
     try {
-      const result = await providers[secondary]();
-      return result; // retornou pelo fallback
+      return await providers[secondary]();
     } catch (secondaryErr) {
-      throw new Error(`Ambos os providers falharam. ${primary}: ${primaryErr.message}. ${secondary}: ${secondaryErr.message}`);
+      const e1 = friendlyAiError(primary, primaryErr);
+      const e2 = friendlyAiError(secondary, secondaryErr);
+      throw new Error(`${e1} · ${e2}`);
     }
   }
 }
@@ -735,7 +775,7 @@ ipcMain.handle('git-pull', async (_, repoPath) => {
 
 ipcMain.handle('open-terminal', (_, folderPath, projectName) => {
   const t = projectName || folderPath;
-  const tab1 = `new-tab -d "${folderPath}" cmd /k "claude --resume && title ${t}"`;
+  const tab1 = `new-tab --title "${t}" -d "${folderPath}" cmd /k "title ${t} && claude"`;
   const tab2 = `new-tab --title "${t}" -d "${folderPath}" cmd /k "title ${t}"`;
   exec(`wt ${tab1} ; ${tab2}`, { windowsHide: false });
 });

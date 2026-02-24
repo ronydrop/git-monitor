@@ -389,7 +389,7 @@
         <input type="password" id="anthropicKey" placeholder="sk-ant-..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
         <button onclick="toggleKeyVisibility()" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit;">👁</button>
       </div>
-      <a href="https://console.anthropic.com/settings/keys" target="_blank" style="font-size: 9px; color: var(--blue); text-decoration: none;">↗ console.anthropic.com</a>
+      <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://console.anthropic.com/settings/keys')" style="font-size: 9px; color: var(--blue); text-decoration: none;">↗ console.anthropic.com</a>
     </div>
 
     <!-- OpenAI -->
@@ -399,7 +399,7 @@
         <input type="password" id="openaiKey" placeholder="sk-..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
         <button onclick="toggleOpenaiVisibility()" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit;">👁</button>
       </div>
-      <a href="https://platform.openai.com/api-keys" target="_blank" style="font-size: 9px; color: var(--blue); text-decoration: none;">↗ platform.openai.com</a>
+      <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://platform.openai.com/api-keys')" style="font-size: 9px; color: var(--blue); text-decoration: none;">↗ platform.openai.com</a>
     </div>
   </div>
 
@@ -411,7 +411,7 @@
       <input type="password" id="githubToken" placeholder="ghp_..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
       <button onclick="toggleGhVisibility()" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit; white-space: nowrap;">👁</button>
     </div>
-    <a href="https://github.com/settings/tokens" target="_blank" style="font-size: 9.5px; color: var(--blue); text-decoration: none;">↗ Criar token em github.com/settings/tokens (escopo: repo)</a>
+    <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/tokens')" style="font-size: 9.5px; color: var(--blue); text-decoration: none;">↗ Criar token em github.com/settings/tokens (escopo: repo)</a>
   </div>
 
   <!-- Interval -->

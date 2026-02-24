@@ -1009,10 +1009,14 @@
   let commitToastTimer = null;
   function showCommitToast(type, msg) {
     const el = document.getElementById('commitToast');
-    el.textContent = msg;
+    const icon = type === 'ok' ? '✓' : '⚠';
+    // Limita tamanho e remove caracteres desnecessários
+    const clean = msg.replace(/^\s*[✓✕⚠×]\s*/, '').trim().substring(0, 180);
+    el.innerHTML = `<span style="font-weight:700;margin-right:5px;">${icon}</span>${clean}`;
     el.className = `commit-toast show ${type}`;
     clearTimeout(commitToastTimer);
-    commitToastTimer = setTimeout(() => { el.className = 'commit-toast'; }, 4000);
+    const duration = type === 'err' ? 6000 : 3500;
+    commitToastTimer = setTimeout(() => { el.className = 'commit-toast'; }, duration);
   }
 
   // ---- Lock position ----
