@@ -687,7 +687,11 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
         const hasStatusAccess = statusRes.statusCode === 200;
 
         if (!hasCheckAccess && !hasStatusAccess) {
-          return { phase: 'error', detail: `HTTP ${checkRes.statusCode}` };
+          const code = checkRes.statusCode;
+          if (code === 401) return { phase: 'error', detail: 'Token GitHub inválido ou expirado — atualize nas configurações' };
+          if (code === 403) return { phase: 'error', detail: 'Token sem permissão — gere um novo com escopo repo' };
+          if (code === 404) return { phase: 'error', detail: 'Token sem acesso ao repo — verifique permissões' };
+          return { phase: 'error', detail: `Erro ao acessar GitHub (HTTP ${code})` };
         }
 
         // --- GitHub Actions (check-runs) ---
@@ -697,30 +701,35 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
         const runningJob  = runs.find(r => r.status === 'in_progress');
 
         // --- Commit statuses (Vercel, Render, Netlify etc.) ---
-        const statuses = (hasStatusAccess && statusRes.data.statuses) ? statusRes.data.statuses : [];
+        const statuses      = (hasStatusAccess && statusRes.data.statuses) ? statusRes.data.statuses : [];
         const combinedState = hasStatusAccess ? statusRes.data.state : null;
+        const statusTotal   = hasStatusAccess ? (statusRes.data.total_count || 0) : 0;
         const pendingStatuses = statuses.filter(s => s.state === 'pending');
         const failedStatuses  = statuses.filter(s => s.state === 'failure' || s.state === 'error');
         const runningStatus   = pendingStatuses[0];
 
-        // Determina resultado combinado
-        const anyPending = pendingRuns.length > 0 || pendingStatuses.length > 0;
-        const anyFailed  = failedRuns.length > 0 || failedStatuses.length > 0;
-        const hasData    = runs.length > 0 || statuses.length > 0;
-
+        const hasData = runs.length > 0 || statusTotal > 0;
         if (!hasData) return { phase: 'waiting' };
+
+        // Pending: check-runs em andamento OU combined state pendente
+        const anyPending = pendingRuns.length > 0 || combinedState === 'pending';
+
+        // Failed: check-runs falharam OU combined state é failure/error
+        const anyFailed = failedRuns.length > 0 ||
+                          combinedState === 'failure' ||
+                          combinedState === 'error';
 
         if (anyPending) {
           const job = runningJob
             ? runningJob.name
             : runningStatus
               ? (runningStatus.context || 'Deploy em andamento')
-              : `${pendingRuns.length + pendingStatuses.length} em andamento`;
+              : `${pendingRuns.length} em andamento`;
           return {
             phase: 'running',
             job,
-            total: runs.length + statuses.length,
-            done: (runs.length - pendingRuns.length) + (statuses.length - pendingStatuses.length)
+            total: runs.length + statusTotal,
+            done: (runs.length - pendingRuns.length) + (statusTotal - pendingStatuses.length)
           };
         }
 
@@ -729,7 +738,8 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
             ...failedRuns.map(r => r.name),
             ...failedStatuses.map(s => s.context || s.description || 'deploy')
           ];
-          return { phase: 'failure', detail: failedNames.join(', ') };
+          const detail = failedNames.length > 0 ? failedNames.join(', ') : 'deploy falhou';
+          return { phase: 'failure', detail };
         }
 
         return { phase: 'success' };
