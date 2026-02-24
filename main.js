@@ -550,15 +550,25 @@ ipcMain.handle('save-ai-provider', (_, provider) => {
 
 const COMMIT_PROMPT = (diff) => `Você é um especialista em Git. Analise as mudanças abaixo e gere uma mensagem de commit em PORTUGUÊS BRASILEIRO.
 
-Formato obrigatório (responda APENAS com a mensagem, sem explicações adicionais):
-Linha 1: título curto e direto (máximo 60 caracteres), no imperativo (ex: "Adiciona", "Corrige", "Atualiza")
-Linha 2: em branco
-Linhas seguintes: descrição concisa das principais mudanças (máximo 3 linhas)
+REGRAS OBRIGATÓRIAS:
+- Responda APENAS com o texto da mensagem de commit, nada mais
+- NÃO use markdown, NÃO use blocos de código, NÃO use aspas, NÃO use \`\`\`
+- Linha 1: título curto (máximo 60 caracteres), no imperativo (ex: "Adiciona", "Corrige", "Atualiza")
+- Linha 2: em branco
+- Linhas seguintes: descrição concisa das principais mudanças (máximo 3 linhas)
 
 Mudanças:
-\`\`\`
-${diff}
-\`\`\``;
+${diff}`;
+
+function cleanCommitMessage(msg) {
+  // Remove blocos de código markdown (```...```)
+  msg = msg.replace(/^```[\w]*\n?/gm, '').replace(/```$/gm, '');
+  // Remove aspas no início/fim
+  msg = msg.replace(/^["'`]|["'`]$/g, '');
+  // Remove prefixos como "Mensagem de commit:" ou "Commit:"
+  msg = msg.replace(/^(mensagem de commit|commit message|commit):\s*/i, '');
+  return msg.trim();
+}
 
 function friendlyAiError(provider, err) {
   const msg = err.message || String(err);
@@ -592,7 +602,7 @@ async function generateCommitMessage(diff) {
       max_tokens: 300,
       messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }]
     });
-    return msg.content[0].text.trim();
+    return cleanCommitMessage(msg.content[0].text);
   };
 
   const tryOpenAI = async () => {
@@ -603,7 +613,7 @@ async function generateCommitMessage(diff) {
       max_tokens: 300,
       messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }]
     });
-    return msg.choices[0].message.content.trim();
+    return cleanCommitMessage(msg.choices[0].message.content);
   };
 
   const providers = { anthropic: tryAnthropic, openai: tryOpenAI };
