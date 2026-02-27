@@ -2,1166 +2,1225 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Git Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>PC Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+/* ── TOKENS ────────────────────────────────────────── */
+:root {
+  --bg:      #03040a;
+  --surf:    #070c16;
+  --surf2:   #0c1422;
+  --border:  rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.13);
+  --text:    #e2eff9;
+  --text2:   #8aaabf;
+  --text3:   #4d6b82;
+  --cyan:    #00e5ff;
+  --green:   #00ff88;
+  --amber:   #ffc200;
+  --orange:  #ff7a00;
+  --pink:    #ff1f6e;
+  --purple:  #aa44ff;
+  --blue:    #2979ff;
+  --hdr: 44px;
+  --nav: 62px;
+  --r: 10px;
+}
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+/* ── RESET ─────────────────────────────────────────── */
+*,*::before,*::after { margin:0; padding:0; box-sizing:border-box;
+  -webkit-tap-highlight-color: transparent; user-select: none; }
+html, body {
+  width:100%; height:100%; overflow:hidden;
+  background:var(--bg); color:var(--text);
+  font-family:'Space Mono',monospace; font-size:12px;
+  -webkit-font-smoothing:antialiased;
+}
 
-  :root {
-    --bg: #0d1117;
-    --bg-card: #161b22;
-    --bg-hover: #1c2333;
-    --border: #30363d;
-    --text: #e6edf3;
-    --text-dim: #7d8590;
-    --green: #3fb950;
-    --green-bg: rgba(63, 185, 80, 0.1);
-    --yellow: #d29922;
-    --yellow-bg: rgba(210, 153, 34, 0.1);
-    --orange: #db6d28;
-    --orange-bg: rgba(219, 109, 40, 0.1);
-    --red: #f85149;
-    --red-bg: rgba(248, 81, 73, 0.1);
-    --blue: #58a6ff;
-    --blue-bg: rgba(88, 166, 255, 0.1);
+/* ── HEADER ────────────────────────────────────────── */
+.hdr {
+  position:fixed; top:0; left:0; right:0; height:var(--hdr);
+  background:rgba(7,12,22,0.97);
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 12px; z-index:100;
+  -webkit-app-region: drag;
+}
+.hdr-logo {
+  font-family:'Orbitron',monospace; font-size:11px; font-weight:900;
+  letter-spacing:2.5px; color:var(--cyan);
+  text-shadow:0 0 10px rgba(0,229,255,0.4);
+  display:flex; align-items:center; gap:8px;
+}
+.hdr-chips {
+  display:flex; gap:14px; align-items:center;
+  -webkit-app-region: no-drag;
+}
+.hchip {
+  display:flex; align-items:center; gap:5px;
+  font-family:'Orbitron',monospace; font-size:11px; font-weight:700;
+}
+.hchip-dot { width:5px; height:5px; border-radius:50%; }
+.hdr-right {
+  display:flex; align-items:center; gap:8px;
+  -webkit-app-region: no-drag;
+}
+.hdr-clock {
+  font-family:'Orbitron',monospace; font-size:16px; font-weight:700;
+  letter-spacing:1px; color:var(--text);
+}
+.hdr-sec { font-size:10px; color:var(--text3); }
+.hdr-pulse { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green); transition:all .3s; }
+.hdr-btn {
+  width:36px; height:36px; border-radius:8px; cursor:pointer;
+  background:rgba(255,255,255,0.04); border:1px solid var(--border);
+  display:flex; align-items:center; justify-content:center;
+  font-size:14px; color:var(--text2); transition:background .15s;
+}
+.hdr-btn:active { background:rgba(255,255,255,0.1); }
+.hdr-btn.close-btn { background:rgba(255,31,110,0.08); border-color:rgba(255,31,110,0.2); color:var(--pink); }
+.hdr-btn.close-btn:active { background:rgba(255,31,110,0.2); }
+
+/* ── PAGE CONTAINER ────────────────────────────────── */
+.wrap {
+  position:fixed;
+  top:var(--hdr); bottom:var(--nav);
+  left:0; right:0; overflow:hidden;
+}
+.slider {
+  display:flex; height:100%;
+  width:700%; /* 7 pages */
+  transition:transform .35s cubic-bezier(.25,.46,.45,.94);
+  will-change:transform;
+}
+.page {
+  width:calc(100% / 7);
+  height:100%; overflow-y:auto; overflow-x:hidden;
+  padding:12px;
+  display:flex; flex-direction:column; gap:8px;
+}
+
+/* ── BOTTOM NAV ────────────────────────────────────── */
+.nav {
+  position:fixed; bottom:0; left:0; right:0; height:var(--nav);
+  background:rgba(7,12,22,0.98);
+  border-top:1px solid var(--border);
+  display:flex; z-index:100;
+}
+.nbtn {
+  flex:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:3px;
+  background:none; border:none; cursor:pointer;
+  transition:background .15s; position:relative;
+  -webkit-app-region: no-drag;
+}
+.nbtn::after {
+  content:''; position:absolute; top:0; left:15%; right:15%; height:2px;
+  border-radius:0 0 2px 2px; opacity:0; transition:opacity .2s;
+}
+.nbtn.active::after { opacity:1; }
+.nbtn:active { background:rgba(255,255,255,0.04); }
+.nbtn.active { background:rgba(255,255,255,0.025); }
+.nbtn-icon { font-size:18px; line-height:1; }
+.nbtn-lbl {
+  font-family:'Orbitron',monospace; font-size:8px; font-weight:700;
+  letter-spacing:.8px; color:var(--text3); transition:color .2s;
+}
+.nbtn.active .nbtn-lbl { color:var(--text); }
+
+/* ── SECTION HEADER ────────────────────────────────── */
+.sec-hdr {
+  display:flex; align-items:center; justify-content:space-between;
+  flex-shrink:0;
+}
+.sec-title {
+  font-family:'Orbitron',monospace; font-size:10px; font-weight:700;
+  letter-spacing:2px; color:var(--text3); text-transform:uppercase;
+}
+.sec-sub { font-size:10px; color:var(--text3); margin-top:2px; }
+.sec-badge {
+  font-family:'Orbitron',monospace; font-size:11px; font-weight:700;
+  padding:4px 10px; border-radius:20px; letter-spacing:.5px; transition:all .5s;
+}
+.b-cool   { background:rgba(0,255,136,.1);   color:var(--green);  border:1px solid rgba(0,255,136,.25); }
+.b-warm   { background:rgba(255,194,0,.1);   color:var(--amber);  border:1px solid rgba(255,194,0,.25); }
+.b-hot    { background:rgba(255,122,0,.1);   color:var(--orange); border:1px solid rgba(255,122,0,.25); }
+.b-danger { background:rgba(255,31,110,.12); color:var(--pink);   border:1px solid rgba(255,31,110,.3);
+            animation:dangerpulse 1s ease-in-out infinite; }
+.b-na     { background:rgba(255,255,255,.04); color:var(--text3); border:1px solid var(--border); }
+@keyframes dangerpulse { 0%,100%{box-shadow:0 0 8px rgba(255,31,110,.2)}50%{box-shadow:0 0 18px rgba(255,31,110,.5)} }
+
+/* ── BIG METRIC ROW ────────────────────────────────── */
+.metric-row {
+  display:flex; align-items:center; gap:14px;
+  flex-shrink:0;
+}
+.big-num {
+  font-family:'Orbitron',monospace;
+  font-size:clamp(48px,10vw,72px); font-weight:900;
+  line-height:1; transition:color .5s;
+}
+.big-unit { font-size:.38em; color:var(--text2); font-weight:400; }
+.metric-detail { display:flex; flex-direction:column; gap:5px; }
+.md-row { font-size:11px; color:var(--text3); line-height:1.3; }
+.md-row b { color:var(--text); font-weight:700; }
+
+/* ── GAUGE SVG ─────────────────────────────────────── */
+.gauge-wrap { position:relative; flex-shrink:0; }
+
+/* ── INFO CHIPS ────────────────────────────────────── */
+.chips { display:flex; gap:6px; flex-shrink:0; }
+.chip {
+  flex:1; background:var(--surf); border:1px solid var(--border);
+  border-radius:8px; padding:8px 10px;
+}
+.chip-val {
+  font-family:'Orbitron',monospace; font-size:13px; font-weight:700;
+  line-height:1.2; transition:color .5s;
+}
+.chip-lbl { font-size:9px; color:var(--text3); margin-top:3px; letter-spacing:.5px; }
+
+/* ── THIN BAR ──────────────────────────────────────── */
+.bar-t { height:5px; background:rgba(255,255,255,.06); border-radius:3px; overflow:hidden; }
+.bar-f { height:100%; border-radius:3px; transition:width .5s ease,background-color .5s; }
+
+/* ── CORE BARS ─────────────────────────────────────── */
+.cores {
+  display:flex; gap:3px; align-items:flex-end;
+  height:32px; flex-shrink:0;
+}
+.core-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:1px; }
+.core-bg {
+  flex:1; width:100%; background:rgba(255,255,255,.05);
+  border-radius:2px; overflow:hidden; display:flex; align-items:flex-end;
+}
+.core-fill { width:100%; border-radius:2px; transition:height .5s ease,background-color .5s; }
+.core-n { font-size:6px; color:var(--text3); font-family:'Orbitron',monospace; }
+
+/* ── SPARKLINE ─────────────────────────────────────── */
+.spark { flex:1; min-height:30px; position:relative; }
+.spark svg { width:100%; height:100%; }
+.spark-lbl {
+  position:absolute; font-size:8px; color:var(--text3);
+  font-family:'Orbitron',monospace; bottom:0;
+}
+.spark-lbl.l { left:0; }
+.spark-lbl.r { right:0; }
+
+/* ── GPU ROWS ──────────────────────────────────────── */
+.gpu-rows { display:flex; flex-direction:column; gap:6px; flex:1; }
+.gr { display:flex; align-items:center; gap:8px; }
+.gr-lbl { font-size:10px; color:var(--text3); font-family:'Orbitron',monospace; width:72px; flex-shrink:0; letter-spacing:.5px; }
+.gr-val { font-size:11px; font-family:'Orbitron',monospace; font-weight:700; width:88px; flex-shrink:0; text-align:right; transition:color .5s; }
+.gr-bar { flex:1; }
+
+/* ── DISK LIST ─────────────────────────────────────── */
+.disk-list { display:flex; flex-direction:column; gap:6px; overflow-y:auto; flex:1; -webkit-overflow-scrolling:touch; }
+.disk-item {
+  background:var(--surf); border:1px solid var(--border);
+  border-radius:var(--r); padding:10px 12px; flex-shrink:0;
+}
+.disk-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; gap:8px; }
+.disk-name { font-family:'Orbitron',monospace; font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.disk-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.disk-pct { font-family:'Orbitron',monospace; font-size:14px; font-weight:700; }
+.disk-used { font-size:10px; color:var(--text2); flex-shrink:0; }
+.disk-phys { display:flex; flex-direction:column; gap:4px; flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+.disk-phys-item {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:7px 10px; background:var(--surf); border:1px solid var(--border); border-radius:8px;
+}
+.dpi-l { display:flex; flex-direction:column; gap:2px; }
+.dpi-name { font-family:'Orbitron',monospace; font-size:11px; font-weight:700; }
+.dpi-sub { font-size:9px; color:var(--text3); }
+.dpi-r { text-align:right; }
+.dpi-size { font-family:'Orbitron',monospace; font-size:12px; font-weight:700; color:var(--text2); }
+.dpi-smart { font-size:9px; }
+
+/* ── NETWORK ───────────────────────────────────────── */
+.net-big {
+  display:flex; flex-direction:column; gap:10px;
+  align-items:center; justify-content:center; flex:1;
+}
+.net-speed-row { display:flex; align-items:center; gap:12px; }
+.net-arrow { font-size:24px; }
+.net-label { font-family:'Orbitron',monospace; font-size:11px; color:var(--text3); width:80px; letter-spacing:1px; }
+.net-val {
+  font-family:'Orbitron',monospace; font-size:24px; font-weight:900;
+  min-width:150px; transition:color .5s;
+}
+.net-ifaces { display:flex; flex-direction:column; gap:4px; }
+.net-iface-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:6px 10px; background:var(--surf); border:1px solid var(--border); border-radius:8px;
+}
+.net-iname { font-family:'Orbitron',monospace; font-size:10px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; }
+.net-ispeeds { display:flex; gap:12px; font-size:10px; }
+
+/* ── SYSTEM ────────────────────────────────────────── */
+.sys-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.sys-item {
+  background:var(--surf); border:1px solid var(--border);
+  border-radius:8px; padding:10px 12px;
+}
+.sys-lbl { font-size:9px; color:var(--text3); font-family:'Orbitron',monospace; letter-spacing:1px; margin-bottom:4px; }
+.sys-val { font-size:11px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* ── PROCESS LIST ──────────────────────────────────── */
+.proc-hdr {
+  display:flex; gap:6px; padding:4px 10px;
+  font-size:8px; color:var(--text3); font-family:'Orbitron',monospace;
+  letter-spacing:1px; border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.proc-list { display:flex; flex-direction:column; gap:3px; overflow-y:auto; flex:1; -webkit-overflow-scrolling:touch; }
+.proc-row {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 10px; background:var(--surf); border:1px solid var(--border);
+  border-radius:8px;
+}
+.proc-ic { font-size:13px; width:18px; flex-shrink:0; }
+.proc-name { flex:1; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.proc-bar { width:44px; }
+.proc-cpu { font-family:'Orbitron',monospace; font-size:11px; font-weight:700; width:46px; text-align:right; }
+.proc-mem { font-size:10px; color:var(--text2); width:58px; text-align:right; }
+
+/* ── LOADING ───────────────────────────────────────── */
+.loading {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  height:100%; gap:14px;
+}
+.loading-title {
+  font-family:'Orbitron',monospace; font-size:10px; font-weight:700;
+  letter-spacing:3px; color:var(--cyan); text-shadow:0 0 20px rgba(0,229,255,.4);
+  animation:blink 1s step-end infinite;
+}
+@keyframes blink { 0%,100%{opacity:1}50%{opacity:.3} }
+.loading-bar { width:180px; height:2px; background:rgba(255,255,255,.06); border-radius:1px; overflow:hidden; }
+.loading-bar-f { height:100%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); animation:ldp 2s ease-in-out infinite; }
+@keyframes ldp { 0%{width:0}100%{width:100%} }
+
+/* ── BATTERY MINI ──────────────────────────────────── */
+.bat-mini {
+  display:flex; align-items:center; gap:8px;
+  background:var(--surf); border:1px solid var(--border); border-radius:8px;
+  padding:8px 12px; flex-shrink:0;
+}
+.bat-icon { font-size:18px; }
+.bat-pct { font-family:'Orbitron',monospace; font-size:18px; font-weight:900; }
+.bat-info { font-size:10px; color:var(--text3); }
+
+/* scrollbar hide */
+::-webkit-scrollbar { width:3px; }
+::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:2px; }
+::-webkit-scrollbar-track { background:transparent; }
+
+/* ── DASHBOARD MODE (all pages visible side by side) ── */
+@media (min-width: 1000px) {
+  .nav { display:none !important; }
+  .wrap { bottom:0 !important; overflow:hidden !important; }
+  .slider {
+    display:grid !important;
+    grid-template-columns:repeat(7,1fr);
+    grid-template-rows:1fr;
+    width:100% !important;
+    height:100% !important;
+    transform:none !important;
+    transition:none !important;
+    gap:0;
   }
-
-  body {
-    font-family: 'JetBrains Mono', monospace;
-    background: transparent;
-    color: var(--text);
-    font-size: 11px;
-    overflow: hidden;
-    user-select: none;
+  .page {
+    width:100% !important;
+    height:100% !important;
+    overflow-y:auto;
+    overflow-x:hidden;
+    padding:6px 8px;
+    gap:4px;
+    border-right:1px solid var(--border);
   }
+  .page:last-child { border-right:none; }
 
-  .container {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
+  /* section headers */
+  .sec-hdr { gap:4px; }
+  .sec-title { font-size:8px; letter-spacing:1px; }
+  .sec-sub { font-size:7px; }
+  .sec-badge { font-size:8px; padding:2px 5px; }
 
-  /* ---- Update banner ---- */
-  .update-banner {
-    display: none;
-    padding: 6px 12px;
-    background: var(--blue-bg);
-    border-bottom: 1px solid var(--blue);
-    font-size: 9.5px;
-    color: var(--blue);
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-  .update-banner.show { display: flex; }
-  .update-banner button {
-    padding: 2px 8px;
-    border: 1px solid var(--blue);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--blue);
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 9px;
-    white-space: nowrap;
-    transition: all 0.15s;
-  }
-  .update-banner button:hover { background: var(--blue); color: var(--bg); }
+  /* gauges & big numbers */
+  .metric-row { gap:6px; }
+  svg.gauge-wrap { width:48px !important; height:48px !important; }
+  .big-num { font-size:24px !important; }
+  .big-unit { font-size:10px !important; }
+  .metric-detail { gap:1px; }
+  .md-row { font-size:8px; }
 
-  /* ---- Title bar ---- */
-  .titlebar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
-    -webkit-app-region: drag;
-    cursor: grab;
-  }
+  /* chips */
+  .chips { gap:2px; flex-wrap:wrap; }
+  .chip { padding:3px 5px; flex:0 0 calc(50% - 1px); }
+  .chip-val { font-size:9px; }
+  .chip-lbl { font-size:6px; margin-top:1px; }
 
-  .titlebar-left {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
+  /* cores & sparkline */
+  .cores { height:16px; }
+  .core-n { display:none; }
+  .spark { min-height:16px !important; flex:0 0 auto !important; }
+  .spark svg { height:24px; }
+  .spark-lbl { font-size:6px; }
 
-  .titlebar-icon {
-    width: 14px;
-    height: 14px;
-    fill: var(--green);
-  }
+  /* GPU rows */
+  .gpu-rows { gap:2px; flex:0 0 auto !important; }
+  .gr { gap:3px; }
+  .gr-lbl { font-size:7px; width:40px; letter-spacing:0; }
+  .gr-val { font-size:8px; width:auto; min-width:40px; }
+  .gr-bar { min-width:0; }
 
-  .titlebar h1 {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    color: var(--text-dim);
-  }
+  /* Disk */
+  .disk-list { gap:3px; }
+  .disk-item { padding:3px 5px; }
+  .disk-row { margin-bottom:2px; gap:4px; }
+  .disk-name { font-size:8px; }
+  .disk-pct { font-size:9px; }
+  .disk-used { font-size:7px; }
+  .disk-phys { gap:2px; }
+  .disk-phys-item { padding:3px 5px; }
+  .dpi-name { font-size:8px; }
+  .dpi-sub { font-size:6px; }
+  .dpi-size { font-size:9px; }
+  .dpi-smart { font-size:6px; }
 
-  .titlebar-actions {
-    display: flex;
-    gap: 4px;
-    -webkit-app-region: no-drag;
-  }
+  /* Network */
+  .net-big { gap:4px; flex:0 1 auto !important; }
+  .net-speed-row { gap:4px; }
+  .net-arrow { font-size:14px; }
+  .net-label { font-size:7px; width:auto; letter-spacing:.3px; }
+  .net-val { font-size:13px !important; min-width:auto !important; }
+  .net-ifaces { gap:2px; }
+  .net-iface-row { padding:2px 5px; }
+  .net-iname { font-size:7px; max-width:60px; }
+  .net-ispeeds { font-size:7px; gap:4px; }
 
-  .titlebar-actions button {
-    width: 22px;
-    height: 22px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s;
-  }
+  /* System */
+  .sys-grid { grid-template-columns:1fr; gap:2px; }
+  .sys-item { padding:3px 5px; }
+  .sys-lbl { font-size:6px; margin-bottom:0; }
+  .sys-val { font-size:7px; }
 
-  .titlebar-actions button:hover {
-    background: var(--bg-hover);
-    color: var(--text);
-  }
+  /* Processes */
+  .proc-hdr { font-size:6px; padding:2px 5px; gap:3px; }
+  .proc-list { gap:1px; }
+  .proc-row { padding:2px 4px; gap:2px; }
+  .proc-ic { font-size:9px; width:12px; }
+  .proc-name { font-size:7px; }
+  .proc-bar { width:16px; }
+  .proc-cpu { font-size:8px; width:28px; }
+  .proc-mem { font-size:7px; width:34px; }
 
-  .btn-close:hover { background: var(--red-bg) !important; color: var(--red) !important; }
+  /* Battery */
+  .bat-mini { padding:3px 6px; gap:4px; }
+  .bat-icon { font-size:12px; }
+  .bat-pct { font-size:12px; }
+  .bat-info { font-size:7px; }
 
-  /* ---- Status bar ---- */
-  .status-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 12px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    font-size: 10px;
-    color: var(--text-dim);
-  }
-
-  .status-bar .interval-ctrl {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    -webkit-app-region: no-drag;
-  }
-
-  .status-bar select {
-    background: var(--bg-card);
-    color: var(--text-dim);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 10px;
-    font-family: inherit;
-    padding: 1px 4px;
-    cursor: pointer;
-  }
-
-  /* ---- Repo list ---- */
-  .repo-list {
-    overflow-y: auto;
-    flex: 1;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
-  }
-
-  /* ---- Resize handle ---- */
-  .resize-handle {
-    height: 6px;
-    background: transparent;
-    cursor: ns-resize;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.15s;
-  }
-  .resize-handle:hover, .resize-handle.dragging {
-    background: var(--border);
-  }
-  .resize-handle::after {
-    content: '';
-    width: 30px;
-    height: 2px;
-    background: var(--border);
-    border-radius: 2px;
-    transition: background 0.15s;
-  }
-  .resize-handle:hover::after, .resize-handle.dragging::after {
-    background: var(--text-dim);
-  }
-
-  .repo-list::-webkit-scrollbar { width: 4px; }
-  .repo-list::-webkit-scrollbar-track { background: transparent; }
-  .repo-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-
-  .repo-item {
-    display: flex;
-    align-items: center;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.15s;
-    gap: 8px;
-  }
-
-  .repo-item:last-child { border-bottom: none; }
-  .repo-item:hover { background: var(--bg-hover); }
-
-  /* ---- Repo checkbox ---- */
-  .repo-check {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 13px;
-    height: 13px;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: transparent;
-    cursor: pointer;
-    flex-shrink: 0;
-    position: relative;
-    transition: all 0.15s;
-  }
-  .repo-check:checked {
-    background: var(--green);
-    border-color: var(--green);
-  }
-  .repo-check:checked::after {
-    content: '✓';
-    position: absolute;
-    top: -1px;
-    left: 1px;
-    font-size: 9px;
-    color: #0d1117;
-    font-weight: 700;
-  }
-  .repo-check:hover { border-color: var(--green); }
-
-  .repo-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  .repo-dot.clean { background: var(--green); animation: none; }
-  .repo-dot.dirty { background: var(--yellow); }
-  .repo-dot.dirty-ahead { background: var(--orange); }
-  .repo-dot.ahead { background: var(--blue); animation: none; }
-  .repo-dot.behind { background: var(--blue); }
-  .repo-dot.error { background: var(--red); animation: none; }
-
-  .repo-info { flex: 1; min-width: 0; }
-
-  .repo-name {
-    font-weight: 600;
-    font-size: 11px;
-    color: var(--text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .repo-detail {
-    font-size: 9.5px;
-    color: var(--text-dim);
-    margin-top: 1px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .repo-badge {
-    font-size: 9px;
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 10px;
-    white-space: nowrap;
-    flex-shrink: 0;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .badge-clean { background: var(--green-bg); color: var(--green); }
-  .badge-dirty { background: var(--yellow-bg); color: var(--yellow); }
-  .badge-dirty-ahead { background: var(--orange-bg); color: var(--orange); }
-  .badge-ahead { background: var(--blue-bg); color: var(--blue); }
-  .badge-behind { background: var(--blue-bg); color: var(--blue); }
-  .badge-error { background: var(--red-bg); color: var(--red); }
-  .badge-diverged { background: var(--red-bg); color: var(--red); }
-  .repo-dot.diverged { background: var(--red); }
-
-  /* ---- Deploy indicator ---- */
-  .deploy-bar {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 0 0 4px 4px;
-    transition: background 0.3s;
-    animation: deploy-pulse 1.2s ease-in-out infinite;
-  }
-  .deploy-bar.waiting  { background: var(--text-dim); }
-  .deploy-bar.running  { background: var(--yellow); }
-  .deploy-bar.success  { background: var(--green); animation: none; }
-  .deploy-bar.failure  { background: var(--red); animation: none; }
-
-  @keyframes deploy-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
-  .repo-item { position: relative; }
-
-  .deploy-label {
-    font-size: 8.5px;
-    color: var(--text-dim);
-    margin-top: 1px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 140px;
-  }
-  .deploy-label.running { color: var(--yellow); }
-  .deploy-label.success { color: var(--green); }
-  .deploy-label.failure { color: var(--red); }
-
-  /* ---- Push All button ---- */
-  .btn-push-all {
-    padding: 2px 7px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 9px;
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    white-space: nowrap;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-  }
-  .btn-push-all:hover { background: var(--green-bg); color: var(--green); border-color: var(--green); }
-  .btn-push-all span { display: inline-block; }
-  .btn-push-all.running { color: var(--yellow); border-color: var(--yellow); pointer-events: none; }
-  .btn-push-all.running span { animation: spin 0.8s linear infinite; }
-  .btn-push-all.done { color: var(--green); border-color: var(--green); background: var(--green-bg); pointer-events: none; }
-
-  /* ---- Repo action buttons ---- */
-  .repo-actions {
-    display: flex;
-    gap: 3px;
-    flex-shrink: 0;
-  }
-
-  .btn-repo-action {
-    width: 20px;
-    height: 20px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-    padding: 0;
-  }
-  .btn-repo-action:hover { background: var(--bg-hover); color: var(--text); border-color: #3d444d; }
-
-  /* ---- Commit button ---- */
-  .btn-commit {
-    width: 22px;
-    height: 22px;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    background: transparent;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 11px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: all 0.15s;
-    padding: 0;
-  }
-  .btn-commit:hover { background: var(--green-bg); color: var(--green); border-color: var(--green); }
-  .btn-commit.loading  { color: var(--yellow); border-color: var(--yellow); pointer-events: none; }
-  .btn-commit.loading span { animation: spin 0.8s linear infinite; }
-  .btn-commit.deploying { color: var(--blue); border-color: var(--blue); background: var(--blue-bg); pointer-events: none; }
-  .btn-commit.deploying span { animation: spin 1.2s linear infinite; }
-  .btn-commit.deployed  { color: var(--green); border-color: var(--green); background: var(--green-bg); pointer-events: none; }
-  .btn-commit.deploy-fail { color: var(--red); border-color: var(--red); background: var(--red-bg); pointer-events: none; }
-  .btn-commit.fail     { color: var(--red);   border-color: var(--red);   background: var(--red-bg);   }
-
-  .btn-pull {
-    width: 22px;
-    height: 22px;
-    border: 1px solid var(--blue);
-    border-radius: 5px;
-    background: var(--blue-bg);
-    color: var(--blue);
-    cursor: pointer;
-    font-size: 11px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: background 0.15s, color 0.15s;
-    padding: 0;
-  }
-  .btn-pull span { display: inline-block; }
-  .btn-pull:hover { background: var(--blue); color: var(--bg); }
-  .btn-pull.loading { pointer-events: none; }
-  .btn-pull.loading span { animation: spin 0.8s linear infinite; }
-  .btn-pull.done { color: var(--green); border-color: var(--green); background: var(--green-bg); pointer-events: none; }
-  .btn-pull.fail { color: var(--red); border-color: var(--red); background: var(--red-bg); }
-
-  /* ---- Commit toast ---- */
-  .commit-toast {
-    position: fixed;
-    bottom: 10px;
-    left: 10px;
-    right: 10px;
-    padding: 8px 12px;
-    border-radius: 7px;
-    font-size: 10px;
-    line-height: 1.4;
-    z-index: 50;
-    opacity: 0;
-    transform: translateY(6px);
-    transition: all 0.2s;
-    pointer-events: none;
-    word-break: break-word;
-  }
-  .commit-toast.show { opacity: 1; transform: translateY(0); }
-  .commit-toast.ok  { background: var(--green-bg); border: 1px solid var(--green); color: var(--green); }
-  .commit-toast.err { background: var(--red-bg);   border: 1px solid var(--red);   color: var(--red); }
-
-  /* ---- Empty state ---- */
-  .empty-state {
-    text-align: center;
-    padding: 24px 16px;
-    color: var(--text-dim);
-  }
-
-  .empty-state .icon { font-size: 28px; margin-bottom: 8px; }
-  .empty-state p { font-size: 10px; line-height: 1.5; }
-
-  .btn-config {
-    margin-top: 10px;
-    padding: 5px 12px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
-    font-family: inherit;
-    font-size: 10px;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .btn-config:hover { background: var(--bg-hover); border-color: var(--blue); }
-
-
-  /* ---- Controls bar ---- */
-  .controls-bar {
-    display: flex;
-    align-items: center;
-    padding: 5px 8px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    gap: 4px;
-    -webkit-app-region: no-drag;
-    flex-wrap: wrap;
-  }
-
-  .btn-lock {
-    width: 22px;
-    height: 22px;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    background: transparent;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 11px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: all 0.15s;
-  }
-  .btn-lock:hover { background: var(--bg-hover); }
-  .btn-lock.locked { color: var(--orange); border-color: var(--orange); background: var(--orange-bg); }
-
-  .opacity-ctrl {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    flex: 1;
-  }
-
-  input[type="range"].opacity-slider {
-    flex: 1;
-    height: 3px;
-    -webkit-appearance: none;
-    appearance: none;
-    background: var(--border);
-    border-radius: 2px;
-    outline: none;
-    cursor: pointer;
-  }
-  input[type="range"].opacity-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-    background: var(--blue);
-    cursor: pointer;
-    transition: transform 0.1s;
-  }
-  input[type="range"].opacity-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
-
-  .opacity-val {
-    font-size: 8px;
-    color: var(--text-dim);
-    width: 24px;
-    text-align: right;
-    flex-shrink: 0;
-  }
-
-  .ctrl-sep {
-    width: 1px;
-    height: 14px;
-    background: var(--border);
-    flex-shrink: 0;
-  }
-
-  .corner-btns {
-    display: flex;
-    gap: 2px;
-    flex-shrink: 0;
-  }
-
-  .btn-corner {
-    width: 18px;
-    height: 18px;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: transparent;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s;
-    line-height: 1;
-  }
-  .btn-corner:hover { background: var(--bg-hover); color: var(--blue); border-color: var(--blue); }
-  .btn-corner:active { transform: scale(0.9); }
-
-  .btn-zone {
-    height: 18px;
-    padding: 0 5px;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: transparent;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 9px;
-    font-family: inherit;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    white-space: nowrap;
-    flex-shrink: 0;
-    transition: all 0.15s;
-  }
-  .btn-zone:hover { background: var(--bg-hover); color: var(--text); border-color: #3d444d; }
-  .btn-zone.active { color: var(--green); border-color: var(--green); background: var(--green-bg); }
-
-  /* ---- Refresh animation ---- */
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-
-  .btn-refresh {
-    transition: background 0.15s, color 0.15s !important;
-  }
-  .btn-refresh span {
-    display: inline-block;
-  }
-  .btn-refresh.spinning span {
-    animation: spin 0.6s linear infinite;
-  }
-
-  /* ---- Collapsed ---- */
-  .container.collapsed .repo-list,
-  .container.collapsed .status-bar,
-  .container.collapsed .controls-bar,
-  .container.collapsed .resize-handle,
-  .container.collapsed .credits {
-    display: none;
-  }
-
-  /* ---- Loading shimmer ---- */
-  .loading-shimmer {
-    background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-hover) 50%, var(--bg-card) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    height: 36px;
-    margin: 4px 12px;
-    border-radius: 6px;
-  }
-
-  @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-  }
+  /* Loading */
+  .loading { gap:6px; }
+  .loading-title { font-size:7px; letter-spacing:1.5px; }
+  .loading-bar { width:80px; }
+}
 </style>
 </head>
 <body>
 
-<div class="container" id="container">
-  <!-- Title bar -->
-  <div class="titlebar">
-    <div class="titlebar-left">
-      <svg class="titlebar-icon" viewBox="0 0 16 16">
-        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-      </svg>
-      <h1>Git Monitor</h1>
-    </div>
-    <div class="titlebar-actions">
-      <button class="btn-refresh" id="refreshBtn" onclick="refreshNow()" title="Atualizar"><span>↻</span></button>
-      <button onclick="openConfig()" title="Configurar">⚙</button>
-      <button id="collapseBtn" onclick="toggleCollapse()" title="Minimizar">─</button>
-      <button class="btn-close" onclick="closeApp()" title="Fechar">✕</button>
-    </div>
+<!-- ═══ HEADER ═══ -->
+<div class="hdr">
+  <div class="hdr-logo">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <rect x="1.5" y="2" width="21" height="15" rx="2.5" stroke="var(--cyan)" stroke-width="1.5"/>
+      <path d="M8 22h8M12 17v5" stroke="var(--cyan)" stroke-width="1.5" stroke-linecap="round"/>
+      <rect x="5.5" y="6" width="3" height="7" rx="1" fill="var(--cyan)" opacity=".8"/>
+      <rect x="10.5" y="9" width="3" height="4" rx="1" fill="var(--cyan)" opacity=".5"/>
+      <rect x="15.5" y="7" width="3" height="6" rx="1" fill="var(--cyan)" opacity=".65"/>
+    </svg>
+    PC MONITOR
   </div>
-
-  <!-- Update banner -->
-  <div class="update-banner" id="updateBanner">
-    <span id="updateMsg">Nova versão disponível!</span>
-    <button id="updateBtn" onclick="installUpdate()">Instalar</button>
-  </div>
-
-  <!-- Controls bar -->
-  <div class="controls-bar">
-    <button class="btn-lock" id="lockBtn" onclick="toggleLock()" title="Travar posição">🔒</button>
-    <div class="opacity-ctrl">
-      <input type="range" class="opacity-slider" id="opacitySlider" min="15" max="100" value="100" oninput="changeOpacity(this.value)" title="Opacidade" />
-      <span class="opacity-val" id="opacityVal">100%</span>
+  <div class="hdr-chips">
+    <div class="hchip">
+      <div class="hchip-dot" style="background:var(--cyan);box-shadow:0 0 4px var(--cyan)"></div>
+      <span id="hb-cpu" style="color:var(--cyan)">—%</span>
     </div>
-    <div class="ctrl-sep"></div>
-    <div class="corner-btns">
-      <button class="btn-corner" onclick="snapCorner('tl')" title="Canto superior esquerdo">↖</button>
-      <button class="btn-corner" onclick="snapCorner('tr')" title="Canto superior direito">↗</button>
-      <button class="btn-corner" onclick="snapCorner('bl')" title="Canto inferior esquerdo">↙</button>
-      <button class="btn-corner" onclick="snapCorner('br')" title="Canto inferior direito">↘</button>
+    <div class="hchip">
+      <div class="hchip-dot" style="background:var(--purple);box-shadow:0 0 4px var(--purple)"></div>
+      <span id="hb-gpu" style="color:var(--purple)">—%</span>
     </div>
-    <div class="ctrl-sep"></div>
-    <button class="btn-zone" id="zoneBtn" onclick="toggleZone()" title="Definir zona de detecção ghost">👻 Zona</button>
-  </div>
-
-  <!-- Status bar -->
-  <div class="status-bar">
-    <span id="lastCheck">Verificando...</span>
-    <div style="display:flex; align-items:center; gap:6px;">
-      <button class="btn-push-all" id="pushAllBtn" onclick="pushAll()" title="Commit + Push todos os repos modificados"><span>⬆</span> Push All</button>
-      <div class="interval-ctrl">
-        <span>⏱</span>
-        <select id="intervalSelect" onchange="changeInterval(this.value)">
-          <option value="10">10s</option>
-          <option value="30" selected>30s</option>
-          <option value="60">1min</option>
-          <option value="120">2min</option>
-          <option value="300">5min</option>
-        </select>
-      </div>
+    <div class="hchip">
+      <div class="hchip-dot" style="background:var(--green);box-shadow:0 0 4px var(--green)"></div>
+      <span id="hb-ram" style="color:var(--green)">—%</span>
     </div>
   </div>
-
-  <!-- Repo list -->
-  <div class="repo-list" id="repoList">
-    <div class="loading-shimmer"></div>
-    <div class="loading-shimmer"></div>
-    <div class="loading-shimmer"></div>
-  </div>
-
-  <!-- Resize handle -->
-  <div class="resize-handle" id="resizeHandle"></div>
-
-  <!-- Credits -->
-  <div style="text-align:center; padding: 3px 0 4px; font-size: 8px; color: var(--text-dim); letter-spacing: 0.3px; flex-shrink:0; -webkit-app-region: no-drag;">
-    by <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://github.com/ronydrop')" style="color:var(--text-dim); text-decoration:none;">@rony_drop</a>
+  <div class="hdr-right">
+    <div class="hdr-pulse" id="hdr-pulse"></div>
+    <div class="hdr-clock" id="hdr-clock">--:--<span class="hdr-sec">:--</span></div>
+    <button class="hdr-btn" onclick="ipc('toggle-fullscreen')" title="Fullscreen">⛶</button>
+    <button class="hdr-btn" onclick="ipc('minimize-app')" title="Minimizar">─</button>
+    <button class="hdr-btn close-btn" onclick="ipc('close-app')" title="Fechar">✕</button>
   </div>
 </div>
 
-<div class="commit-toast" id="commitToast"></div>
+<!-- ═══ PAGE SLIDER ═══ -->
+<div class="wrap" id="wrap">
+  <div class="slider" id="slider">
+
+    <!-- PAGE 0: CPU -->
+    <div class="page" id="page-cpu">
+      <div class="loading">
+        <div class="loading-title">INICIALIZANDO SENSORES...</div>
+        <div class="loading-bar"><div class="loading-bar-f"></div></div>
+      </div>
+    </div>
+
+    <!-- PAGE 1: GPU -->
+    <div class="page" id="page-gpu">
+      <div class="loading">
+        <div class="loading-title">AGUARDE</div>
+        <div class="loading-bar"><div class="loading-bar-f"></div></div>
+      </div>
+    </div>
+
+    <!-- PAGE 2: RAM -->
+    <div class="page" id="page-ram">
+      <div class="loading">
+        <div class="loading-title">AGUARDE</div>
+        <div class="loading-bar"><div class="loading-bar-f"></div></div>
+      </div>
+    </div>
+
+    <!-- PAGE 3: STORAGE -->
+    <div class="page" id="page-disk">
+      <div class="loading">
+        <div class="loading-title">AGUARDE</div>
+        <div class="loading-bar"><div class="loading-bar-f"></div></div>
+      </div>
+    </div>
+
+    <!-- PAGE 4: NETWORK -->
+    <div class="page" id="page-net">
+      <div class="loading">
+        <div class="loading-title">AGUARDE</div>
+        <div class="loading-bar"><div class="loading-bar-f"></div></div>
+      </div>
+    </div>
+
+    <!-- PAGE 5: SYSTEM -->
+    <div class="page" id="page-sys">
+      <div class="loading">
+        <div class="loading-title">AGUARDE</div>
+        <div class="loading-bar"><div class="loading-bar-f"></div></div>
+      </div>
+    </div>
+
+    <!-- PAGE 6: PROCESSOS -->
+    <div class="page" id="page-proc">
+      <div class="loading">
+        <div class="loading-title">AGUARDE</div>
+        <div class="loading-bar"><div class="loading-bar-f"></div></div>
+      </div>
+    </div>
+
+  </div><!-- /slider -->
+</div><!-- /wrap -->
+
+<!-- ═══ BOTTOM NAV ═══ -->
+<nav class="nav">
+  <button class="nbtn active" data-page="0" onclick="goPage(0)">
+    <span class="nbtn-icon">🖥️</span>
+    <span class="nbtn-lbl">CPU</span>
+  </button>
+  <button class="nbtn" data-page="1" onclick="goPage(1)">
+    <span class="nbtn-icon">🎮</span>
+    <span class="nbtn-lbl">GPU</span>
+  </button>
+  <button class="nbtn" data-page="2" onclick="goPage(2)">
+    <span class="nbtn-icon">🧠</span>
+    <span class="nbtn-lbl">RAM</span>
+  </button>
+  <button class="nbtn" data-page="3" onclick="goPage(3)">
+    <span class="nbtn-icon">💾</span>
+    <span class="nbtn-lbl">DISCO</span>
+  </button>
+  <button class="nbtn" data-page="4" onclick="goPage(4)">
+    <span class="nbtn-icon">🌐</span>
+    <span class="nbtn-lbl">REDE</span>
+  </button>
+  <button class="nbtn" data-page="5" onclick="goPage(5)">
+    <span class="nbtn-icon">💻</span>
+    <span class="nbtn-lbl">SISTEMA</span>
+  </button>
+  <button class="nbtn" data-page="6" onclick="goPage(6)">
+    <span class="nbtn-icon">⚡</span>
+    <span class="nbtn-lbl">PROCS</span>
+  </button>
+</nav>
 
 <script>
-  const { ipcRenderer } = require('electron');
+'use strict';
+const { ipcRenderer } = require('electron');
+async function ipc(ch, ...a) { return ipcRenderer.invoke(ch, ...a); }
 
-  let intervalId = null;
-  let config = {};
-  let lastResults = [];
+/* ── Helpers ─────────────────────────────────────── */
+const B = (bytes, d=1) => {
+  if (!bytes || bytes <= 0) return '0B';
+  const k=1024, s=['B','KB','MB','GB','TB'];
+  const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(k));
+  return (bytes/Math.pow(k,i)).toFixed(d) + s[i];
+};
+const Bps = v => B(v||0) + '/s';
+const pct = v => Math.min(100, Math.max(0, v||0));
 
-  const BADGE_LABELS = {
-    'clean': 'OK',
-    'dirty': 'MODIFIED',
-    'dirty-ahead': 'MOD+PUSH',
-    'ahead': 'PUSH',
-    'behind': 'PULL',
-    'diverged': 'DIVERGIDO',
-    'error': 'ERRO'
-  };
+function valColor(p) {
+  if (p < 55)  return 'var(--green)';
+  if (p < 75)  return 'var(--amber)';
+  if (p < 90)  return 'var(--orange)';
+  return 'var(--pink)';
+}
+function tempCls(t) {
+  if (!t || t <= 0) return 'na';
+  if (t < 50) return 'cool';
+  if (t < 70) return 'warm';
+  if (t < 85) return 'hot';
+  return 'danger';
+}
+function tempColor(t) {
+  const c = tempCls(t);
+  return c==='cool'?'var(--green)':c==='warm'?'var(--amber)':c==='hot'?'var(--orange)':c==='danger'?'var(--pink)':'var(--text3)';
+}
+function badgeCls(t) { return 'sec-badge b-'+tempCls(t); }
+function badgeHtml(t) {
+  const cls = tempCls(t);
+  if (cls === 'na') return `<span class="sec-badge b-na">N/D</span>`;
+  return `<span class="sec-badge b-${cls}">${Math.round(t)}°C</span>`;
+}
 
-  // ---- Render repos ----
-  function renderRepos(results) {
-    const list = document.getElementById('repoList');
+/* SVG gauge — no inner text */
+function gauge(p, color, sz=88) {
+  const r=34, cx=44, cy=44, circ=2*Math.PI*r;
+  const off = circ - pct(p)/100*circ;
+  return `<svg class="gauge-wrap" width="${sz}" height="${sz}" viewBox="0 0 88 88" style="overflow:visible;flex-shrink:0">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="7"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
+      stroke="${color}" stroke-width="7" stroke-linecap="round"
+      stroke-dasharray="${circ.toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}"
+      transform="rotate(-90 ${cx} ${cy})"
+      style="filter:drop-shadow(0 0 6px ${color});transition:stroke-dashoffset .5s ease,stroke .5s"/>
+  </svg>`;
+}
 
-    if (!results || results.length === 0) {
-      list.innerHTML = `
-        <div class="empty-state">
-          <div class="icon">📂</div>
-          <p>Nenhum repositório configurado.<br>Clique em ⚙ para adicionar.</p>
-          <button class="btn-config" onclick="openConfig()">Configurar Repos</button>
-        </div>`;
-      return;
-    }
+/* Update gauge in-place */
+function setGauge(svg, p, color) {
+  if (!svg) return;
+  const circle = svg.querySelector('circle:nth-child(2)');
+  if (!circle) return;
+  const r=34, circ=2*Math.PI*r, off=circ-pct(p)/100*circ;
+  circle.setAttribute('stroke-dashoffset', off.toFixed(2));
+  circle.setAttribute('stroke', color);
+}
 
-    list.innerHTML = results.map(r => {
-      const esc = s => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      const hasChanges = r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead';
-      const needsPull  = r.status === 'behind';
-      const commitBtn = hasChanges
-        ? `<button class="btn-commit" title="Commit + Push com IA" onclick="doCommit(this, '${esc(r.path)}', '${esc(r.name)}')"><span>⬆</span></button>`
-        : needsPull
-          ? `<button class="btn-pull" title="Git Pull" onclick="doPull(this, '${esc(r.path)}', '${esc(r.name)}')"><span>⬇</span></button>`
-          : '';
-      const gitBtn = r.remoteUrl
-        ? `<button class="btn-repo-action" title="Abrir no GitHub" onclick="openGitUrl('${esc(r.remoteUrl)}')" style="padding:0;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></button>`
-        : '';
-      const checkbox = hasChanges
-        ? `<input type="checkbox" class="repo-check" data-path="${esc(r.path)}" data-name="${esc(r.name)}" checked title="Incluir no Push All">`
-        : '';
-      return `
-      <div class="repo-item" data-repo-path="${esc(r.path)}" title="${r.path}\n${r.detail}">
-        ${checkbox}
-        <div class="repo-dot ${r.status}"></div>
-        <div class="repo-info">
-          <div class="repo-name">${r.name}</div>
-          <div class="repo-detail">${r.branch ? `${r.branch} · ` : ''}${r.detail}</div>
-          <div class="deploy-label" id="deploy-label-${btoa(r.path).replace(/=/g,'')}"></div>
+/* Thin bar */
+function bar(p, color) {
+  return `<div class="bar-t"><div class="bar-f" style="width:${pct(p)}%;background:${color||valColor(p)}"></div></div>`;
+}
+
+/* Sparkline */
+const HIST = 40;
+const history = { cpu:[], gpu:[], ram:[], rx:[], tx:[] };
+function pushH(k, v) { history[k].push(v); if(history[k].length>HIST) history[k].shift(); }
+
+function sparkline(data, color, h=36) {
+  if (!data || data.length < 2) return `<svg width="100%" height="${h}"></svg>`;
+  const w=300, max=Math.max(...data,1);
+  const pts = data.map((v,i) => `${((i/(data.length-1))*w).toFixed(1)},${(h-(v/max)*h).toFixed(1)}`);
+  const poly = pts.join(' ');
+  const fill = `0,${h} ${pts.join(' ')} ${w},${h}`;
+  const gid = 'sg'+color.replace(/[^a-z0-9]/gi,'');
+  return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="overflow:visible">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${color}" stop-opacity=".4"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <polygon points="${fill}" fill="url(#${gid})" opacity=".8"/>
+    <polyline points="${poly}" fill="none" stroke="${color}" stroke-width="1.5"
+      stroke-linecap="round" stroke-linejoin="round"
+      style="filter:drop-shadow(0 0 3px ${color})"/>
+  </svg>`;
+}
+
+/* ── Clock ─────────────────────────────────────────── */
+function tickClock() {
+  const n = new Date();
+  const h = String(n.getHours()).padStart(2,'0');
+  const m = String(n.getMinutes()).padStart(2,'0');
+  const s = String(n.getSeconds()).padStart(2,'0');
+  const el = document.getElementById('hdr-clock');
+  if (el) el.innerHTML = `${h}:${m}<span class="hdr-sec">:${s}</span>`;
+}
+tickClock(); setInterval(tickClock, 1000);
+
+/* ── Navigation ────────────────────────────────────── */
+let currentPage = 0;
+const NUM_PAGES = 7;
+const navBtns = document.querySelectorAll('.nbtn');
+
+function isDashboard() { return window.innerWidth >= 1000; }
+
+function goPage(n) {
+  if (isDashboard()) return;
+  currentPage = Math.max(0, Math.min(NUM_PAGES-1, n));
+  document.getElementById('slider').style.transform =
+    `translateX(-${currentPage * (100/NUM_PAGES)}%)`;
+  navBtns.forEach((b,i) => {
+    b.classList.toggle('active', i===currentPage);
+    b.style.setProperty('--accent', b.dataset.accent||'var(--cyan)');
+  });
+}
+
+/* ── Swipe (touch + pointer) ───────────────────────── */
+let ptStartX = 0, ptStartY = 0, ptSwiping = false;
+const wrap = document.getElementById('wrap');
+
+wrap.addEventListener('pointerdown', e => {
+  ptStartX = e.clientX; ptStartY = e.clientY; ptSwiping = true;
+  wrap.setPointerCapture(e.pointerId);
+}, { passive: true });
+
+wrap.addEventListener('pointerup', e => {
+  if (!ptSwiping) return;
+  ptSwiping = false;
+  if (isDashboard()) return;
+  const dx = e.clientX - ptStartX;
+  const dy = e.clientY - ptStartY;
+  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+    goPage(dx < 0 ? currentPage + 1 : currentPage - 1);
+  }
+}, { passive: true });
+
+wrap.addEventListener('pointercancel', () => { ptSwiping = false; }, { passive: true });
+
+/* ═══════════════════════════════════════════════════
+   PAGE BUILDERS
+═══════════════════════════════════════════════════ */
+
+/* CPU PAGE */
+let staticInfo = null;
+
+function buildCPU(cpu, rt) {
+  const load = rt.cpuLoad||{}, temp = rt.cpuTemp||{}, spd = rt.cpuSpeed||{};
+  const p   = Math.round(load.currentLoad||0);
+  const clr = valColor(p);
+  const tMain = temp.main||0;
+
+  const perCore = (load.cpus||[]).map((c,i) => {
+    const cp = Math.round(c.load||0);
+    return `<div class="core-col">
+      <div class="core-bg"><div class="core-fill" style="height:${cp}%;background:${valColor(cp)}"></div></div>
+      <div class="core-n">${i}</div>
+    </div>`;
+  }).join('');
+
+  const model = ((cpu.manufacturer||'')+' '+(cpu.brand||'CPU')).trim();
+
+  document.getElementById('page-cpu').innerHTML = `
+    <div class="sec-hdr">
+      <div>
+        <div class="sec-title">Processador</div>
+        <div class="sec-sub" id="cpu-model-sub">${model}</div>
+      </div>
+      <div id="cpu-temp-bdg">${badgeHtml(tMain)}</div>
+    </div>
+    <div class="metric-row">
+      <div id="cpu-gauge-wrap">${gauge(p, clr)}</div>
+      <div>
+        <div class="big-num" id="cpu-pct" style="color:${clr}">${p}<span class="big-unit">%</span></div>
+        <div class="metric-detail" style="margin-top:6px">
+          <div class="md-row">Freq <b id="cpu-freq">${spd.avg?spd.avg.toFixed(2)+' GHz':'—'}</b></div>
+          <div class="md-row">Núcleos <b>${(cpu.physicalCores||'?')}f · ${(cpu.cores||'?')}l</b></div>
         </div>
-        <span class="repo-badge badge-${r.status}">${BADGE_LABELS[r.status] || '?'}</span>
-        <div class="repo-actions">
-          ${gitBtn}
-          <button class="btn-repo-action" title="Abrir terminal" onclick="openTerminal('${esc(r.path)}', '${esc(r.name)}')">⌨</button>
-          ${commitBtn}
-        </div>
-        <div class="deploy-bar" id="deploy-bar-${btoa(r.path).replace(/=/g,'')}" style="display:none"></div>
+      </div>
+    </div>
+    ${perCore ? `<div class="cores" id="cores-row">${perCore}</div>` : ''}
+    <div class="chips">
+      <div class="chip"><div class="chip-val" id="cpu-user" style="color:var(--cyan)">${Math.round(load.currentLoadUser||0)}%</div><div class="chip-lbl">USUÁRIO</div></div>
+      <div class="chip"><div class="chip-val" id="cpu-sys">${Math.round(load.currentLoadSystem||0)}%</div><div class="chip-lbl">SISTEMA</div></div>
+      <div class="chip"><div class="chip-val" id="cpu-idle" style="color:var(--text3)">${Math.round(load.currentLoadIdle||0)}%</div><div class="chip-lbl">OCIOSO</div></div>
+      <div class="chip"><div class="chip-val" id="cpu-tmax" style="color:${tempColor(temp.max)}">${temp.max?Math.round(temp.max)+'°C':'—'}</div><div class="chip-lbl">T.MÁX</div></div>
+    </div>
+    <div class="spark" id="cpu-spark" style="min-height:32px">
+      ${sparkline(history.cpu, clr)}
+      <span class="spark-lbl l">CPU%</span>
+      <span class="spark-lbl r">agora</span>
+    </div>`;
+}
+
+function patchCPU(rt) {
+  const load=rt.cpuLoad||{}, temp=rt.cpuTemp||{}, spd=rt.cpuSpeed||{};
+  const p   = Math.round(load.currentLoad||0);
+  const clr = valColor(p);
+  const tMain = temp.main||0;
+
+  const pctEl = document.getElementById('cpu-pct');
+  if (pctEl) { pctEl.innerHTML = p+'<span class="big-unit">%</span>'; pctEl.style.color=clr; }
+
+  const gaugeEl = document.querySelector('#cpu-gauge-wrap svg');
+  setGauge(gaugeEl, p, clr);
+
+  const bdg = document.getElementById('cpu-temp-bdg');
+  if (bdg) bdg.innerHTML = badgeHtml(tMain);
+
+  const freq = document.getElementById('cpu-freq');
+  if (freq && spd.avg) freq.textContent = spd.avg.toFixed(2)+' GHz';
+
+  function setId(id, txt, clr) {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = txt; if(clr) el.style.color=clr; }
+  }
+  setId('cpu-user', Math.round(load.currentLoadUser||0)+'%', 'var(--cyan)');
+  setId('cpu-sys',  Math.round(load.currentLoadSystem||0)+'%');
+  setId('cpu-idle', Math.round(load.currentLoadIdle||0)+'%', 'var(--text3)');
+  setId('cpu-tmax', temp.max?Math.round(temp.max)+'°C':'—', tempColor(temp.max));
+
+  const coresRow = document.getElementById('cores-row');
+  if (coresRow && load.cpus) {
+    const fills = coresRow.querySelectorAll('.core-fill');
+    load.cpus.forEach((c,i) => {
+      if (fills[i]) { const cp=pct(c.load||0); fills[i].style.height=cp+'%'; fills[i].style.backgroundColor=valColor(cp); }
+    });
+  }
+
+  const spark = document.getElementById('cpu-spark');
+  if (spark) {
+    spark.innerHTML = sparkline(history.cpu, clr)+
+      '<span class="spark-lbl l">CPU%</span><span class="spark-lbl r">agora</span>';
+  }
+}
+
+/* GPU PAGE */
+function buildGPU(rt) {
+  const ctls = (rt.graphics&&rt.graphics.controllers)||[];
+  const page = document.getElementById('page-gpu');
+
+  if (!ctls.length) {
+    page.innerHTML = `<div class="sec-hdr"><div class="sec-title">GPU</div></div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:10px;color:var(--text3);letter-spacing:2px;text-align:center">
+        DADOS INDISPONÍVEIS<br><br><span style="font-size:8px;opacity:.6">NVIDIA: verifique nvidia-smi no PATH</span>
       </div>`;
-    }).join('');
+    return;
   }
 
-  // ---- Check repos ----
-  async function checkRepos() {
-    const btn = document.getElementById('refreshBtn');
-    btn.classList.add('spinning');
-    const results = await ipcRenderer.invoke('check-repos');
-    lastResults = results || [];
-    renderRepos(results);
-    document.getElementById('lastCheck').textContent = `Último: ${new Date().toLocaleTimeString('pt-BR')}`;
-    setTimeout(() => btn.classList.remove('spinning'), 600);
+  const c0   = ctls[0];
+  const gp   = c0.utilizationGpu||0;
+  const gClr = valColor(gp);
+  const temp = c0.temperatureGpu||0;
+  const vT   = c0.vram||0, vU = c0.memoryUsed||0, vPct = vT>0?(vU/vT*100):0;
+
+  const extraBlocks = ctls.slice(1).map((c,i) => {
+    const lp = c.utilizationGpu||0, lc = valColor(lp);
+    return `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+      <div class="sec-sub" style="margin-bottom:6px">${c.model||'GPU '+(i+2)}</div>
+      <div class="gr"><span class="gr-lbl">USO</span><div class="gr-bar">${bar(lp,lc)}</div><span class="gr-val" style="color:${lc}">${lp}%</span></div>
+    </div>`;
+  }).join('');
+
+  page.innerHTML = `
+    <div class="sec-hdr">
+      <div>
+        <div class="sec-title">GPU</div>
+        <div class="sec-sub">${c0.model||'Placa de Vídeo'}</div>
+      </div>
+      <div id="gpu-temp-bdg">${badgeHtml(temp)}</div>
+    </div>
+    <div class="metric-row">
+      <div id="gpu-gauge-wrap">${gauge(gp, gClr)}</div>
+      <div>
+        <div class="big-num" id="gpu-pct" style="color:${gClr}">${gp}<span class="big-unit">%</span></div>
+        <div class="metric-detail" style="margin-top:6px">
+          <div class="md-row">VRAM <b>${vT>0?vU+'/'+vT+' MB':'N/D'}</b></div>
+          <div class="md-row">Fabricante <b>${c0.vendor||'—'}</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="gpu-rows" id="gpu-rows">
+      <div class="gr"><span class="gr-lbl">USO GPU</span><div class="gr-bar" id="g-uso-bar">${bar(gp,gClr)}</div><span class="gr-val" id="g-uso-val" style="color:${gClr}">${gp>0?gp+'%':'N/D'}</span></div>
+      <div class="gr"><span class="gr-lbl">VRAM</span><div class="gr-bar" id="g-vram-bar">${bar(vPct,valColor(vPct))}</div><span class="gr-val" id="g-vram-val" style="color:var(--text2)">${vT>0?vU+'/'+vT+' MB':'N/D'}</span></div>
+      ${c0.powerDraw>0?`<div class="gr"><span class="gr-lbl">POWER</span><span class="gr-val" id="g-pw" style="color:var(--amber)">${c0.powerDraw}${c0.powerLimit>0?'/'+c0.powerLimit:''}W</span></div>`:''}
+      ${c0.clockCore>0?`<div class="gr"><span class="gr-lbl">CLK CORE</span><span class="gr-val" id="g-clkc" style="color:var(--text2)">${c0.clockCore} MHz</span></div>`:''}
+    </div>
+    <div class="spark" id="gpu-spark" style="min-height:32px">
+      ${sparkline(history.gpu, gClr)}
+      <span class="spark-lbl l">GPU%</span>
+      <span class="spark-lbl r">agora</span>
+    </div>
+    ${extraBlocks}`;
+}
+
+function patchGPU(rt) {
+  const ctls = (rt.graphics&&rt.graphics.controllers)||[];
+  if (!ctls.length) return;
+  const c0   = ctls[0];
+  const gp   = c0.utilizationGpu||0;
+  const gClr = valColor(gp);
+  const temp = c0.temperatureGpu||0;
+  const vT   = c0.vram||0, vU = c0.memoryUsed||0, vPct = vT>0?(vU/vT*100):0;
+
+  const pctEl = document.getElementById('gpu-pct');
+  if (pctEl) { pctEl.innerHTML = gp+'<span class="big-unit">%</span>'; pctEl.style.color=gClr; }
+
+  const gaugeEl = document.querySelector('#gpu-gauge-wrap svg');
+  setGauge(gaugeEl, gp, gClr);
+
+  const bdg = document.getElementById('gpu-temp-bdg');
+  if (bdg) bdg.innerHTML = badgeHtml(temp);
+
+  function setInner(id, html, clr) {
+    const el = document.getElementById(id);
+    if (el) { if(html!==undefined) el.innerHTML=html; if(clr) el.style.color=clr; }
+  }
+  setInner('g-uso-bar', bar(gp,gClr));
+  setInner('g-uso-val', gp>0?gp+'%':'N/D', gClr);
+  setInner('g-vram-bar', bar(vPct,valColor(vPct)));
+  setInner('g-vram-val', vT>0?vU+'/'+vT+' MB':'N/D');
+  if(c0.powerDraw>0) setInner('g-pw', c0.powerDraw+(c0.powerLimit>0?'/'+c0.powerLimit:'')+'W');
+  if(c0.clockCore>0) setInner('g-clkc', c0.clockCore+' MHz');
+
+  const spark = document.getElementById('gpu-spark');
+  if (spark) spark.innerHTML = sparkline(history.gpu, gClr)+
+    '<span class="spark-lbl l">GPU%</span><span class="spark-lbl r">agora</span>';
+}
+
+/* RAM PAGE */
+function buildRAM(rt) {
+  const m = rt.mem||{};
+  const total=m.total||0, used=m.active||m.used||0, free=m.available||m.free||0;
+  const p   = total>0 ? Math.round(used/total*100) : 0;
+  const clr = valColor(p);
+  const swT = m.swaptotal||0, swU = m.swapused||0, swP = swT>0?(swU/swT*100):0;
+
+  document.getElementById('page-ram').innerHTML = `
+    <div class="sec-hdr">
+      <div>
+        <div class="sec-title">Memória RAM</div>
+        <div class="sec-sub">${B(total)} instalados</div>
+      </div>
+      <span class="sec-badge b-${p>90?'danger':p>70?'hot':p>50?'warm':'cool'}" id="ram-badge">${p}%</span>
+    </div>
+    <div class="metric-row">
+      <div id="ram-gauge-wrap">${gauge(p, clr)}</div>
+      <div>
+        <div class="big-num" id="ram-used" style="color:${clr}">${B(used,0)}</div>
+        <div class="metric-detail" style="margin-top:6px">
+          <div class="md-row">Uso <b style="color:${clr}">${p}%</b></div>
+          <div class="md-row">Total <b>${B(total)}</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="chips">
+      <div class="chip"><div class="chip-val" id="ram-u" style="color:${clr}">${B(used)}</div><div class="chip-lbl">USADO</div></div>
+      <div class="chip"><div class="chip-val" id="ram-f" style="color:var(--green)">${B(free)}</div><div class="chip-lbl">LIVRE</div></div>
+      ${m.buffcache>0?`<div class="chip"><div class="chip-val" id="ram-c" style="color:var(--text2)">${B(m.buffcache)}</div><div class="chip-lbl">CACHE</div></div>`:''}
+      ${swT>0?`<div class="chip"><div class="chip-val" id="ram-sw" style="color:var(--text2)">${B(swU)}</div><div class="chip-lbl">SWAP</div></div>`:''}
+    </div>
+    <div class="spark" id="ram-spark" style="min-height:32px">
+      ${sparkline(history.ram, clr)}
+      <span class="spark-lbl l">RAM%</span>
+      <span class="spark-lbl r">agora</span>
+    </div>
+    ${swT>0?`<div style="margin-top:2px"><div class="bar-t"><div class="bar-f" id="ram-swbar" style="width:${pct(swP)}%;background:${valColor(swP)}"></div></div></div>`:''}`;
+}
+
+function patchRAM(rt) {
+  const m=rt.mem||{};
+  const total=m.total||1, used=m.active||m.used||0, free=m.available||m.free||0;
+  const p=Math.round(used/total*100), clr=valColor(p);
+
+  const gaugeEl = document.querySelector('#ram-gauge-wrap svg');
+  setGauge(gaugeEl, p, clr);
+
+  function setId(id, txt, c) { const el=document.getElementById(id); if(el){el.textContent=txt;if(c)el.style.color=c;} }
+  setId('ram-used', B(used,0), clr);
+  setId('ram-u', B(used), clr);
+  setId('ram-f', B(free), 'var(--green)');
+  if(m.buffcache>0) setId('ram-c', B(m.buffcache));
+  const swT=m.swaptotal||0, swU=m.swapused||0, swP=swT>0?(swU/swT*100):0;
+  if(swT>0) {
+    setId('ram-sw', B(swU));
+    const swBar = document.getElementById('ram-swbar');
+    if(swBar) { swBar.style.width=pct(swP)+'%'; swBar.style.background=valColor(swP); }
   }
 
-  function refreshNow() {
-    checkRepos();
+  const bdg = document.getElementById('ram-badge');
+  if (bdg) {
+    bdg.className = 'sec-badge b-'+(p>90?'danger':p>70?'hot':p>50?'warm':'cool');
+    bdg.textContent = p+'%';
   }
 
-  // ---- Interval ----
-  function startInterval(seconds) {
-    if (intervalId) clearInterval(intervalId);
-    intervalId = setInterval(checkRepos, seconds * 1000);
+  const spark = document.getElementById('ram-spark');
+  if (spark) spark.innerHTML = sparkline(history.ram, clr)+
+    '<span class="spark-lbl l">RAM%</span><span class="spark-lbl r">agora</span>';
+}
+
+/* DISK PAGE */
+function buildDisk(diskLayout, rt) {
+  const fs = (rt.fsSize||[]).filter(f=>f.size>1000000);
+
+  const volumes = fs.map(f => {
+    const p=f.use||0, clr=valColor(p);
+    const hw = (diskLayout||[]).find(d=>d.device&&f.fs&&f.fs.toLowerCase().replace(/\\/g,'').startsWith(d.device.toLowerCase().replace(/[\\:]/g,'').substring(0,2)));
+    const temp = hw?hw.temperature||0:0;
+    return `<div class="disk-item">
+      <div class="disk-row">
+        <div class="disk-name">${f.fs||'Volume'}</div>
+        <div class="disk-right">
+          ${badgeHtml(temp)}
+          <span class="disk-pct" style="color:${clr}">${Math.round(p)}%</span>
+        </div>
+      </div>
+      <div class="disk-used">${B(f.used)} / ${B(f.size)}</div>
+      <div style="margin-top:5px">${bar(p, clr)}</div>
+    </div>`;
+  }).join('') || `<div style="padding:20px;text-align:center;font-size:10px;color:var(--text3);font-family:'Orbitron',monospace;letter-spacing:1px">SEM VOLUMES</div>`;
+
+  const phys = (diskLayout||[]).filter(d=>d.size>0).map(d => `
+    <div class="disk-phys-item">
+      <div class="dpi-l">
+        <div class="dpi-name">${(d.name||d.device||'Disco').substring(0,30)}</div>
+        <div class="dpi-sub">${d.type||'?'} · ${d.interfaceType||''}</div>
+      </div>
+      <div class="dpi-r">
+        <div class="dpi-size">${B(d.size)}</div>
+        <div class="dpi-smart" style="color:${d.smartStatus==='Ok'?'var(--green)':'var(--text3)'}">SMART: ${d.smartStatus||'—'}</div>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('page-disk').innerHTML = `
+    <div class="sec-hdr">
+      <div class="sec-title">Armazenamento</div>
+      <div style="font-size:10px;color:var(--text3)">${(diskLayout||[]).length} disco(s) · ${fs.length} vol</div>
+    </div>
+    <div class="disk-list">${volumes}</div>
+    ${phys?`<div style="font-size:9px;color:var(--text3);font-family:'Orbitron',monospace;letter-spacing:1px;margin-top:4px;margin-bottom:2px">DISCOS FÍSICOS</div>
+    <div class="disk-phys">${phys}</div>`:''}`;
+}
+
+/* NETWORK PAGE */
+function buildNet(rt) {
+  const nets   = (rt.networkStats||[]).filter(n=>n.iface);
+  const act    = nets.filter(n=>n.rx_sec>0||n.tx_sec>0);
+  const show   = act.length>0 ? act.slice(0,4) : nets.slice(0,4);
+  const totRx  = nets.reduce((a,n)=>a+(n.rx_sec||0),0);
+  const totTx  = nets.reduce((a,n)=>a+(n.tx_sec||0),0);
+
+  const ifaces = show.map(n => `
+    <div class="net-iface-row">
+      <div class="net-iname">${n.iface}</div>
+      <div class="net-ispeeds">
+        <span style="color:var(--green)">↓ <b>${Bps(n.rx_sec)}</b></span>
+        <span style="color:var(--blue)">↑ <b>${Bps(n.tx_sec)}</b></span>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('page-net').innerHTML = `
+    <div class="sec-hdr">
+      <div class="sec-title">Rede</div>
+      <div style="font-size:10px;color:var(--text3)">${nets.length} interfaces</div>
+    </div>
+    <div class="net-big">
+      <div class="net-speed-row">
+        <span class="net-arrow" style="color:var(--green)">↓</span>
+        <span class="net-label" style="color:var(--text3)">DOWNLOAD</span>
+        <span class="net-val" id="net-rx" style="color:var(--green)">${Bps(totRx)}</span>
+      </div>
+      <div class="net-speed-row">
+        <span class="net-arrow" style="color:var(--blue)">↑</span>
+        <span class="net-label" style="color:var(--text3)">UPLOAD</span>
+        <span class="net-val" id="net-tx" style="color:var(--blue)">${Bps(totTx)}</span>
+      </div>
+    </div>
+    <div class="spark" id="net-spark" style="min-height:32px">
+      ${sparkline(history.rx, 'var(--green)')}
+      <span class="spark-lbl l">↓ rx</span>
+      <span class="spark-lbl r">agora</span>
+    </div>
+    <div class="net-ifaces">${ifaces}</div>`;
+}
+
+function patchNet(rt) {
+  const nets  = (rt.networkStats||[]).filter(n=>n.iface);
+  const totRx = nets.reduce((a,n)=>a+(n.rx_sec||0),0);
+  const totTx = nets.reduce((a,n)=>a+(n.tx_sec||0),0);
+
+  function setId(id, txt) { const el=document.getElementById(id); if(el) el.textContent=txt; }
+  setId('net-rx', Bps(totRx));
+  setId('net-tx', Bps(totTx));
+
+  const spark = document.getElementById('net-spark');
+  if (spark) spark.innerHTML = sparkline(history.rx,'var(--green)')+
+    '<span class="spark-lbl l">↓ rx</span><span class="spark-lbl r">agora</span>';
+}
+
+/* SYSTEM PAGE */
+function buildSys(si, rt) {
+  const os=si.osInfo||{}, sys=si.system||{}, bio=si.bios||{}, cpu=si.cpu||{};
+  const bat = rt.battery||{};
+
+  const batHtml = bat.hasBattery ? `
+    <div class="bat-mini">
+      <span class="bat-icon">${bat.isCharging?'⚡':'🔋'}</span>
+      <div>
+        <div class="bat-pct" style="color:${bat.percent<20?'var(--pink)':bat.percent<50?'var(--amber)':'var(--green)'}">${Math.round(bat.percent||0)}%</div>
+        <div class="bat-info">${bat.isCharging?'Carregando':bat.acConnected?'Conectado':'Bateria'}</div>
+      </div>
+      <div style="flex:1">${bar(bat.percent||0, bat.percent<20?'var(--pink)':bat.percent<50?'var(--amber)':'var(--green)')}</div>
+    </div>` : '';
+
+  document.getElementById('page-sys').innerHTML = `
+    <div class="sec-title" style="margin-bottom:4px">Sistema</div>
+    <div class="sys-grid">
+      <div class="sys-item"><div class="sys-lbl">OS</div><div class="sys-val">${os.distro||'—'} ${os.release||''}</div></div>
+      <div class="sys-item"><div class="sys-lbl">ARQUITETURA</div><div class="sys-val">${os.arch||'—'}</div></div>
+      <div class="sys-item"><div class="sys-lbl">HOSTNAME</div><div class="sys-val">${os.hostname||'—'}</div></div>
+      <div class="sys-item"><div class="sys-lbl">KERNEL</div><div class="sys-val">${os.kernel||'—'}</div></div>
+      <div class="sys-item"><div class="sys-lbl">HARDWARE</div><div class="sys-val">${sys.manufacturer||'—'} ${sys.model||''}</div></div>
+      <div class="sys-item"><div class="sys-lbl">BIOS</div><div class="sys-val">${bio.vendor||'—'} ${bio.version||''}</div></div>
+      <div class="sys-item"><div class="sys-lbl">CPU</div><div class="sys-val">${(cpu.manufacturer||'')+' '+(cpu.brand||'')}</div></div>
+      <div class="sys-item"><div class="sys-lbl">SOCKET</div><div class="sys-val">${cpu.socket||'—'}</div></div>
+    </div>
+    ${batHtml}
+    <div style="margin-top:auto;padding-top:4px;font-size:8px;color:var(--text3);font-family:'Orbitron',monospace;letter-spacing:1px;text-align:center" id="sb-ver">v1.0.0</div>`;
+
+  ipc('get-app-version').then(v => {
+    const el = document.getElementById('sb-ver');
+    if (el) el.textContent = 'PC Monitor v'+v;
+  }).catch(()=>{});
+}
+
+/* PROCESSES PAGE */
+function buildProc(rt) {
+  const procs = rt.processes||{};
+  const list  = (procs.list||[])
+    .filter(p=>(p.cpu||0)>0.05||(p.memRss||0)>500)
+    .sort((a,b)=>(b.cpu||0)-(a.cpu||0))
+    .slice(0,15);
+
+  const rows = list.map(p => {
+    const cp = p.cpu||0, clr = valColor(cp);
+    const ico = cp>30?'🔥':cp>10?'⚡':'·';
+    return `<div class="proc-row">
+      <div class="proc-ic">${ico}</div>
+      <div class="proc-name">${p.name||'—'}</div>
+      <div class="proc-bar">${bar(Math.min(cp,100), clr)}</div>
+      <div class="proc-cpu" style="color:${clr}">${cp.toFixed(1)}%</div>
+      <div class="proc-mem">${B((p.memRss||0)*1024)}</div>
+    </div>`;
+  }).join('') || `<div style="padding:20px;text-align:center;font-size:10px;color:var(--text3);font-family:'Orbitron',monospace">NENHUM</div>`;
+
+  document.getElementById('page-proc').innerHTML = `
+    <div class="sec-hdr" style="flex-shrink:0">
+      <div class="sec-title">Processos</div>
+      <div style="font-size:10px;color:var(--text3)">Total: ${procs.all||0} · Rodando: ${procs.running||0}</div>
+    </div>
+    <div class="proc-hdr">
+      <span style="width:18px"></span>
+      <span style="flex:1">PROCESSO</span>
+      <span style="width:44px"></span>
+      <span style="width:46px;text-align:right">CPU</span>
+      <span style="width:58px;text-align:right">RAM</span>
+    </div>
+    <div class="proc-list">${rows}</div>`;
+}
+
+/* ═══════════════════════════════════════════════════
+   HEADER BAR
+═══════════════════════════════════════════════════ */
+function updateHeader(rt) {
+  const load = rt.cpuLoad||{}, m = rt.mem||{};
+  const ctls = (rt.graphics&&rt.graphics.controllers)||[];
+  const cpuP = Math.round(load.currentLoad||0);
+  const ramP = m.total>0?Math.round((m.active||m.used||0)/m.total*100):0;
+  const gpuP = ctls[0]?(ctls[0].utilizationGpu||0):0;
+
+  function set(id, txt, clr) { const el=document.getElementById(id); if(el){el.textContent=txt;if(clr)el.style.color=clr;} }
+  set('hb-cpu', cpuP+'%', valColor(cpuP));
+  set('hb-gpu', gpuP>0?gpuP+'%':'—%', valColor(gpuP));
+  set('hb-ram', ramP+'%', valColor(ramP));
+
+  const pulse = document.getElementById('hdr-pulse');
+  if (pulse) {
+    pulse.style.background = 'var(--cyan)';
+    pulse.style.boxShadow  = '0 0 12px var(--cyan)';
+    setTimeout(()=>{ pulse.style.background='var(--green)'; pulse.style.boxShadow='0 0 8px var(--green)'; }, 300);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   MAIN LOOP
+═══════════════════════════════════════════════════ */
+let built = false, intervalId = null, currentMs = 2000;
+
+async function tick() {
+  const rt = await ipc('get-realtime-stats');
+  if (!rt || rt.error) return;
+
+  const cpuP  = Math.round((rt.cpuLoad||{}).currentLoad||0);
+  const ctls  = (rt.graphics&&rt.graphics.controllers)||[];
+  const gpuP  = ctls[0]?(ctls[0].utilizationGpu||0):0;
+  const m     = rt.mem||{};
+  const ramP  = m.total>0?Math.round((m.active||m.used||0)/m.total*100):0;
+  const nets  = (rt.networkStats||[]).filter(n=>n.iface);
+  const totRx = nets.reduce((a,n)=>a+(n.rx_sec||0),0);
+  const totTx = nets.reduce((a,n)=>a+(n.tx_sec||0),0);
+
+  pushH('cpu', cpuP);
+  pushH('gpu', gpuP);
+  pushH('ram', ramP);
+  pushH('rx',  totRx/1024);
+  pushH('tx',  totTx/1024);
+
+  if (!built && staticInfo) {
+    buildCPU(staticInfo.cpu||{}, rt);
+    buildGPU(rt);
+    buildRAM(rt);
+    buildDisk(staticInfo.diskLayout, rt);
+    buildNet(rt);
+    buildSys(staticInfo, rt);
+    buildProc(rt);
+    built = true;
+  } else if (built) {
+    patchCPU(rt);
+    patchGPU(rt);
+    patchRAM(rt);
+    buildDisk(staticInfo&&staticInfo.diskLayout, rt);  // disk rebuilds (cheap)
+    patchNet(rt);
+    buildProc(rt);  // processes rebuilds (needed for ranking)
   }
 
-  function changeInterval(val) {
-    const seconds = parseInt(val);
-    startInterval(seconds);
-    ipcRenderer.invoke('set-interval', seconds);
+  updateHeader(rt);
+}
+
+function schedule() { clearInterval(intervalId); intervalId = setInterval(tick, currentMs); }
+
+async function init() {
+  staticInfo = await ipc('get-static-info');
+  const cfg  = await ipc('get-config');
+  currentMs  = cfg.intervalMs || 2000;
+
+  // set sys name in header
+  if (staticInfo) {
+    const sys = staticInfo.system||{}, os = staticInfo.osInfo||{};
+    document.title = 'PC Monitor — ' + (sys.model || os.hostname || 'PC');
   }
 
-  // ---- Collapse ----
-  async function toggleCollapse() {
-    const collapsed = await ipcRenderer.invoke('minimize-app');
-    document.getElementById('container').classList.toggle('collapsed', collapsed);
-    const btn = document.getElementById('collapseBtn');
-    btn.textContent = collapsed ? '▢' : '─';
-    btn.title = collapsed ? 'Expandir' : 'Minimizar';
-  }
+  await tick();
+  schedule();
+}
 
-  // ---- Close ----
-  function closeApp() {
-    ipcRenderer.invoke('close-app');
-  }
-
-  // ---- Push All ----
-  async function pushAll() {
-    // Pega apenas os repos com checkbox marcado
-    const checked = [...document.querySelectorAll('.repo-check:checked')].map(el => ({
-      path: el.dataset.path,
-      name: el.dataset.name
-    }));
-
-    if (checked.length === 0) {
-      showCommitToast('err', 'Nenhum repo selecionado para push');
-      return;
-    }
-
-    const modified = checked;
-
-    const btn = document.getElementById('pushAllBtn');
-    btn.className = 'btn-push-all running';
-    btn.innerHTML = '<span>↻</span> 0/' + modified.length;
-
-    let doneCount = 0;
-    const results = [];
-    for (const r of modified) {
-      const res = await ipcRenderer.invoke('commit-and-push', r.path);
-      results.push(res);
-      doneCount++;
-      btn.innerHTML = `<span>↻</span> ${doneCount}/${modified.length}`;
-    }
-
-    const ok = results.filter(r => r.ok);
-    const fail = results.filter(r => !r.ok);
-
-    btn.className = 'btn-push-all done';
-    btn.innerHTML = `<span>✓</span> ${ok.length}/${modified.length}`;
-
-    if (fail.length > 0) {
-      showCommitToast('err', `✕ ${fail.length} falharam: ${fail.map(r => r.error).join('; ').substring(0, 120)}`);
-    } else {
-      showCommitToast('ok', `✓ ${ok.length} repos commitados e pushed!`);
-    }
-
-    setTimeout(() => {
-      btn.className = 'btn-push-all';
-      btn.innerHTML = '<span>⬆</span> Push All';
-      checkRepos();
-    }, 4000);
-  }
-
-  // ---- Config window ----
-  function openConfig() {
-    ipcRenderer.invoke('open-config-window');
-  }
-
-  // ---- Repo shortcuts ----
-  function openGitUrl(url) {
-    ipcRenderer.invoke('open-git-url', url);
-  }
-
-  async function doPull(btn, repoPath, repoName) {
-    btn.className = 'btn-pull loading';
-    btn.innerHTML = '<span>↻</span>';
-
-    const result = await ipcRenderer.invoke('git-pull', repoPath);
-
-    if (result.ok) {
-      btn.className = 'btn-pull done';
-      btn.innerHTML = '<span>✓</span>';
-      showCommitToast('ok', `✓ ${repoName}: Pull concluído!`);
-      setTimeout(() => checkRepos(), 2000);
-    } else {
-      btn.className = 'btn-pull fail';
-      btn.innerHTML = '<span>✕</span>';
-      showCommitToast('err', `✕ ${repoName}: ${result.error}`);
-      setTimeout(() => {
-        btn.className = 'btn-pull';
-        btn.innerHTML = '<span>⬇</span>';
-      }, 4000);
-    }
-  }
-
-  function openTerminal(repoPath, name) {
-    ipcRenderer.invoke('open-terminal', repoPath, name);
-  }
-
-  // ---- Commit with AI ----
-  async function doCommit(btn, repoPath, repoName) {
-    btn.className = 'btn-commit loading';
-    btn.innerHTML = '<span>↻</span>';
-
-    const result = await ipcRenderer.invoke('commit-and-push', repoPath);
-
-    if (result.ok) {
-      showCommitToast('ok', `✓ ${repoName}\n${result.title}`);
-      btn.className = 'btn-commit deploying';
-      btn.innerHTML = '<span>↻</span>';
-      startDeployWatch(btn, repoPath, repoName);
-    } else {
-      btn.className = 'btn-commit fail';
-      btn.innerHTML = '<span>✕</span>';
-      showCommitToast('err', `✕ ${repoName}: ${result.error}`);
-      setTimeout(() => { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; }, 4000);
-    }
-  }
-
-  // Mapa de commits em andamento: repoPath → btn element
-  const activeDeployBtns = {};
-
-  function deployId(repoPath) {
-    return btoa(repoPath).replace(/=/g, '');
-  }
-
-  function startDeployWatch(btn, repoPath, repoName) {
-    activeDeployBtns[repoPath] = { btn, repoName };
-    ipcRenderer.send('watch-deploy-start', { repoPath, repoName });
-  }
-
-  // Recebe updates em tempo real do main process
-  ipcRenderer.on('deploy-update', (_, data) => {
-    const { repoPath, repoName, phase, job, detail, done, total } = data;
-    const id = deployId(repoPath);
-    const bar   = document.getElementById(`deploy-bar-${id}`);
-    const label = document.getElementById(`deploy-label-${id}`);
-    const entry = activeDeployBtns[repoPath];
-    const btn   = entry ? entry.btn : null;
-
-    const showBar = (cls, text) => {
-      if (bar)   { bar.style.display = ''; bar.className = `deploy-bar ${cls}`; }
-      if (label) { label.className = `deploy-label ${cls}`; label.textContent = text; }
-    };
-
-    const hideBar = () => {
-      setTimeout(() => {
-        if (bar)   { bar.style.display = 'none'; bar.className = 'deploy-bar'; }
-        if (label) { label.textContent = ''; label.className = 'deploy-label'; }
-      }, 4000);
-    };
-
-    if (phase === 'waiting') {
-      showBar('waiting', '⏳ Aguardando CI iniciar...');
-      if (btn) { btn.className = 'btn-commit deploying'; btn.innerHTML = '<span>↻</span>'; }
-
-    } else if (phase === 'running') {
-      const prog = total ? ` (${done}/${total})` : '';
-      showBar('running', `⚡ ${job || 'Rodando'}${prog}`);
-      if (btn) { btn.className = 'btn-commit deploying'; btn.innerHTML = '<span>↻</span>'; }
-
-    } else if (phase === 'success') {
-      showBar('success', '✓ Deploy concluído!');
-      if (btn) { btn.className = 'btn-commit deployed'; btn.innerHTML = '<span>✓</span>'; }
-      showCommitToast('ok', `✓ ${repoName || ''}: Deploy concluído!`);
-      hideBar();
-      delete activeDeployBtns[repoPath];
-      setTimeout(() => checkRepos(), 3000);
-
-    } else if (phase === 'failure') {
-      showBar('failure', `✕ Deploy falhou: ${detail || ''}`);
-      if (btn) { btn.className = 'btn-commit deploy-fail'; btn.innerHTML = '<span>✕</span>'; }
-      showCommitToast('err', `✕ ${repoName || ''}: Deploy falhou — ${detail || ''}`);
-      hideBar();
-      delete activeDeployBtns[repoPath];
-      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; } }, 6000);
-
-    } else if (phase === 'no-token' || phase === 'no-github' || phase === 'none') {
-      if (btn) { btn.className = 'btn-commit deployed'; btn.innerHTML = '<span>✓</span>'; }
-      delete activeDeployBtns[repoPath];
-      setTimeout(() => checkRepos(), 3000);
-
-    } else if (phase === 'error') {
-      if (btn) { btn.className = 'btn-commit'; btn.innerHTML = '<span>⚠</span>'; }
-      showCommitToast('err', `⚠ ${repoName || ''}: ${detail || 'Erro'}`);
-      delete activeDeployBtns[repoPath];
-      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; } }, 5000);
-
-    } else if (phase === 'timeout') {
-      if (btn) { btn.className = 'btn-commit deployed'; btn.innerHTML = '<span>✓</span>'; }
-      showCommitToast('err', `⏱ ${repoName || ''}: Timeout aguardando deploy`);
-      delete activeDeployBtns[repoPath];
-      setTimeout(() => checkRepos(), 3000);
-    }
-  });
-
-  let commitToastTimer = null;
-  function showCommitToast(type, msg) {
-    const el = document.getElementById('commitToast');
-    const icon = type === 'ok' ? '✓' : '⚠';
-    // Limita tamanho e remove caracteres desnecessários
-    const clean = msg.replace(/^\s*[✓✕⚠×]\s*/, '').trim().substring(0, 180);
-    el.innerHTML = `<span style="font-weight:700;margin-right:5px;">${icon}</span>${clean}`;
-    el.className = `commit-toast show ${type}`;
-    clearTimeout(commitToastTimer);
-    const duration = type === 'err' ? 6000 : 3500;
-    commitToastTimer = setTimeout(() => { el.className = 'commit-toast'; }, duration);
-  }
-
-  // ---- Lock position ----
-  let locked = false;
-
-  function toggleLock() {
-    locked = !locked;
-    applyLock();
-    ipcRenderer.invoke('set-locked', locked);
-  }
-
-  function applyLock() {
-    const titlebar = document.querySelector('.titlebar');
-    const btn = document.getElementById('lockBtn');
-    titlebar.style.webkitAppRegion = locked ? 'no-drag' : 'drag';
-    btn.classList.toggle('locked', locked);
-    btn.title = locked ? 'Desbloquear posição' : 'Travar posição';
-    btn.textContent = locked ? '🔐' : '🔒';
-  }
-
-  // ---- Opacity ----
-  function changeOpacity(val) {
-    document.getElementById('opacityVal').textContent = val + '%';
-    ipcRenderer.invoke('set-opacity', val / 100);
-  }
-
-  // ---- Corner snap ----
-  function snapCorner(corner) {
-    ipcRenderer.invoke('snap-corner', corner);
-  }
-
-  // ---- Init ----
-  async function init() {
-    config = await ipcRenderer.invoke('get-config');
-    document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
-
-    // Restaura opacidade
-    const opacityPct = Math.round((config.opacity || 1.0) * 100);
-    document.getElementById('opacitySlider').value = opacityPct;
-    document.getElementById('opacityVal').textContent = opacityPct + '%';
-
-    // Restaura lock
-    locked = config.locked || false;
-    applyLock();
-
-    // Restaura zona ghost
-    updateZoneBtn(config.ghostZone);
-
-    if (config.collapsed) {
-      document.getElementById('container').classList.add('collapsed');
-      const btn = document.getElementById('collapseBtn');
-      btn.textContent = '▢';
-      btn.title = 'Expandir';
-    }
-    startInterval(config.intervalSeconds || 30);
-    checkRepos();
-  }
-
-  // Recarrega quando config é salvo na janela de configuração
-  ipcRenderer.on('config-saved', async () => {
-    config = await ipcRenderer.invoke('get-config');
-    document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
-    startInterval(config.intervalSeconds || 30);
-    checkRepos();
-  });
-
-
-  // ---- Zone selection ----
-  let hasZone = false;
-
-  function toggleZone() {
-    if (hasZone) {
-      ipcRenderer.invoke('clear-ghost-zone');
-    } else {
-      ipcRenderer.invoke('start-zone-select');
-    }
-  }
-
-  function updateZoneBtn(zone) {
-    const btn = document.getElementById('zoneBtn');
-    hasZone = !!zone;
-    if (hasZone) {
-      btn.classList.add('active');
-      btn.textContent = '👻 Ativa';
-      btn.title = 'Clique para desativar zona ghost';
-    } else {
-      btn.classList.remove('active');
-      btn.textContent = '👻 Zona';
-      btn.title = 'Definir zona de detecção ghost';
-    }
-  }
-
-  ipcRenderer.on('ghost-zone-updated', (_, zone) => {
-    updateZoneBtn(zone);
-  });
-
-  // ---- Auto-update ----
-  ipcRenderer.on('update-status', (_, status) => {
-    const banner = document.getElementById('updateBanner');
-    const msg    = document.getElementById('updateMsg');
-    const btn    = document.getElementById('updateBtn');
-
-    if (status.type === 'available') {
-      msg.textContent = `v${status.version} disponível — iniciando download...`;
-      btn.style.display = 'none';
-      banner.classList.add('show');
-
-    } else if (status.type === 'downloading') {
-      msg.textContent = `Baixando v${status.version || ''}... ${status.percent}%`;
-      btn.style.display = 'none';
-      banner.classList.add('show');
-
-    } else if (status.type === 'ready') {
-      msg.textContent = `v${status.version || ''} pronta — reinicie para aplicar`;
-      btn.textContent = '↻ Reiniciar agora';
-      btn.style.display = '';
-      banner.classList.add('show');
-
-    } else if (status.type === 'error') {
-      banner.classList.remove('show');
-    }
-  });
-
-  function installUpdate() {
-    ipcRenderer.invoke('install-update');
-  }
-
-  // ---- Resize handle (delegado ao main process para precisão de DPI) ----
-  const resizeHandle = document.getElementById('resizeHandle');
-
-  resizeHandle.addEventListener('mousedown', (e) => {
-    resizeHandle.classList.add('dragging');
-    ipcRenderer.send('resize-start');
-    e.preventDefault();
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (resizeHandle.classList.contains('dragging')) {
-      resizeHandle.classList.remove('dragging');
-      ipcRenderer.send('resize-stop');
-    }
-  });
-
-  init();
+init();
 </script>
-
 </body>
 </html>

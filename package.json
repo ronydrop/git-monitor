@@ -1,34 +1,24 @@
 {
-  "name": "git-monitor",
-  "version": "1.2.7",
-  "description": "Mini widget desktop para monitorar repositórios Git em tempo real",
+  "name": "pc-monitor",
+  "version": "1.0.0",
+  "description": "Monitor de hardware do PC em tempo real — CPU, GPU, RAM, disco e rede",
   "main": "main.js",
   "author": {
     "name": "Rony Drop",
     "url": "https://github.com/ronydrop"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/ronydrop/git-monitor"
-  },
   "license": "MIT",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win portable",
-    "build-installer": "electron-builder --win nsis",
-    "release": "electron-builder --win portable nsis --publish always",
-    "version:patch": "npm version patch && git push && git push --tags",
-    "version:minor": "npm version minor && git push && git push --tags",
-    "version:major": "npm version major && git push && git push --tags"
+    "build-installer": "electron-builder --win nsis"
   },
   "build": {
-    "appId": "com.rony.git-monitor",
-    "productName": "Git Monitor",
+    "appId": "com.rony.pc-monitor",
+    "productName": "PC Monitor",
     "files": [
       "main.js",
       "index.html",
-      "config.html",
-      "zone-select.html",
       "package.json",
       "node_modules/**/*"
     ],
@@ -48,22 +38,15 @@
       "signingHashAlgorithms": null
     },
     "portable": {
-      "artifactName": "GitMonitor-portable.exe"
+      "artifactName": "PCMonitor-portable.exe"
     },
     "nsis": {
-      "artifactName": "GitMonitor-Setup-${version}.exe",
+      "artifactName": "PCMonitor-Setup-${version}.exe",
       "oneClick": true,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
-      "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Git Monitor"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "ronydrop",
-      "repo": "git-monitor"
+      "shortcutName": "PC Monitor"
     }
   },
   "devDependencies": {
@@ -71,8 +54,6 @@
     "electron-builder": "^25.0.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.77.0",
-    "electron-updater": "^6.8.3",
-    "openai": "^6.23.0"
+    "systeminformation": "^5.31.1"
   }
 }
