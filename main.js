@@ -5,6 +5,7 @@ const fs = require('fs');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
+const si = require('systeminformation');
 
 // Garante que o PATH inclui locais comuns do Git no Windows
 const GIT_PATHS = [
@@ -65,7 +66,9 @@ function getDefaultConfig() {
     openaiKey: '',
     aiProvider: 'anthropic',
     githubToken: '',
-    ghostZone: null
+    ghostZone: null,
+    targetDisplay: 0,
+    hardwareCollapsed: false
   };
 }
 
@@ -91,26 +94,43 @@ let configWindow;
 let tray;
 let config;
 
+function getTargetDisplay() {
+  const displays = screen.getAllDisplays();
+  const primary = screen.getPrimaryDisplay();
+  const target = config.targetDisplay || 0;
+
+  if (target === 0) {
+    // Auto: prefer secondary (non-primary) display, fallback to primary
+    const secondary = displays.find(d => d.id !== primary.id);
+    return secondary || primary;
+  } else if (target === 1) {
+    // Explicit primary
+    return primary;
+  } else {
+    // Specific display index (2 = second display, 3 = third, etc.)
+    const idx = target - 1; // convert to 0-based
+    return displays[idx] || primary;
+  }
+}
+
 function createWindow() {
-  const { width: screenW } = screen.getPrimaryDisplay().workAreaSize;
+  const targetDisp = getTargetDisplay();
+  const workArea = targetDisp.workArea;
 
-  const winX = config.windowX !== null ? config.windowX : screenW - 310;
-  const winY = config.windowY !== null ? config.windowY : 10;
-
-  mainWindow = new BrowserWindow({
-    width: 300,
-    height: config.windowHeight || 420,
-    x: winX,
-    y: winY,
-    frame: false,
+    mainWindow = new BrowserWindow({
+    width: area.width > 1280 ? 1280 : area.width,
+    height: area.height > 960 ? 960 : area.height,
+    x: area.x + (area.width / 2) - ( (area.width > 1280 ? 1280 : area.width) / 2),
+    y: area.y + (area.height / 2) - ( (area.height > 960 ? 960 : area.height) / 2),
+    frame: true, // Janela normal com barra de título
     transparent: false,
     backgroundColor: '#0d1117',
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    opacity: config.opacity || 1.0,
+    alwaysOnTop: false, // Não é mais widget
+    skipTaskbar: false, // Aparece na barra de tarefas
+    resizable: true,
+    minimizable: true,
+    maximizable: true,
+    opacity: 1.0,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -130,86 +150,7 @@ function createWindow() {
     saveConfig(config);
   });
 
-  // ---- Ghost mode: polling de cursor vs zona definida ----
-  let isGhost = false;
-  let isHovered = false;
-  let fadeAnim = null;
 
-  function fadeOpacity(from, to, durationMs) {
-    if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    const steps = 10;
-    const stepMs = durationMs / steps;
-    let step = 0;
-    fadeAnim = setInterval(() => {
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        clearInterval(fadeAnim);
-        fadeAnim = null;
-        return;
-      }
-      step++;
-      const t = step / steps;
-      const ease = 1 - Math.pow(1 - t, 2);
-      const val = from + (to - from) * ease;
-      try {
-        mainWindow.setOpacity(Math.max(0.05, Math.min(1, val)));
-      } catch (e) { clearInterval(fadeAnim); fadeAnim = null; }
-      if (step >= steps) { clearInterval(fadeAnim); fadeAnim = null; }
-    }, stepMs);
-  }
-
-  // Limpa tudo ao fechar a janela
-  mainWindow.on('closed', () => {
-    if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
-  });
-
-  setInterval(() => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-
-    const cursor = screen.getCursorScreenPoint();
-    const wb = mainWindow.getBounds();
-    const onWidget = cursor.x >= wb.x && cursor.x < wb.x + wb.width
-                  && cursor.y >= wb.y && cursor.y < wb.y + wb.height;
-
-    // Mouse entrou no widget → sempre 100% com fade suave
-    if (onWidget && !isHovered) {
-      isHovered = true;
-      isGhost = false;
-      const current = mainWindow.getOpacity();
-      if (current < 0.99) fadeOpacity(current, 1.0, 180);
-      return;
-    }
-
-    // Mouse saiu do widget → volta à opacidade configurada
-    if (!onWidget && isHovered) {
-      isHovered = false;
-      const target = config.opacity || 1.0;
-      fadeOpacity(1.0, target, 200);
-    }
-
-    if (configWindow && !configWindow.isDestroyed()) {
-      if (isGhost) { isGhost = false; fadeOpacity(mainWindow.getOpacity(), config.opacity || 1.0, 180); }
-      return;
-    }
-    if (!config.ghostZone || onWidget) {
-      if (isGhost) { isGhost = false; fadeOpacity(mainWindow.getOpacity(), config.opacity || 1.0, 180); }
-      return;
-    }
-
-    const z = config.ghostZone;
-    const inZone = cursor.x >= z.x && cursor.x < z.x + z.width
-                && cursor.y >= z.y && cursor.y < z.y + z.height;
-
-    const shouldGhost = inZone && !onWidget;
-
-    if (shouldGhost && !isGhost) {
-      isGhost = true;
-      fadeOpacity(config.opacity || 1.0, 0.08, 220);
-    } else if (!shouldGhost && isGhost) {
-      isGhost = false;
-      fadeOpacity(0.08, config.opacity || 1.0, 180);
-    }
-  }, 150);
 }
 
 // ============================================================
@@ -475,14 +416,15 @@ ipcMain.handle('set-opacity', (_, value) => {
 
 
 ipcMain.handle('snap-corner', (_, corner) => {
-  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+  const targetDisp = getTargetDisplay();
+  const wa = targetDisp.workArea;
   const [ww, wh] = mainWindow.getSize();
   const m = 10;
   const positions = {
-    tl: { x: m,          y: m },
-    tr: { x: sw - ww - m, y: m },
-    bl: { x: m,          y: sh - wh - m },
-    br: { x: sw - ww - m, y: sh - wh - m },
+    tl: { x: wa.x + m,              y: wa.y + m },
+    tr: { x: wa.x + wa.width - ww - m, y: wa.y + m },
+    bl: { x: wa.x + m,              y: wa.y + wa.height - wh - m },
+    br: { x: wa.x + wa.width - ww - m, y: wa.y + wa.height - wh - m },
   };
   const pos = positions[corner];
   if (pos) {
@@ -840,6 +782,83 @@ ipcMain.handle('save-github-token', (_, token) => {
   saveConfig(config);
 });
 
+ipcMain.handle('save-target-display', (_, value) => {
+  config.targetDisplay = value;
+  saveConfig(config);
+});
+
+ipcMain.handle('save-hardware-collapsed', (_, collapsed) => {
+  config.hardwareCollapsed = collapsed;
+  saveConfig(config);
+});
+
+// ============================================================
+// Hardware Monitoring
+// ============================================================
+let hwInterval = null;
+
+async function getHardwareMetrics() {
+  try {
+    const [cpuLoad, mem, diskData, cpuTemp] = await Promise.all([
+      si.currentLoad(),
+      si.mem(),
+      si.fsSize(),
+      si.cpuTemperature().catch(() => ({ main: null }))
+    ]);
+
+    const cpuPercent = Math.round(cpuLoad.currentLoad || 0);
+    const memUsedGB = (mem.used / (1024 ** 3)).toFixed(1);
+    const memTotalGB = (mem.total / (1024 ** 3)).toFixed(1);
+    const memPercent = Math.round((mem.used / mem.total) * 100);
+
+    // Main disk (largest or C: on Windows)
+    let mainDisk = diskData.find(d => d.mount === 'C:' || d.mount === '/');
+    if (!mainDisk && diskData.length > 0) mainDisk = diskData[0];
+    const diskPercent = mainDisk ? Math.round(mainDisk.use) : 0;
+    const diskUsedGB = mainDisk ? (mainDisk.used / (1024 ** 3)).toFixed(0) : '0';
+    const diskTotalGB = mainDisk ? (mainDisk.size / (1024 ** 3)).toFixed(0) : '0';
+
+    const temp = cpuTemp && cpuTemp.main !== null && cpuTemp.main !== -1
+      ? `${Math.round(cpuTemp.main)}°C`
+      : 'N/A';
+
+    return {
+      cpu: cpuPercent,
+      memUsed: memUsedGB,
+      memTotal: memTotalGB,
+      memPercent,
+      diskPercent,
+      diskUsed: diskUsedGB,
+      diskTotal: diskTotalGB,
+      temp
+    };
+  } catch (e) {
+    return {
+      cpu: 0, memUsed: '0', memTotal: '0', memPercent: 0,
+      diskPercent: 0, diskUsed: '0', diskTotal: '0', temp: 'N/A'
+    };
+  }
+}
+
+ipcMain.handle('get-hardware', () => getHardwareMetrics());
+
+function startHardwareMonitoring() {
+  if (hwInterval) clearInterval(hwInterval);
+  hwInterval = setInterval(async () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const metrics = await getHardwareMetrics();
+      mainWindow.webContents.send('hardware-update', metrics);
+    }
+  }, 3000);
+}
+
+function stopHardwareMonitoring() {
+  if (hwInterval) {
+    clearInterval(hwInterval);
+    hwInterval = null;
+  }
+}
+
 function parseGithubOwnerRepo(remoteUrl) {
   if (!remoteUrl) return null;
   let url = remoteUrl;
@@ -939,6 +958,7 @@ app.whenReady().then(() => {
   migrateConfigIfNeeded();
   config = loadConfig();
   createWindow();
+  startHardwareMonitoring();
 
   if (config.collapsed) {
     const [x, y] = mainWindow.getPosition();
@@ -1009,6 +1029,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  stopHardwareMonitoring();
 });
 
 app.on('window-all-closed', () => app.quit());
