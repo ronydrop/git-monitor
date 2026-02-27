@@ -638,121 +638,6 @@
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
   }
-
-  /* ---- Hardware Monitor Section ---- */
-  .hw-section {
-    border-top: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .hw-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 5px 12px;
-    background: var(--bg-card);
-    cursor: pointer;
-    transition: background 0.15s;
-    -webkit-app-region: no-drag;
-  }
-  .hw-header:hover { background: var(--bg-hover); }
-
-  .hw-header-left {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 9.5px;
-    font-weight: 600;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-  }
-
-  .hw-header-left .hw-icon {
-    font-size: 11px;
-  }
-
-  .hw-chevron {
-    font-size: 9px;
-    color: var(--text-dim);
-    transition: transform 0.2s;
-  }
-  .hw-section.collapsed .hw-chevron {
-    transform: rotate(-90deg);
-  }
-
-  .hw-body {
-    padding: 6px 10px 8px;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-    transition: all 0.2s;
-  }
-  .hw-section.collapsed .hw-body {
-    display: none;
-  }
-
-  .hw-metric {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .hw-metric-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .hw-metric-label {
-    font-size: 8.5px;
-    font-weight: 600;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .hw-metric-value {
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--text);
-  }
-
-  .hw-bar-track {
-    height: 3px;
-    background: var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-
-  .hw-bar-fill {
-    height: 100%;
-    border-radius: 2px;
-    transition: width 0.5s ease, background 0.3s;
-    min-width: 1px;
-  }
-
-  .hw-bar-fill.green  { background: var(--green); }
-  .hw-bar-fill.yellow { background: var(--yellow); }
-  .hw-bar-fill.orange { background: var(--orange); }
-  .hw-bar-fill.red    { background: var(--red); }
-
-  .hw-metric-detail {
-    font-size: 8px;
-    color: var(--text-dim);
-  }
-
-  /* Collapsed state hides hw section body */
-  .container.collapsed .hw-section {
-    display: none;
-  }
 </style>
 </head>
 <body>
@@ -821,57 +706,6 @@
     <div class="loading-shimmer"></div>
     <div class="loading-shimmer"></div>
     <div class="loading-shimmer"></div>
-  </div>
-
-  <!-- Hardware Monitor -->
-  <div class="hw-section" id="hwSection">
-    <div class="hw-header" onclick="toggleHardware()">
-      <div class="hw-header-left">
-        <span class="hw-icon">&#9881;</span>
-        <span>Hardware</span>
-      </div>
-      <span class="hw-chevron" id="hwChevron">&#9660;</span>
-    </div>
-    <div class="hw-body" id="hwBody">
-      <div class="hw-metric">
-        <div class="hw-metric-header">
-          <span class="hw-metric-label">CPU</span>
-          <span class="hw-metric-value" id="hwCpuVal">--%</span>
-        </div>
-        <div class="hw-bar-track">
-          <div class="hw-bar-fill green" id="hwCpuBar" style="width:0%"></div>
-        </div>
-      </div>
-      <div class="hw-metric">
-        <div class="hw-metric-header">
-          <span class="hw-metric-label">MEM</span>
-          <span class="hw-metric-value" id="hwMemVal">--%</span>
-        </div>
-        <div class="hw-bar-track">
-          <div class="hw-bar-fill green" id="hwMemBar" style="width:0%"></div>
-        </div>
-        <div class="hw-metric-detail" id="hwMemDetail">-- / -- GB</div>
-      </div>
-      <div class="hw-metric">
-        <div class="hw-metric-header">
-          <span class="hw-metric-label">DISK</span>
-          <span class="hw-metric-value" id="hwDiskVal">--%</span>
-        </div>
-        <div class="hw-bar-track">
-          <div class="hw-bar-fill green" id="hwDiskBar" style="width:0%"></div>
-        </div>
-        <div class="hw-metric-detail" id="hwDiskDetail">-- / -- GB</div>
-      </div>
-      <div class="hw-metric">
-        <div class="hw-metric-header">
-          <span class="hw-metric-label">TEMP</span>
-          <span class="hw-metric-value" id="hwTempVal">--</span>
-        </div>
-        <div class="hw-bar-track">
-          <div class="hw-bar-fill green" id="hwTempBar" style="width:0%"></div>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- Resize handle -->
@@ -1231,10 +1065,6 @@
     // Restaura zona ghost
     updateZoneBtn(config.ghostZone);
 
-    // Restaura hardware collapsed state
-    hwCollapsed = config.hardwareCollapsed || false;
-    applyHwCollapsed();
-
     if (config.collapsed) {
       document.getElementById('container').classList.add('collapsed');
       const btn = document.getElementById('collapseBtn');
@@ -1243,7 +1073,6 @@
     }
     startInterval(config.intervalSeconds || 30);
     checkRepos();
-    initHardware();
   }
 
   // Recarrega quando config é salvo na janela de configuração
@@ -1313,85 +1142,6 @@
 
   function installUpdate() {
     ipcRenderer.invoke('install-update');
-  }
-
-  // ---- Hardware Monitoring ----
-  let hwCollapsed = false;
-
-  function toggleHardware() {
-    hwCollapsed = !hwCollapsed;
-    applyHwCollapsed();
-    ipcRenderer.invoke('save-hardware-collapsed', hwCollapsed);
-  }
-
-  function applyHwCollapsed() {
-    const section = document.getElementById('hwSection');
-    section.classList.toggle('collapsed', hwCollapsed);
-  }
-
-  function getBarColor(percent) {
-    if (percent < 60) return 'green';
-    if (percent < 80) return 'yellow';
-    if (percent < 90) return 'orange';
-    return 'red';
-  }
-
-  function getTempColor(tempStr) {
-    if (tempStr === 'N/A') return 'green';
-    const val = parseInt(tempStr);
-    if (isNaN(val)) return 'green';
-    if (val < 50) return 'green';
-    if (val < 70) return 'yellow';
-    if (val < 85) return 'orange';
-    return 'red';
-  }
-
-  function getTempPercent(tempStr) {
-    if (tempStr === 'N/A') return 0;
-    const val = parseInt(tempStr);
-    if (isNaN(val)) return 0;
-    // Map 20-100C to 0-100%
-    return Math.max(0, Math.min(100, ((val - 20) / 80) * 100));
-  }
-
-  function updateHardwareUI(metrics) {
-    // CPU
-    document.getElementById('hwCpuVal').textContent = metrics.cpu + '%';
-    const cpuBar = document.getElementById('hwCpuBar');
-    cpuBar.style.width = metrics.cpu + '%';
-    cpuBar.className = 'hw-bar-fill ' + getBarColor(metrics.cpu);
-
-    // Memory
-    document.getElementById('hwMemVal').textContent = metrics.memPercent + '%';
-    const memBar = document.getElementById('hwMemBar');
-    memBar.style.width = metrics.memPercent + '%';
-    memBar.className = 'hw-bar-fill ' + getBarColor(metrics.memPercent);
-    document.getElementById('hwMemDetail').textContent = metrics.memUsed + ' / ' + metrics.memTotal + ' GB';
-
-    // Disk
-    document.getElementById('hwDiskVal').textContent = metrics.diskPercent + '%';
-    const diskBar = document.getElementById('hwDiskBar');
-    diskBar.style.width = metrics.diskPercent + '%';
-    diskBar.className = 'hw-bar-fill ' + getBarColor(metrics.diskPercent);
-    document.getElementById('hwDiskDetail').textContent = metrics.diskUsed + ' / ' + metrics.diskTotal + ' GB';
-
-    // Temperature
-    document.getElementById('hwTempVal').textContent = metrics.temp;
-    const tempBar = document.getElementById('hwTempBar');
-    const tempPct = getTempPercent(metrics.temp);
-    tempBar.style.width = tempPct + '%';
-    tempBar.className = 'hw-bar-fill ' + getTempColor(metrics.temp);
-  }
-
-  // Receive periodic hardware updates from main process
-  ipcRenderer.on('hardware-update', (_, metrics) => {
-    updateHardwareUI(metrics);
-  });
-
-  // Initial hardware fetch
-  async function initHardware() {
-    const metrics = await ipcRenderer.invoke('get-hardware');
-    updateHardwareUI(metrics);
   }
 
   // ---- Resize handle (delegado ao main process para precisão de DPI) ----
