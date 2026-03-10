@@ -285,12 +285,21 @@ async function checkRepo(repoPath) {
 }
 
 async function checkAllRepos() {
-  // todos os repos em paralelo — nenhum bloqueia o próximo
-  return Promise.all(config.repos.map(async repo => ({
-    name: repo.name,
-    path: repo.path,
-    ...await checkRepo(repo.path)
-  })));
+  const CONCURRENCY = 3;
+  const repos = config.repos.filter(r => r.enabled !== false);
+  const results = [];
+
+  for (let i = 0; i < repos.length; i += CONCURRENCY) {
+    const batch = repos.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.all(batch.map(async repo => ({
+      name: repo.name,
+      path: repo.path,
+      ...await checkRepo(repo.path)
+    })));
+    results.push(...batchResults);
+  }
+
+  return results;
 }
 
 // ============================================================

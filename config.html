@@ -213,6 +213,40 @@
   }
   .btn-remove:hover { background: var(--red-bg); border-color: var(--red); }
 
+  /* ---- Toggle switch ---- */
+  .toggle-switch {
+    position: relative;
+    width: 32px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: #30363d;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    left: 3px;
+    top: 3px;
+    background: var(--text-dim);
+    border-radius: 50%;
+    transition: all 0.2s;
+  }
+  .toggle-switch input:checked + .toggle-slider { background: var(--green); }
+  .toggle-switch input:checked + .toggle-slider::before { transform: translateX(14px); background: #fff; }
+
+  .repo-card.disabled { opacity: 0.45; }
+  .repo-card.disabled .name-input,
+  .repo-card.disabled .path-input { color: var(--text-dim); }
+
   .path-row {
     display: flex;
     align-items: center;
@@ -485,7 +519,7 @@
     setProvider(config.aiProvider || 'anthropic');
     const list = document.getElementById('repoList');
     list.innerHTML = '';
-    (config.repos || []).forEach(r => addRepo(r.name, r.path));
+    (config.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false));
     if (!config.repos || config.repos.length === 0) addRepo();
   }
 
@@ -518,15 +552,19 @@
   }
 
   // ---- Add repo card ----
-  function addRepo(name = '', repoPath = '') {
+  function addRepo(name = '', repoPath = '', enabled = true) {
     const list = document.getElementById('repoList');
     const card = document.createElement('div');
-    card.className = 'repo-card';
+    card.className = 'repo-card' + (enabled ? '' : ' disabled');
     card.draggable = true;
     card.innerHTML = `
       <div class="repo-card-header">
         <span class="drag-handle" title="Arrastar para reordenar">⠿</span>
         <span class="repo-num">${list.children.length + 1}</span>
+        <label class="toggle-switch" title="Ativo no workspace">
+          <input type="checkbox" class="enabled-toggle" ${enabled ? 'checked' : ''} onchange="this.closest('.repo-card').classList.toggle('disabled', !this.checked)" />
+          <span class="toggle-slider"></span>
+        </label>
         <input type="text" class="name-input" placeholder="Nome do projeto" value="${escHtml(name)}" />
         <button class="btn-remove" onclick="this.closest('.repo-card').remove(); renumber()" title="Remover">×</button>
       </div>
@@ -633,7 +671,8 @@
     cards.forEach(card => {
       const name = card.querySelector('.name-input').value.trim();
       const path = card.querySelector('.path-input').value.trim();
-      if (name && path) repos.push({ name, path });
+      const enabled = card.querySelector('.enabled-toggle').checked;
+      if (name && path) repos.push({ name, path, enabled });
     });
 
     const interval = parseInt(document.getElementById('intervalSelect').value);
