@@ -215,77 +215,82 @@ function createWindow() {
 // ============================================================
 // Git Status Check (async — não bloqueia a thread principal)
 // ============================================================
-async function checkRepo(repoPath) {
+async function checkRepoOnce(repoPath) {
+  if (!fs.existsSync(repoPath) || !fs.existsSync(path.join(repoPath, '.git'))) {
+    return { status: 'error', detail: 'Repo não encontrado' };
+  }
+
+  const gitOpts = { cwd: repoPath, timeout: 15000 };
+
+  const [statusOutput, branch] = await Promise.all([
+    execAsync('git status --porcelain', gitOpts).then(o => o.trim()),
+    execAsync('git rev-parse --abbrev-ref HEAD', gitOpts).then(o => o.trim()),
+  ]);
+
+  // fetch separado — não compete com status
+  await execAsync('git fetch --quiet', { cwd: repoPath, timeout: 20000 }).catch(() => {});
+
+  let ahead = 0, behind = 0;
   try {
-    if (!fs.existsSync(repoPath) || !fs.existsSync(path.join(repoPath, '.git'))) {
-      return { status: 'error', detail: 'Repo não encontrado' };
-    }
+    const abOutput = (await execAsync(
+      `git rev-list --left-right --count ${branch}...origin/${branch}`,
+      gitOpts
+    )).trim();
+    const parts = abOutput.split(/\s+/);
+    ahead = parseInt(parts[0]) || 0;
+    behind = parseInt(parts[1]) || 0;
+  } catch (e) { }
 
-    // fetch roda em paralelo com status/branch — não bloqueamos esperando ele
-    const fetchPromise = execAsync('git fetch --quiet', { cwd: repoPath, timeout: 10000 }).catch(() => {});
+  const hasChanges = statusOutput.length > 0;
+  const changedFiles = hasChanges ? statusOutput.split('\n').length : 0;
 
-    const [statusOutput, branch] = await Promise.all([
-      execAsync('git status --porcelain', { cwd: repoPath, timeout: 5000 }).then(o => o.trim()),
-      execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath, timeout: 5000 }).then(o => o.trim()),
-    ]);
+  let status, detail;
+  if (hasChanges && ahead > 0 && behind > 0) {
+    status = 'diverged';
+    detail = `Divergido — faça pull antes de push`;
+  } else if (hasChanges && ahead > 0) {
+    status = 'dirty-ahead';
+    detail = `${changedFiles} modificado(s), ${ahead} não pushed`;
+  } else if (hasChanges && behind > 0) {
+    status = 'dirty';
+    detail = `${changedFiles} modificado(s) — pull pendente`;
+  } else if (hasChanges) {
+    status = 'dirty';
+    detail = `${changedFiles} arquivo(s) modificado(s)`;
+  } else if (ahead > 0 && behind > 0) {
+    status = 'diverged';
+    detail = `Divergido — ${ahead} push, ${behind} pull pendentes`;
+  } else if (ahead > 0) {
+    status = 'ahead';
+    detail = `${ahead} commit(s) para push`;
+  } else if (behind > 0) {
+    status = 'behind';
+    detail = `${behind} commit(s) para pull`;
+  } else {
+    status = 'clean';
+    detail = 'Sincronizado';
+  }
 
-    // aguarda fetch antes de checar ahead/behind
-    await fetchPromise;
+  let remoteUrl = '';
+  try {
+    remoteUrl = (await execAsync('git config --get remote.origin.url', { cwd: repoPath, timeout: 5000 })).trim();
+  } catch (e) { }
 
-    let ahead = 0, behind = 0;
+  return { status, detail, branch, ahead, behind, changedFiles, remoteUrl };
+}
+
+async function checkRepo(repoPath) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const abOutput = (await execAsync(
-        `git rev-list --left-right --count ${branch}...origin/${branch}`,
-        { cwd: repoPath, timeout: 5000 }
-      )).trim();
-      const parts = abOutput.split(/\s+/);
-      ahead = parseInt(parts[0]) || 0;
-      behind = parseInt(parts[1]) || 0;
-    } catch (e) { }
-
-    const hasChanges = statusOutput.length > 0;
-    const changedFiles = hasChanges ? statusOutput.split('\n').length : 0;
-
-    let status, detail;
-    if (hasChanges && ahead > 0 && behind > 0) {
-      status = 'diverged';
-      detail = `Divergido — faça pull antes de push`;
-    } else if (hasChanges && ahead > 0) {
-      status = 'dirty-ahead';
-      detail = `${changedFiles} modificado(s), ${ahead} não pushed`;
-    } else if (hasChanges && behind > 0) {
-      status = 'dirty';
-      detail = `${changedFiles} modificado(s) — pull pendente`;
-    } else if (hasChanges) {
-      status = 'dirty';
-      detail = `${changedFiles} arquivo(s) modificado(s)`;
-    } else if (ahead > 0 && behind > 0) {
-      status = 'diverged';
-      detail = `Divergido — ${ahead} push, ${behind} pull pendentes`;
-    } else if (ahead > 0) {
-      status = 'ahead';
-      detail = `${ahead} commit(s) para push`;
-    } else if (behind > 0) {
-      status = 'behind';
-      detail = `${behind} commit(s) para pull`;
-    } else {
-      status = 'clean';
-      detail = 'Sincronizado';
+      return await checkRepoOnce(repoPath);
+    } catch (e) {
+      if (attempt === 1) return { status: 'error', detail: e.message.substring(0, 80) };
     }
-
-    let remoteUrl = '';
-    try {
-      remoteUrl = (await execAsync('git config --get remote.origin.url', { cwd: repoPath, timeout: 3000 })).trim();
-    } catch (e) { }
-
-    return { status, detail, branch, ahead, behind, changedFiles, remoteUrl };
-  } catch (e) {
-    return { status: 'error', detail: e.message.substring(0, 80) };
   }
 }
 
 async function checkAllRepos() {
-  const CONCURRENCY = 3;
+  const CONCURRENCY = 2;
   const repos = config.repos.filter(r => r.enabled !== false);
   const results = [];
 
