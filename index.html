@@ -263,6 +263,7 @@
   .repo-dot.ahead { background: var(--blue); animation: none; }
   .repo-dot.behind { background: var(--blue); }
   .repo-dot.error { background: var(--red); animation: none; }
+  .repo-dot.busy { background: var(--yellow); opacity: 0.5; animation: none; }
 
   .repo-info { flex: 1; min-width: 0; }
 
@@ -733,7 +734,8 @@
     'ahead': 'PUSH',
     'behind': 'PULL',
     'diverged': 'DIVERGIDO',
-    'error': 'ERRO'
+    'error': 'ERRO',
+    'busy': '...'
   };
 
   // ---- Render repos ----

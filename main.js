@@ -30,6 +30,69 @@ function execAsync(cmd, opts) {
 }
 
 // ============================================================
+// Mutex por repositório — evita conflitos de .git/index.lock
+// ============================================================
+const repoLocks = new Map();
+
+function getRepoLock(repoPath) {
+  const key = path.resolve(repoPath);
+  if (!repoLocks.has(key)) {
+    repoLocks.set(key, { queue: Promise.resolve(), writing: false });
+  }
+  return repoLocks.get(key);
+}
+
+function acquireRepoLock(repoPath) {
+  const lock = getRepoLock(repoPath);
+  let release;
+  const prev = lock.queue;
+  lock.queue = new Promise(resolve => { release = resolve; });
+  return prev.then(() => release);
+}
+
+function markWriting(repoPath, value) {
+  getRepoLock(repoPath).writing = value;
+}
+
+function isWriting(repoPath) {
+  const key = path.resolve(repoPath);
+  const lock = repoLocks.get(key);
+  return lock ? lock.writing : false;
+}
+
+// Remove index.lock stale (mais de 5 minutos sem modificação)
+function cleanStaleLock(repoPath) {
+  const lockFile = path.join(repoPath, '.git', 'index.lock');
+  try {
+    if (!fs.existsSync(lockFile)) return false;
+    const stat = fs.statSync(lockFile);
+    const ageMs = Date.now() - stat.mtimeMs;
+    if (ageMs > 5 * 60 * 1000) {
+      fs.unlinkSync(lockFile);
+      console.log(`[GitMonitor] Removido index.lock stale de ${repoPath} (idade: ${Math.round(ageMs / 1000)}s)`);
+      return true;
+    }
+  } catch (e) { }
+  return false;
+}
+
+// Wrapper para comandos git com retry em caso de index.lock
+async function gitExec(cmd, opts) {
+  for (let i = 0; i < 2; i++) {
+    try {
+      return await execAsync(cmd, opts);
+    } catch (err) {
+      const isLockError = err.message && err.message.includes('index.lock');
+      if (isLockError && i === 0) {
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+// ============================================================
 // CONFIGURAÇÃO
 // ============================================================
 // Em produção: AppData\Roaming\Git Monitor\config.json (sobrevive a atualizações)
@@ -220,63 +283,75 @@ async function checkRepoOnce(repoPath) {
     return { status: 'error', detail: 'Repo não encontrado' };
   }
 
-  const gitOpts = { cwd: repoPath, timeout: 15000 };
-
-  const [statusOutput, branch] = await Promise.all([
-    execAsync('git status --porcelain', gitOpts).then(o => o.trim()),
-    execAsync('git rev-parse --abbrev-ref HEAD', gitOpts).then(o => o.trim()),
-  ]);
-
-  // fetch separado — não compete com status
-  await execAsync('git fetch --quiet', { cwd: repoPath, timeout: 20000 }).catch(() => {});
-
-  let ahead = 0, behind = 0;
-  try {
-    const abOutput = (await execAsync(
-      `git rev-list --left-right --count ${branch}...origin/${branch}`,
-      gitOpts
-    )).trim();
-    const parts = abOutput.split(/\s+/);
-    ahead = parseInt(parts[0]) || 0;
-    behind = parseInt(parts[1]) || 0;
-  } catch (e) { }
-
-  const hasChanges = statusOutput.length > 0;
-  const changedFiles = hasChanges ? statusOutput.split('\n').length : 0;
-
-  let status, detail;
-  if (hasChanges && ahead > 0 && behind > 0) {
-    status = 'diverged';
-    detail = `Divergido — faça pull antes de push`;
-  } else if (hasChanges && ahead > 0) {
-    status = 'dirty-ahead';
-    detail = `${changedFiles} modificado(s), ${ahead} não pushed`;
-  } else if (hasChanges && behind > 0) {
-    status = 'dirty';
-    detail = `${changedFiles} modificado(s) — pull pendente`;
-  } else if (hasChanges) {
-    status = 'dirty';
-    detail = `${changedFiles} arquivo(s) modificado(s)`;
-  } else if (ahead > 0 && behind > 0) {
-    status = 'diverged';
-    detail = `Divergido — ${ahead} push, ${behind} pull pendentes`;
-  } else if (ahead > 0) {
-    status = 'ahead';
-    detail = `${ahead} commit(s) para push`;
-  } else if (behind > 0) {
-    status = 'behind';
-    detail = `${behind} commit(s) para pull`;
-  } else {
-    status = 'clean';
-    detail = 'Sincronizado';
+  // Pula polling se o repo está em operação de escrita
+  if (isWriting(repoPath)) {
+    return { status: 'busy', detail: 'Operação em andamento...' };
   }
 
-  let remoteUrl = '';
-  try {
-    remoteUrl = (await execAsync('git config --get remote.origin.url', { cwd: repoPath, timeout: 5000 })).trim();
-  } catch (e) { }
+  cleanStaleLock(repoPath);
 
-  return { status, detail, branch, ahead, behind, changedFiles, remoteUrl };
+  const release = await acquireRepoLock(repoPath);
+  try {
+    const gitOpts = { cwd: repoPath, timeout: 15000 };
+
+    const [statusOutput, branch] = await Promise.all([
+      gitExec('git --no-optional-locks status --porcelain', gitOpts).then(o => o.trim()),
+      gitExec('git rev-parse --abbrev-ref HEAD', gitOpts).then(o => o.trim()),
+    ]);
+
+    // fetch separado — não compete com status
+    await gitExec('git fetch --quiet', { cwd: repoPath, timeout: 20000 }).catch(() => {});
+
+    let ahead = 0, behind = 0;
+    try {
+      const abOutput = (await gitExec(
+        `git rev-list --left-right --count ${branch}...origin/${branch}`,
+        gitOpts
+      )).trim();
+      const parts = abOutput.split(/\s+/);
+      ahead = parseInt(parts[0]) || 0;
+      behind = parseInt(parts[1]) || 0;
+    } catch (e) { }
+
+    const hasChanges = statusOutput.length > 0;
+    const changedFiles = hasChanges ? statusOutput.split('\n').length : 0;
+
+    let status, detail;
+    if (hasChanges && ahead > 0 && behind > 0) {
+      status = 'diverged';
+      detail = `Divergido — faça pull antes de push`;
+    } else if (hasChanges && ahead > 0) {
+      status = 'dirty-ahead';
+      detail = `${changedFiles} modificado(s), ${ahead} não pushed`;
+    } else if (hasChanges && behind > 0) {
+      status = 'dirty';
+      detail = `${changedFiles} modificado(s) — pull pendente`;
+    } else if (hasChanges) {
+      status = 'dirty';
+      detail = `${changedFiles} arquivo(s) modificado(s)`;
+    } else if (ahead > 0 && behind > 0) {
+      status = 'diverged';
+      detail = `Divergido — ${ahead} push, ${behind} pull pendentes`;
+    } else if (ahead > 0) {
+      status = 'ahead';
+      detail = `${ahead} commit(s) para push`;
+    } else if (behind > 0) {
+      status = 'behind';
+      detail = `${behind} commit(s) para pull`;
+    } else {
+      status = 'clean';
+      detail = 'Sincronizado';
+    }
+
+    let remoteUrl = '';
+    try {
+      remoteUrl = (await gitExec('git config --get remote.origin.url', { cwd: repoPath, timeout: 5000 })).trim();
+    } catch (e) { }
+
+    return { status, detail, branch, ahead, behind, changedFiles, remoteUrl };
+  } finally {
+    release();
+  }
 }
 
 async function checkRepo(repoPath) {
@@ -285,6 +360,7 @@ async function checkRepo(repoPath) {
       return await checkRepoOnce(repoPath);
     } catch (e) {
       if (attempt === 1) return { status: 'error', detail: e.message.substring(0, 80) };
+      await new Promise(r => setTimeout(r, 1000));
     }
   }
 }
@@ -646,9 +722,13 @@ async function generateCommitMessage(diff) {
 }
 
 ipcMain.handle('commit-and-push', async (_, repoPath) => {
+  const release = await acquireRepoLock(repoPath);
+  markWriting(repoPath, true);
   try {
+    cleanStaleLock(repoPath);
+
     // Checa se há mudanças não commitadas
-    const statusOutput = (await execAsync('git status --porcelain', { cwd: repoPath, timeout: 5000 })).trim();
+    const statusOutput = (await gitExec('git status --porcelain', { cwd: repoPath, timeout: 5000 })).trim();
     const hasUncommitted = statusOutput.length > 0;
 
     if (hasUncommitted && !config.anthropicKey && !config.openaiKey) {
@@ -661,8 +741,8 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
     if (hasUncommitted) {
       let diff = '';
       try {
-        const staged   = await execAsync('git diff --cached', { cwd: repoPath, timeout: 8000 });
-        const unstaged = await execAsync('git diff', { cwd: repoPath, timeout: 8000 });
+        const staged   = await gitExec('git diff --cached', { cwd: repoPath, timeout: 8000 });
+        const unstaged = await gitExec('git diff', { cwd: repoPath, timeout: 8000 });
         diff = (staged + unstaged).trim();
       } catch (e) { diff = ''; }
 
@@ -674,22 +754,25 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
       title = lines[0].trim();
       body = lines.slice(1).join('\n').trim();
 
-      await execAsync('git add .', { cwd: repoPath, timeout: 10000 });
+      await gitExec('git add .', { cwd: repoPath, timeout: 10000 });
       const commitCmd = body
         ? `git commit -m "${title.replace(/"/g, '\\"')}" -m "${body.replace(/"/g, '\\"')}"`
         : `git commit -m "${title.replace(/"/g, '\\"')}"`;
-      await execAsync(commitCmd, { cwd: repoPath, timeout: 15000 });
+      await gitExec(commitCmd, { cwd: repoPath, timeout: 15000 });
     }
 
     // Pull rebase para sincronizar com o remote, depois push
     try {
-      await execAsync('git pull --rebase', { cwd: repoPath, timeout: 30000 });
+      await gitExec('git pull --rebase', { cwd: repoPath, timeout: 30000 });
     } catch (e) { }
-    await execAsync('git push', { cwd: repoPath, timeout: 30000 });
+    await gitExec('git push', { cwd: repoPath, timeout: 30000 });
 
     return { ok: true, title, body };
   } catch (e) {
     return { ok: false, error: e.message ? e.message.substring(0, 200) : String(e) };
+  } finally {
+    markWriting(repoPath, false);
+    release();
   }
 });
 
@@ -825,11 +908,17 @@ ipcMain.on('watch-deploy-stop', (_, repoPath) => {
 });
 
 ipcMain.handle('git-pull', async (_, repoPath) => {
+  const release = await acquireRepoLock(repoPath);
+  markWriting(repoPath, true);
   try {
-    await execAsync('git pull', { cwd: repoPath, timeout: 30000 });
+    cleanStaleLock(repoPath);
+    await gitExec('git pull', { cwd: repoPath, timeout: 30000 });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message ? e.message.substring(0, 200) : String(e) };
+  } finally {
+    markWriting(repoPath, false);
+    release();
   }
 });
 
