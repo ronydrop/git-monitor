@@ -76,8 +76,40 @@ function cleanStaleLock(repoPath) {
   return false;
 }
 
+// Detecta e converte path WSL (\\wsl.localhost\Distro\...) para Unix path
+function parseWslPath(p) {
+  if (!p) return null;
+  const normalized = p.replace(/\//g, '\\');
+  const m = normalized.match(/^\\\\wsl[.$][^\\]*\\([^\\]+)(\\.*)?$/i);
+  if (!m) return null;
+  const distro = m[1];
+  const rest = (m[2] || '').replace(/\\/g, '/') || '/';
+  return { distro, unixPath: rest };
+}
+
 // Wrapper para comandos git com retry em caso de index.lock
 async function gitExec(cmd, opts) {
+  const wsl = opts && opts.cwd ? parseWslPath(opts.cwd) : null;
+  if (wsl) {
+    // Extrai os args do git (tudo após "git ") e adiciona -C <unixPath>
+    const gitArgs = cmd.replace(/^git\s+/, '');
+    const wslCmd = `wsl.exe -d ${wsl.distro} -- git -C "${wsl.unixPath}" ${gitArgs}`;
+    const wslOpts = { ...opts, cwd: undefined, windowsHide: true };
+    for (let i = 0; i < 2; i++) {
+      try {
+        return await execAsync(wslCmd, wslOpts);
+      } catch (err) {
+        const isLockError = err.message && err.message.includes('index.lock');
+        if (isLockError && i === 0) {
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        throw err;
+      }
+    }
+    return;
+  }
+
   for (let i = 0; i < 2; i++) {
     try {
       return await execAsync(cmd, opts);
