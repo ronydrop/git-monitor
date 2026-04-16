@@ -141,6 +141,21 @@
   /* ---- Repo list ---- */
   .repos-section { margin-bottom: 14px; }
 
+  .search-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text);
+    outline: none;
+    margin-bottom: 8px;
+  }
+  .search-input:focus { border-color: var(--blue); }
+  .search-input::placeholder { color: var(--text-dim); }
+
   .repo-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -416,9 +431,20 @@
       </div>
     </div>
 
+    <!-- Auto-auth status -->
+    <div style="width: 100%; display: flex; flex-direction: column; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <label style="color: var(--text-dim); font-size: 10px;">Detecção automática de credenciais</label>
+        <button onclick="detectCliCreds()" style="padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 10px; font-family: inherit;">↻ Re-detectar</button>
+      </div>
+      <div id="claudeCliStatus" style="font-size: 10px; color: var(--text-dim);">Claude CLI: verificando...</div>
+      <div id="codexCliStatus" style="font-size: 10px; color: var(--text-dim);">Codex CLI: verificando...</div>
+      <div style="font-size: 9px; color: var(--text-dim); opacity: 0.7; margin-top: 2px;">API keys abaixo são fallback opcional — CLI detectado tem prioridade.</div>
+    </div>
+
     <!-- Anthropic -->
     <div style="width: 100%;">
-      <label style="color: var(--text-dim); font-size: 10px; display: block; margin-bottom: 4px;">Anthropic API Key</label>
+      <label style="color: var(--text-dim); font-size: 10px; display: block; margin-bottom: 4px;">Anthropic API Key (fallback)</label>
       <div style="display: flex; gap: 6px;">
         <input type="password" id="anthropicKey" placeholder="sk-ant-..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
         <button onclick="toggleKeyVisibility()" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit;">👁</button>
@@ -473,18 +499,37 @@
     </div>
   </div>
 
-  <!-- Atalho -->
-  <div class="section-label">Atalho do teclado</div>
-  <div class="interval-section" style="flex-direction: column; align-items: flex-start; gap: 6px;">
-    <label style="color: var(--text-dim); font-size: 10px;">Esconder / Mostrar o Git Monitor</label>
-    <div style="display: flex; align-items: center; gap: 8px;">
-      <kbd style="background: #21262d; border: 1px solid #30363d; border-radius: 4px; padding: 4px 8px; font-family: monospace; font-size: 12px; color: var(--text);">Ctrl + Shift + G</kbd>
-      <span style="font-size: 10px; color: var(--text-dim);">global — funciona em qualquer janela</span>
+  <!-- Atalhos -->
+  <div class="section-label">Atalhos de teclado (globais)</div>
+  <div class="interval-section" style="flex-direction: column; align-items: stretch; gap: 10px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+      <label style="color: var(--text-dim); font-size: 10px; flex: 1;">Esconder / Mostrar</label>
+      <input type="text" id="scToggle" readonly placeholder="clique e pressione..."
+             onfocus="captureShortcut(this)" onblur="this.placeholder='clique e pressione...'"
+             style="width: 180px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none; text-align: center; cursor: pointer;" />
     </div>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+      <label style="color: var(--text-dim); font-size: 10px; flex: 1;">Minimizar / Maximizar</label>
+      <input type="text" id="scMinimize" readonly placeholder="clique e pressione..."
+             onfocus="captureShortcut(this)" onblur="this.placeholder='clique e pressione...'"
+             style="width: 180px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none; text-align: center; cursor: pointer;" />
+    </div>
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+      <span style="font-size: 9.5px; color: var(--text-dim);">Foque o campo e pressione a combinação. Esc para cancelar.</span>
+      <div style="display: flex; gap: 6px;">
+        <button onclick="resetShortcuts()" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 10px; font-family: inherit;">Padrão</button>
+        <button onclick="applyShortcuts()" style="padding: 4px 8px; border: 1px solid var(--blue); border-radius: 4px; background: var(--blue-bg); color: var(--blue); cursor: pointer; font-size: 10px; font-family: inherit;">Aplicar</button>
+      </div>
+    </div>
+    <div id="scStatus" style="font-size: 9.5px; color: var(--text-dim);"></div>
   </div>
 
   <!-- Repos -->
   <div class="section-label">Repositórios</div>
+  <input type="text" id="repoSearch" class="search-input"
+         placeholder="Buscar repositório por nome ou path..."
+         oninput="filterRepos()"
+         onkeydown="if(event.key==='Escape'){this.value='';filterRepos();}">
   <div class="repos-section" id="repoList"></div>
 
   <button class="btn-add-repo" onclick="addRepo()">
@@ -521,6 +566,8 @@
     list.innerHTML = '';
     (config.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false));
     if (!config.repos || config.repos.length === 0) addRepo();
+    detectCliCreds();
+    loadShortcuts();
   }
 
   function toggleKeyVisibility() {
@@ -549,6 +596,104 @@
     btnO.style.color      = !isAnthropic ? 'var(--blue)' : 'var(--text-dim)';
     btnO.style.borderColor = !isAnthropic ? 'var(--blue)' : 'var(--border)';
     ipcRenderer.invoke('save-ai-provider', provider);
+  }
+
+  // ---- Atalhos ----
+  function formatAccelerator(e) {
+    const parts = [];
+    if (e.ctrlKey) parts.push('Control');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.altKey) parts.push('Alt');
+    if (e.metaKey) parts.push('Super');
+    const key = e.key;
+    if (!key || ['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return null;
+    let k = key.length === 1 ? key.toUpperCase() : key;
+    const map = { ' ': 'Space', 'ArrowUp': 'Up', 'ArrowDown': 'Down', 'ArrowLeft': 'Left', 'ArrowRight': 'Right' };
+    if (map[k]) k = map[k];
+    parts.push(k);
+    return parts.join('+');
+  }
+
+  function captureShortcut(input) {
+    input.value = '';
+    input.placeholder = 'pressione a combinação...';
+    const handler = (ev) => {
+      ev.preventDefault();
+      if (ev.key === 'Escape') { input.blur(); return; }
+      const accel = formatAccelerator(ev);
+      if (!accel) return;
+      input.value = accel;
+    };
+    input.addEventListener('keydown', handler);
+    input.addEventListener('blur', () => input.removeEventListener('keydown', handler), { once: true });
+  }
+
+  async function applyShortcuts() {
+    const toggle = document.getElementById('scToggle').value.trim();
+    const minimize = document.getElementById('scMinimize').value.trim();
+    const res = await ipcRenderer.invoke('save-shortcuts', { toggle, minimize });
+    const status = document.getElementById('scStatus');
+    const parts = [];
+    parts.push(res.toggle ? `✓ Toggle: ${res.toggle}` : '✕ Toggle falhou (conflito?)');
+    parts.push(res.minimize ? `✓ Min/Max: ${res.minimize}` : '✕ Min/Max falhou (conflito?)');
+    status.textContent = parts.join('  ·  ');
+    status.style.color = (res.toggle && res.minimize) ? 'var(--green)' : 'var(--yellow)';
+  }
+
+  async function resetShortcuts() {
+    document.getElementById('scToggle').value = 'Control+Shift+G';
+    document.getElementById('scMinimize').value = 'Control+Shift+M';
+    await applyShortcuts();
+  }
+
+  async function loadShortcuts() {
+    const sc = await ipcRenderer.invoke('get-shortcuts');
+    document.getElementById('scToggle').value = sc.toggle;
+    document.getElementById('scMinimize').value = sc.minimize;
+  }
+
+  // ---- Auto-auth CLI detect ----
+  async function detectCliCreds() {
+    const res = await ipcRenderer.invoke('detect-cli-credentials');
+    const claudeEl = document.getElementById('claudeCliStatus');
+    const codexEl = document.getElementById('codexCliStatus');
+
+    if (res.claude.available) {
+      const days = res.claude.expiresAt
+        ? Math.max(0, Math.floor((Number(res.claude.expiresAt) - Date.now()) / 86400000))
+        : null;
+      claudeEl.textContent = `Claude CLI: ✓ detectado${days !== null ? ` (expira em ${days}d)` : ''}`;
+      claudeEl.style.color = 'var(--green)';
+    } else if (res.claude.expired) {
+      claudeEl.textContent = 'Claude CLI: ⚠ token expirado — rode `claude login`';
+      claudeEl.style.color = 'var(--yellow)';
+    } else {
+      claudeEl.textContent = 'Claude CLI: ✕ não detectado (usará API key manual)';
+      claudeEl.style.color = 'var(--text-dim)';
+    }
+
+    if (res.openai.available) {
+      codexEl.textContent = 'Codex CLI: ✓ ApiKey detectada';
+      codexEl.style.color = 'var(--green)';
+    } else if (res.openai.mode && res.openai.mode !== 'ApiKey') {
+      codexEl.textContent = `Codex CLI: ⚠ modo ${res.openai.mode} não serve pra API — use key manual`;
+      codexEl.style.color = 'var(--yellow)';
+    } else {
+      codexEl.textContent = 'Codex CLI: ✕ não detectado (usará API key manual)';
+      codexEl.style.color = 'var(--text-dim)';
+    }
+  }
+
+  // ---- Filter repos ----
+  function filterRepos() {
+    const input = document.getElementById('repoSearch');
+    const q = (input?.value || '').toLowerCase().trim();
+    document.querySelectorAll('#repoList .repo-card').forEach(card => {
+      const name = (card.querySelector('.name-input')?.value || '').toLowerCase();
+      const repoPath = (card.querySelector('.path-input')?.value || '').toLowerCase();
+      const match = !q || name.includes(q) || repoPath.includes(q);
+      card.style.display = match ? '' : 'none';
+    });
   }
 
   // ---- Add repo card ----
@@ -684,6 +829,11 @@
     await ipcRenderer.invoke('save-anthropic-key', anthropicKey);
     await ipcRenderer.invoke('save-openai-key', openaiKey);
     await ipcRenderer.invoke('save-github-token', githubToken);
+    const scToggleVal = document.getElementById('scToggle').value.trim();
+    const scMinimizeVal = document.getElementById('scMinimize').value.trim();
+    if (scToggleVal || scMinimizeVal) {
+      await ipcRenderer.invoke('save-shortcuts', { toggle: scToggleVal, minimize: scMinimizeVal });
+    }
     showToast('Configurações salvas!', 'success');
     setTimeout(() => ipcRenderer.invoke('close-config-window'), 700);
   }

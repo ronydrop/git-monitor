@@ -2,9 +2,19 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage, shell, dia
 const path = require('path');
 const { exec } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
+
+// Associa processo ao atalho no Windows — ícone correto na busca/Start Menu
+app.setAppUserModelId('com.rony.git-monitor');
+
+function getIconPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'icon.ico')
+    : path.join(__dirname, 'icon.ico');
+}
 
 // Garante que o PATH inclui locais comuns do Git no Windows
 const GIT_PATHS = [
@@ -42,12 +52,16 @@ function getRepoLock(repoPath) {
   return repoLocks.get(key);
 }
 
-function acquireRepoLock(repoPath) {
+function acquireRepoLock(repoPath, timeoutMs = 60000) {
   const lock = getRepoLock(repoPath);
   let release;
   const prev = lock.queue;
   lock.queue = new Promise(resolve => { release = resolve; });
-  return prev.then(() => release);
+  const timeoutP = new Promise(resolve => setTimeout(() => {
+    console.warn(`[GitMonitor] Lock timeout (${timeoutMs}ms) em ${repoPath} — forçando release`);
+    resolve();
+  }, timeoutMs));
+  return Promise.race([prev, timeoutP]).then(() => release);
 }
 
 function markWriting(repoPath, value) {
@@ -160,7 +174,9 @@ function getDefaultConfig() {
     openaiKey: '',
     aiProvider: 'anthropic',
     githubToken: '',
-    ghostZone: null
+    ghostZone: null,
+    shortcutToggle: 'Control+Shift+G',
+    shortcutMinimize: 'Control+Shift+M'
   };
 }
 
@@ -186,11 +202,27 @@ let configWindow;
 let tray;
 let config;
 
+function clampWindowPos(x, y, w = 300, h = 420) {
+  // Garante que (x,y) fica dentro de algum display — evita janela fora da tela
+  const displays = screen.getAllDisplays();
+  const centerX = x + w / 2;
+  const centerY = y + h / 2;
+  const visible = displays.some(d => {
+    const b = d.workArea;
+    return centerX >= b.x && centerX <= b.x + b.width
+        && centerY >= b.y && centerY <= b.y + b.height;
+  });
+  if (visible) return { x, y };
+  const primary = screen.getPrimaryDisplay().workAreaSize;
+  return { x: primary.width - w - 10, y: 10 };
+}
+
 function createWindow() {
   const { width: screenW } = screen.getPrimaryDisplay().workAreaSize;
 
-  const winX = config.windowX !== null ? config.windowX : screenW - 310;
-  const winY = config.windowY !== null ? config.windowY : 10;
+  const rawX = config.windowX !== null ? config.windowX : screenW - 310;
+  const rawY = config.windowY !== null ? config.windowY : 10;
+  const { x: winX, y: winY } = clampWindowPos(rawX, rawY, 300, config.windowHeight || 420);
 
   mainWindow = new BrowserWindow({
     width: 300,
@@ -206,6 +238,7 @@ function createWindow() {
     minimizable: false,
     maximizable: false,
     opacity: config.opacity || 1.0,
+    icon: getIconPath(),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -229,6 +262,14 @@ function createWindow() {
   let isGhost = false;
   let isHovered = false;
   let fadeAnim = null;
+
+  // Ao mostrar a janela (tray, atalho, zone-select close), reseta opacidade
+  // e cancela fade em andamento — evita janela voltar quase-invisível.
+  mainWindow.on('show', () => {
+    if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
+    isGhost = false;
+    try { mainWindow.setOpacity(config.opacity || 1.0); } catch (_) {}
+  });
 
   function fadeOpacity(from, to, durationMs) {
     if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
@@ -471,15 +512,35 @@ ipcMain.handle('start-zone-select', () => {
     skipTaskbar: true,
     resizable: false,
     fullscreen: true,
+    icon: getIconPath(),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
     }
   });
   zoneWindow.loadFile('zone-select.html');
+
+  // Recovery: se renderer crashar ou travar, força restore do mainWindow
+  const restoreMain = () => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+  };
+  zoneWindow.webContents.on('render-process-gone', restoreMain);
+  zoneWindow.webContents.on('unresponsive', restoreMain);
+
+  // Safety net: 2 minutos sem fechar → restaura mesmo assim
+  const safetyTimer = setTimeout(() => {
+    if (zoneWindow && !zoneWindow.isDestroyed()) {
+      try { zoneWindow.close(); } catch (_) {}
+    }
+    restoreMain();
+  }, 120000);
+
   zoneWindow.on('closed', () => {
+    clearTimeout(safetyTimer);
     zoneWindow = null;
-    mainWindow.show();
+    restoreMain();
   });
 });
 
@@ -518,6 +579,7 @@ ipcMain.handle('open-config-window', () => {
     minimizable: false,
     maximizable: false,
     parent: mainWindow,
+    icon: getIconPath(),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -580,14 +642,20 @@ ipcMain.handle('read-project-name', (_, repoPath) => {
   return path.basename(repoPath);
 });
 
-ipcMain.handle('minimize-app', () => {
+function toggleCollapseApp() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
   config.collapsed = !config.collapsed;
   saveConfig(config);
   const [x, y] = mainWindow.getPosition();
   const newH = config.collapsed ? 38 : (config.windowHeight || 420);
   mainWindow.setBounds({ x, y, width: 300, height: newH }, false);
+  if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('collapse-changed', config.collapsed);
+  }
   return config.collapsed;
-});
+}
+
+ipcMain.handle('minimize-app', () => toggleCollapseApp());
 
 ipcMain.handle('set-opacity', (_, value) => {
   config.opacity = value;
@@ -670,6 +738,64 @@ ipcMain.handle('save-ai-provider', (_, provider) => {
   saveConfig(config);
 });
 
+// ============================================================
+// Credentials dos CLIs (Claude Code + Codex/OpenAI)
+// Lê tokens locais pra evitar exigir API key manual.
+// ============================================================
+function candidateHomes() {
+  const homes = new Set();
+  homes.add(os.homedir());
+  if (process.env.USERPROFILE) homes.add(process.env.USERPROFILE);
+  return [...homes].filter(Boolean);
+}
+
+function readJsonSafe(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (_) { return null; }
+}
+
+function readClaudeCredentials() {
+  for (const home of candidateHomes()) {
+    const p = path.join(home, '.claude', '.credentials.json');
+    const data = readJsonSafe(p);
+    const oauth = data && data.claudeAiOauth;
+    if (!oauth || !oauth.accessToken) continue;
+    const expired = oauth.expiresAt && Date.now() >= Number(oauth.expiresAt);
+    return {
+      token: oauth.accessToken,
+      expiresAt: oauth.expiresAt || null,
+      expired: !!expired,
+      source: 'claude-cli'
+    };
+  }
+  return null;
+}
+
+function readCodexCredentials() {
+  for (const home of candidateHomes()) {
+    const p = path.join(home, '.codex', 'auth.json');
+    const data = readJsonSafe(p);
+    if (!data) continue;
+    const mode = data.auth_mode || (data.OPENAI_API_KEY ? 'ApiKey' : 'ChatGPT');
+    if (data.OPENAI_API_KEY) {
+      return { apiKey: data.OPENAI_API_KEY, mode, source: 'codex-cli' };
+    }
+    return { apiKey: null, mode, source: 'codex-cli' };
+  }
+  return null;
+}
+
+ipcMain.handle('detect-cli-credentials', () => {
+  const claude = readClaudeCredentials();
+  const codex = readCodexCredentials();
+  return {
+    claude: claude ? { available: !claude.expired, expiresAt: claude.expiresAt, expired: claude.expired } : { available: false },
+    openai: codex ? { available: !!codex.apiKey, mode: codex.mode } : { available: false }
+  };
+});
+
 const COMMIT_PROMPT = (diff) => `Você é um especialista em Git. Analise as mudanças abaixo e gere uma mensagem de commit em PORTUGUÊS BRASILEIRO.
 
 REGRAS OBRIGATÓRIAS:
@@ -705,8 +831,9 @@ function friendlyAiError(provider, err) {
       return `${provider}: ${detail.substring(0, 80)}`;
     }
   } catch (_) {}
-  if (/key não configurada/i.test(msg)) return `${provider}: key não configurada`;
+  if (/key não configurada|sem credencial/i.test(msg)) return `${provider}: key não configurada`;
   if (/credit|balance|billing/i.test(msg)) return `${provider}: saldo insuficiente`;
+  if (/oauth|token.*expirado|expirado.*token/i.test(msg)) return `${provider}: token OAuth expirado — faça login no CLI`;
   if (/invalid.*key|authentication|401/i.test(msg)) return `${provider}: API key inválida`;
   if (/rate.limit|429/i.test(msg)) return `${provider}: limite atingido`;
   return `${provider}: erro ao gerar commit`;
@@ -716,9 +843,7 @@ async function generateCommitMessage(diff) {
   const primary   = config.aiProvider || 'anthropic';
   const secondary = primary === 'anthropic' ? 'openai' : 'anthropic';
 
-  const tryAnthropic = async () => {
-    if (!config.anthropicKey) throw new Error('Anthropic key não configurada');
-    const client = new Anthropic({ apiKey: config.anthropicKey });
+  const callAnthropic = async (client) => {
     const msg = await client.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 300,
@@ -727,9 +852,38 @@ async function generateCommitMessage(diff) {
     return cleanCommitMessage(msg.content[0].text);
   };
 
+  const tryAnthropic = async () => {
+    const cli = readClaudeCredentials();
+    // 1. Tenta OAuth do Claude Code CLI
+    if (cli && !cli.expired) {
+      try {
+        const client = new Anthropic({
+          authToken: cli.token,
+          defaultHeaders: { 'anthropic-beta': 'oauth-2025-04-20' }
+        });
+        return await callAnthropic(client);
+      } catch (e) {
+        console.warn('[GitMonitor] OAuth Claude CLI falhou, tentando API key manual:', e.message);
+      }
+    }
+    // 2. Fallback pra API key manual
+    if (config.anthropicKey) {
+      const client = new Anthropic({ apiKey: config.anthropicKey });
+      return await callAnthropic(client);
+    }
+    throw new Error('Anthropic: sem credencial (CLI ausente/expirado e API key não configurada)');
+  };
+
   const tryOpenAI = async () => {
-    if (!config.openaiKey) throw new Error('OpenAI key não configurada');
-    const client = new OpenAI({ apiKey: config.openaiKey });
+    const cli = readCodexCredentials();
+    const apiKey = (cli && cli.apiKey) || config.openaiKey;
+    if (!apiKey) {
+      const hint = cli && cli.mode && cli.mode !== 'ApiKey'
+        ? 'Codex CLI em modo ChatGPT — não serve pra API; configure API key manual'
+        : 'OpenAI: sem credencial (Codex CLI ausente e API key não configurada)';
+      throw new Error(hint);
+    }
+    const client = new OpenAI({ apiKey });
     const msg = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       max_tokens: 300,
@@ -944,7 +1098,7 @@ ipcMain.handle('git-pull', async (_, repoPath) => {
   markWriting(repoPath, true);
   try {
     cleanStaleLock(repoPath);
-    await gitExec('git pull', { cwd: repoPath, timeout: 30000 });
+    await gitExec('git --no-optional-locks pull', { cwd: repoPath, timeout: 45000 });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message ? e.message.substring(0, 200) : String(e) };
@@ -1080,10 +1234,7 @@ app.whenReady().then(() => {
     mainWindow.setBounds({ x, y, width: 300, height: 38 }, false);
   }
 
-  const iconPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'icon.ico')
-    : path.join(__dirname, 'icon.ico');
-  const icon = nativeImage.createFromPath(iconPath);
+  const icon = nativeImage.createFromPath(getIconPath());
   tray = new Tray(icon);
   tray.setToolTip('Git Monitor');
   tray.setContextMenu(Menu.buildFromTemplate([
@@ -1129,18 +1280,45 @@ app.whenReady().then(() => {
     setInterval(() => autoUpdater.checkForUpdates(), 4 * 60 * 60 * 1000);
   }
 
-  // Ctrl+Shift+G — esconder/mostrar o Git Monitor
-  let windowHidden = false;
-  globalShortcut.register('Ctrl+Shift+G', () => {
-    if (windowHidden) {
-      mainWindow.show();
-      windowHidden = false;
-    } else {
-      mainWindow.hide();
-      windowHidden = true;
-    }
-  });
+  registerShortcuts();
 });
+
+function registerShortcuts() {
+  globalShortcut.unregisterAll();
+  const toggleAccel = config.shortcutToggle || 'Control+Shift+G';
+  const minAccel = config.shortcutMinimize || 'Control+Shift+M';
+
+  const result = { toggle: null, minimize: null };
+  try {
+    const ok = globalShortcut.register(toggleAccel, () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow.isVisible()) mainWindow.hide();
+      else { mainWindow.show(); mainWindow.focus(); }
+    });
+    result.toggle = ok ? toggleAccel : null;
+  } catch (e) { console.warn('[GitMonitor] shortcut toggle falhou:', e.message); }
+
+  try {
+    const ok = globalShortcut.register(minAccel, () => toggleCollapseApp());
+    result.minimize = ok ? minAccel : null;
+  } catch (e) { console.warn('[GitMonitor] shortcut minimize falhou:', e.message); }
+
+  return result;
+}
+
+ipcMain.handle('save-shortcuts', (_, shortcuts) => {
+  if (shortcuts && typeof shortcuts === 'object') {
+    if (typeof shortcuts.toggle === 'string') config.shortcutToggle = shortcuts.toggle;
+    if (typeof shortcuts.minimize === 'string') config.shortcutMinimize = shortcuts.minimize;
+    saveConfig(config);
+  }
+  return registerShortcuts();
+});
+
+ipcMain.handle('get-shortcuts', () => ({
+  toggle: config.shortcutToggle || 'Control+Shift+G',
+  minimize: config.shortcutMinimize || 'Control+Shift+M'
+}));
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();

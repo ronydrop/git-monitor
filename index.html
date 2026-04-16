@@ -885,24 +885,44 @@
     ipcRenderer.invoke('open-git-url', url);
   }
 
+  function setBtnGlyph(btn, glyph) {
+    btn.replaceChildren();
+    const s = document.createElement('span');
+    s.textContent = glyph;
+    btn.appendChild(s);
+  }
+
   async function doPull(btn, repoPath, repoName) {
     btn.className = 'btn-pull loading';
-    btn.innerHTML = '<span>↻</span>';
+    setBtnGlyph(btn, '↻');
 
-    const result = await ipcRenderer.invoke('git-pull', repoPath);
+    let result;
+    try {
+      const timeoutP = new Promise((_, rej) =>
+        setTimeout(() => rej(new Error('Pull travou (>110s) — abortado')), 110000));
+      result = await Promise.race([
+        ipcRenderer.invoke('git-pull', repoPath),
+        timeoutP
+      ]);
+    } catch (e) {
+      result = { ok: false, error: e.message || String(e) };
+    }
 
-    if (result.ok) {
+    if (result && result.ok) {
       btn.className = 'btn-pull done';
-      btn.innerHTML = '<span>✓</span>';
+      setBtnGlyph(btn, '✓');
+      btn.removeAttribute('title');
       showCommitToast('ok', `✓ ${repoName}: Pull concluído!`);
       setTimeout(() => checkRepos(), 2000);
     } else {
       btn.className = 'btn-pull fail';
-      btn.innerHTML = '<span>✕</span>';
-      showCommitToast('err', `✕ ${repoName}: ${result.error}`);
+      setBtnGlyph(btn, '✕');
+      btn.setAttribute('title', (result && result.error) || 'Erro desconhecido');
+      showCommitToast('err', `✕ ${repoName}: ${(result && result.error) || 'erro'}`);
       setTimeout(() => {
         btn.className = 'btn-pull';
-        btn.innerHTML = '<span>⬇</span>';
+        setBtnGlyph(btn, '⬇');
+        btn.removeAttribute('title');
       }, 4000);
     }
   }
