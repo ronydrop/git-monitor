@@ -58,7 +58,8 @@
       "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Git Monitor"
+      "shortcutName": "Git Monitor",
+      "uninstallDisplayName": "Git Monitor"
     },
     "publish": {
       "provider": "github",
