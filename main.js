@@ -176,7 +176,9 @@ function getDefaultConfig() {
     githubToken: '',
     ghostZone: null,
     shortcutToggle: 'Control+Shift+G',
-    shortcutMinimize: 'Control+Shift+M'
+    shortcutMinimize: 'Control+Shift+M',
+    widgetMode: 'floating',
+    autoStart: true
   };
 }
 
@@ -217,7 +219,9 @@ function clampWindowPos(x, y, w = 300, h = 420) {
   return { x: primary.width - w - 10, y: 10 };
 }
 
-function createWindow() {
+const PENDING_STATES = ['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged'];
+
+function createFloatingWindow() {
   const { width: screenW } = screen.getPrimaryDisplay().workAreaSize;
 
   const rawX = config.windowX !== null ? config.windowX : screenW - 310;
@@ -346,6 +350,124 @@ function createWindow() {
       fadeOpacity(0.08, config.opacity || 1.0, 180);
     }
   }, 150);
+}
+
+function createNotchWindow() {
+  const display = screen.getPrimaryDisplay();
+  const width = 420;
+  // Altura fixa da janela — precisa caber: compact (38) + list max (254) + footer (28) + folga.
+  // O pill usa transform pra esconder/descer; window fica sempre "presente" no topo.
+  const height = 380;
+  const margin = 12;
+  const x = display.bounds.x + display.bounds.width - width - margin;
+  const y = display.bounds.y;
+
+  mainWindow = new BrowserWindow({
+    width,
+    height,
+    x,
+    y,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    hasShadow: false,
+    minimizable: false,
+    maximizable: false,
+    icon: getIconPath(),
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+  try { mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (_) {}
+  mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  mainWindow.loadFile('notch.html');
+
+  // Passthrough de mouse — click fora do pill passa pra janela abaixo,
+  // dentro do pill o notch recebe. Polling copiado do claude-island-dock.
+  let passthroughPoll = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      clearInterval(passthroughPoll);
+      return;
+    }
+    try {
+      const c = screen.getCursorScreenPoint();
+      const b = mainWindow.getBounds();
+      const inside = c.x >= b.x && c.x < b.x + b.width
+                  && c.y >= b.y && c.y < b.y + b.height;
+      mainWindow.setIgnoreMouseEvents(!inside, { forward: true });
+    } catch (_) {}
+  }, 100);
+
+  // Reposiciona se resolução mudar
+  const repositionNotch = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const d = screen.getPrimaryDisplay();
+    const nx = d.bounds.x + d.bounds.width - width - margin;
+    const ny = d.bounds.y;
+    try { mainWindow.setBounds({ x: nx, y: ny, width, height }); } catch (_) {}
+  };
+  screen.on('display-metrics-changed', repositionNotch);
+  screen.on('display-added', repositionNotch);
+  screen.on('display-removed', repositionNotch);
+
+  mainWindow.on('closed', () => {
+    clearInterval(passthroughPoll);
+    screen.removeListener('display-metrics-changed', repositionNotch);
+    screen.removeListener('display-added', repositionNotch);
+    screen.removeListener('display-removed', repositionNotch);
+  });
+}
+
+function createWindowForMode() {
+  const mode = config.widgetMode === 'notch' ? 'notch' : 'floating';
+  if (mode === 'notch') createNotchWindow();
+  else createFloatingWindow();
+}
+
+let switchingWidgetMode = false;
+function switchWidgetMode(mode) {
+  const next = mode === 'notch' ? 'notch' : 'floating';
+  if (config.widgetMode === next && mainWindow && !mainWindow.isDestroyed()) return;
+  config.widgetMode = next;
+  saveConfig(config);
+  switchingWidgetMode = true;
+  // Desvincula configWindow pra ela não morrer junto com o mainWindow antigo
+  if (configWindow && !configWindow.isDestroyed()) {
+    try { configWindow.setParentWindow(null); } catch (_) {}
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.destroy(); } catch (_) {}
+  }
+  createWindowForMode();
+  if (configWindow && !configWindow.isDestroyed() && mainWindow && !mainWindow.isDestroyed()) {
+    try { configWindow.setParentWindow(mainWindow); } catch (_) {}
+  }
+  setImmediate(() => { switchingWidgetMode = false; });
+}
+
+function applyAutoStart(enabled) {
+  if (!app.isPackaged) return; // só funciona em build empacotado
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: !!enabled,
+      path: process.execPath,
+      args: ['--hidden']
+    });
+  } catch (e) {
+    console.warn('[GitMonitor] setLoginItemSettings falhou:', e.message);
+  }
+}
+
+function isStartupHidden() {
+  return process.argv.includes('--hidden');
 }
 
 // ============================================================
@@ -561,7 +683,7 @@ ipcMain.handle('clear-ghost-zone', () => {
   mainWindow.webContents.send('ghost-zone-updated', null);
 });
 
-ipcMain.handle('open-config-window', () => {
+function openConfigWindow() {
   if (configWindow && !configWindow.isDestroyed()) {
     configWindow.focus();
     return;
@@ -578,7 +700,7 @@ ipcMain.handle('open-config-window', () => {
     resizable: false,
     minimizable: false,
     maximizable: false,
-    parent: mainWindow,
+    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
     icon: getIconPath(),
     webPreferences: {
       nodeIntegration: true,
@@ -587,7 +709,9 @@ ipcMain.handle('open-config-window', () => {
   });
   configWindow.loadFile('config.html');
   configWindow.on('closed', () => { configWindow = null; });
-});
+}
+
+ipcMain.handle('open-config-window', () => openConfigWindow());
 
 ipcMain.handle('close-config-window', () => {
   if (configWindow && !configWindow.isDestroyed()) configWindow.close();
@@ -644,6 +768,7 @@ ipcMain.handle('read-project-name', (_, repoPath) => {
 
 function toggleCollapseApp() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (config.widgetMode === 'notch') return false; // no-op em modo notch
   config.collapsed = !config.collapsed;
   saveConfig(config);
   const [x, y] = mainWindow.getPosition();
@@ -1234,24 +1359,49 @@ app.whenReady().then(() => {
     saveConfig(config);
   }
 
-  createWindow();
+  createWindowForMode();
 
-  if (config.collapsed) {
+  if (config.widgetMode !== 'notch' && config.collapsed) {
     const [x, y] = mainWindow.getPosition();
     mainWindow.setBounds({ x, y, width: 300, height: 38 }, false);
   }
+
+  if (config.widgetMode !== 'notch' && isStartupHidden()) {
+    try { mainWindow.hide(); } catch (_) {}
+  }
+
+  applyAutoStart(config.autoStart !== false);
 
   const icon = nativeImage.createFromPath(getIconPath());
   tray = new Tray(icon);
   tray.setToolTip('Git Monitor');
   tray.on('click', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (config.widgetMode === 'notch') {
+      openConfigWindow();
+      return;
+    }
     if (mainWindow.isVisible()) mainWindow.focus();
     else { mainWindow.show(); mainWindow.focus(); }
   });
 
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Mostrar', click: () => { mainWindow.show(); mainWindow.focus(); } },
+    {
+      label: 'Mostrar widget',
+      click: () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (config.widgetMode === 'notch') {
+          switchWidgetMode('floating');
+        } else {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    },
+    {
+      label: 'Alternar modo (flutuante/notch)',
+      click: () => switchWidgetMode(config.widgetMode === 'notch' ? 'floating' : 'notch')
+    },
     { label: 'Verificar atualizações', click: () => autoUpdater.checkForUpdates() },
     { type: 'separator' },
     { label: 'Sair', click: () => app.quit() }
@@ -1333,8 +1483,42 @@ ipcMain.handle('get-shortcuts', () => ({
   minimize: config.shortcutMinimize || 'Control+Shift+M'
 }));
 
+ipcMain.handle('set-widget-mode', (_, mode) => {
+  // Adia troca pro próximo tick pro IPC responder antes da janela atual ser destruída
+  setImmediate(() => switchWidgetMode(mode));
+  return mode === 'notch' ? 'notch' : 'floating';
+});
+
+ipcMain.handle('set-auto-start', (_, enabled) => {
+  config.autoStart = !!enabled;
+  saveConfig(config);
+  applyAutoStart(config.autoStart);
+  return { ok: true, packaged: app.isPackaged };
+});
+
+ipcMain.handle('notch-pending-repos', async () => {
+  const results = await checkAllRepos();
+  const pending = results
+    .filter(r => PENDING_STATES.includes(r.status))
+    .map(r => ({
+      name: r.name,
+      path: r.path,
+      status: r.status,
+      detail: r.detail,
+      branch: r.branch,
+      ahead: r.ahead,
+      behind: r.behind,
+      changedFiles: r.changedFiles,
+      remoteUrl: r.remoteUrl
+    }));
+  return { pending, total: results.length };
+});
+
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
 });
 
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => {
+  if (switchingWidgetMode) return;
+  app.quit();
+});

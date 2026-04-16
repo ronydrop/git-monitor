@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>Git Monitor Notch</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: transparent !important;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #e6edf3;
+    -webkit-user-select: none;
+    user-select: none;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  :root {
+    --bg: #000;
+    --border: #22272e;
+    --text: #e6edf3;
+    --text-dim: #7d8590;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --orange: #db6d28;
+    --blue: #58a6ff;
+    --blue-bg: rgba(88,166,255,.1);
+    --purple: #a371f7;
+  }
+
+  #stage {
+    width: 100vw;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+
+  #pill {
+    pointer-events: auto;
+    background: var(--bg);
+    color: var(--text);
+    width: 420px;
+    min-height: 38px;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 18px;
+    border-bottom-right-radius: 18px;
+    border: 1px solid rgba(255,255,255,.04);
+    border-top: none;
+    box-shadow: 0 10px 40px rgba(0,0,0,.55), 0 2px 12px rgba(0,0,0,.35);
+    overflow: hidden;
+    transform: translateY(-42px);
+    transition:
+      transform 280ms cubic-bezier(.22,.9,.3,1.15),
+      min-height 220ms ease,
+      border-radius 220ms ease,
+      box-shadow 220ms ease;
+  }
+
+  #pill.visible { transform: translateY(0); }
+  #pill.alert {
+    box-shadow:
+      0 10px 40px rgba(0,0,0,.55),
+      0 2px 12px rgba(0,0,0,.35),
+      0 0 0 1px rgba(219,109,40,.45),
+      0 0 22px rgba(219,109,40,.35);
+  }
+  #pill.alert.critical {
+    box-shadow:
+      0 10px 40px rgba(0,0,0,.55),
+      0 2px 12px rgba(0,0,0,.35),
+      0 0 0 1px rgba(248,81,73,.55),
+      0 0 22px rgba(248,81,73,.45);
+  }
+
+  #pill.expanded {
+    border-bottom-left-radius: 24px;
+    border-bottom-right-radius: 24px;
+  }
+
+  #compact {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    gap: 10px;
+    font-size: 12px;
+  }
+
+  #compact .left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+  #compact .right { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 10px; }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: 0 0 8px;
+    box-shadow: 0 0 8px currentColor;
+  }
+  .dot.clean { background: var(--green); color: var(--green); }
+  .dot.dirty, .dot.dirty-ahead { background: var(--yellow); color: var(--yellow); }
+  .dot.ahead { background: var(--blue); color: var(--blue); }
+  .dot.behind { background: var(--purple); color: var(--purple); }
+  .dot.diverged { background: var(--red); color: var(--red); }
+
+  #compact .summary {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .accent { color: var(--orange); }
+
+  #expand-chevron {
+    font-size: 10px;
+    color: var(--text-dim);
+    opacity: .8;
+    transition: transform 220ms ease;
+  }
+  #pill.expanded #expand-chevron { transform: rotate(180deg); }
+
+  #list {
+    max-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    transition: max-height 260ms ease, padding 260ms ease;
+    padding: 0 10px;
+  }
+  #pill.expanded #list {
+    max-height: 240px;
+    padding: 4px 10px 10px 10px;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 8px;
+    border-radius: 10px;
+    transition: background 160ms ease;
+    min-height: 36px;
+  }
+  .row:hover { background: #121418; }
+
+  .row .name {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row .detail {
+    font-size: 10px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    max-width: 140px;
+  }
+
+  .row .actions {
+    display: flex;
+    gap: 4px;
+  }
+  .row .btn {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid #21262d;
+    border-radius: 7px;
+    padding: 3px 7px;
+    font-size: 10px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 140ms ease;
+    line-height: 1;
+  }
+  .row .btn:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-bg); }
+  .row .btn.push { color: var(--orange); border-color: rgba(219,109,40,.25); }
+  .row .btn.push:hover { background: rgba(219,109,40,.1); border-color: var(--orange); }
+  .row .btn.pull { color: var(--purple); border-color: rgba(163,113,247,.25); }
+  .row .btn.pull:hover { background: rgba(163,113,247,.1); border-color: var(--purple); }
+  .row .btn.running {
+    color: var(--yellow);
+    border-color: rgba(210,153,34,.3);
+    pointer-events: none;
+  }
+  .row .btn.done { color: var(--green); border-color: rgba(63,185,80,.35); pointer-events: none; }
+  .row .btn.fail { color: var(--red); border-color: rgba(248,81,73,.35); pointer-events: none; }
+  .row .btn.icon { padding: 3px 6px; }
+
+  #footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 12px 8px;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  #footer .link {
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  #footer .link:hover { color: var(--text); background: #121418; }
+
+  .spin { animation: spin 900ms linear infinite; display: inline-block; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  #list::-webkit-scrollbar { width: 4px; }
+  #list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+  #list::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="pill">
+    <div id="compact">
+      <div class="left">
+        <span class="dot" id="statusDot"></span>
+        <span class="summary" id="summary"></span>
+      </div>
+      <div class="right">
+        <span id="expand-chevron">▾</span>
+      </div>
+    </div>
+    <div id="list"></div>
+    <div id="footer">
+      <span class="link" id="openFull">Abrir widget</span>
+      <span class="link" id="openCfg">Configurações</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  const { ipcRenderer } = require('electron');
+
+  const pill = document.getElementById('pill');
+  const listEl = document.getElementById('list');
+  const summaryEl = document.getElementById('summary');
+  const statusDot = document.getElementById('statusDot');
+
+  let pending = [];
+  let hovered = false;
+  let pollTimer = null;
+  const runningActions = new Set();
+
+  function makeEl(tag, props, children) {
+    const el = document.createElement(tag);
+    if (props) Object.entries(props).forEach(([k, v]) => {
+      if (k === 'className') el.className = v;
+      else if (k === 'textContent') el.textContent = v;
+      else if (k === 'dataset') Object.entries(v).forEach(([dk, dv]) => { el.dataset[dk] = dv; });
+      else if (k === 'title') el.title = v;
+      else el.setAttribute(k, v);
+    });
+    if (children) children.forEach(c => { if (c) el.appendChild(c); });
+    return el;
+  }
+
+  function statusClass(s) {
+    return ['dirty','dirty-ahead','ahead','behind','diverged'].includes(s) ? s : 'dirty';
+  }
+
+  function dominantStatus(list) {
+    if (list.some(r => r.status === 'diverged')) return 'diverged';
+    if (list.some(r => r.status === 'behind')) return 'behind';
+    if (list.some(r => r.status === 'dirty' || r.status === 'dirty-ahead')) return 'dirty';
+    if (list.some(r => r.status === 'ahead')) return 'ahead';
+    return 'dirty';
+  }
+
+  function updateVisibility() {
+    const hasPending = pending.length > 0;
+    const shouldShow = hasPending || hovered;
+    pill.classList.toggle('visible', shouldShow);
+
+    pill.classList.toggle('alert', hasPending);
+    pill.classList.toggle('critical', pending.some(r => r.status === 'diverged'));
+    pill.classList.toggle('expanded', hovered && hasPending);
+  }
+
+  function renderSummary() {
+    summaryEl.replaceChildren();
+    if (pending.length === 0) {
+      statusDot.className = 'dot clean';
+      summaryEl.appendChild(makeEl('span', { textContent: 'Tudo sincronizado' }));
+      return;
+    }
+
+    const top = dominantStatus(pending);
+    statusDot.className = 'dot ' + statusClass(top);
+
+    const verb = {
+      dirty: 'commit pendente',
+      'dirty-ahead': 'commit pendente',
+      ahead: 'push pendente',
+      behind: 'pull pendente',
+      diverged: 'diverged!'
+    }[top] || 'pendente';
+
+    summaryEl.appendChild(makeEl('span', { className: 'accent', textContent: '●' }));
+    if (pending.length === 1) {
+      summaryEl.appendChild(makeEl('span', { textContent: pending[0].name + ' — ' + verb }));
+    } else {
+      summaryEl.appendChild(makeEl('span', { textContent: pending.length + ' repos — ação pendente' }));
+    }
+  }
+
+  function renderRow(r) {
+    const cls = statusClass(r.status);
+    const isRunning = runningActions.has(r.path);
+
+    const dot = makeEl('span', { className: 'dot ' + cls });
+    const name = makeEl('span', { className: 'name', textContent: r.name || '(sem nome)', title: r.path || '' });
+    const detail = makeEl('span', { className: 'detail', textContent: r.detail || '' });
+
+    const actions = makeEl('div', { className: 'actions' });
+
+    const folderBtn = makeEl('button', {
+      className: 'btn icon',
+      textContent: '📁',
+      title: 'Abrir pasta',
+      dataset: { act: 'folder', path: r.path || '' }
+    });
+    folderBtn.addEventListener('click', onRowAction);
+    actions.appendChild(folderBtn);
+
+    const isPull = r.status === 'behind' || r.status === 'diverged';
+    const actBtn = makeEl('button', {
+      className: 'btn ' + (isPull ? 'pull' : 'push') + (isRunning ? ' running' : ''),
+      title: isPull ? 'Pull' : 'Commit + push',
+      dataset: {
+        act: isPull ? 'pull' : 'push',
+        path: r.path || '',
+        name: r.name || ''
+      }
+    });
+    if (isRunning) {
+      const sp = makeEl('span', { className: 'spin', textContent: '↻' });
+      actBtn.appendChild(sp);
+    } else {
+      actBtn.textContent = isPull ? '↓ pull' : '↑ push';
+    }
+    actBtn.addEventListener('click', onRowAction);
+    actions.appendChild(actBtn);
+
+    return makeEl('div', { className: 'row' }, [dot, name, detail, actions]);
+  }
+
+  function render() {
+    renderSummary();
+    listEl.replaceChildren();
+    pending.forEach(r => listEl.appendChild(renderRow(r)));
+  }
+
+  async function onRowAction(ev) {
+    ev.stopPropagation();
+    const btn = ev.currentTarget;
+    const act = btn.dataset.act;
+    const p = btn.dataset.path;
+
+    if (!p) return;
+
+    if (act === 'folder') {
+      ipcRenderer.invoke('open-folder', p);
+      return;
+    }
+    if (act === 'push' || act === 'pull') {
+      runningActions.add(p);
+      render();
+      let ok = false;
+      let errMsg = '';
+      try {
+        const channel = act === 'push' ? 'commit-and-push' : 'git-pull';
+        const res = await ipcRenderer.invoke(channel, p);
+        ok = !!(res && res.ok);
+        errMsg = (res && res.error) || '';
+      } catch (e) {
+        ok = false;
+        errMsg = e.message || String(e);
+      }
+      runningActions.delete(p);
+      markRowResult(p, ok ? 'done' : 'fail', errMsg);
+      setTimeout(() => refresh(), 900);
+    }
+  }
+
+  function markRowResult(repoPath, kind, detail) {
+    listEl.querySelectorAll('button.btn').forEach(btn => {
+      if (btn.dataset.path !== repoPath) return;
+      const act = btn.dataset.act;
+      if (act !== 'push' && act !== 'pull') return;
+      btn.classList.remove('running');
+      btn.classList.add(kind);
+      btn.replaceChildren();
+      btn.textContent = kind === 'done' ? '✓ ok' : '✕ erro';
+      if (detail) btn.title = detail;
+    });
+  }
+
+  async function refresh() {
+    try {
+      const res = await ipcRenderer.invoke('notch-pending-repos');
+      pending = (res && res.pending) || [];
+      render();
+      updateVisibility();
+    } catch (e) {
+      console.warn('[notch] refresh falhou:', e);
+    }
+  }
+
+  async function startPolling() {
+    const cfg = await ipcRenderer.invoke('get-config');
+    const seconds = Math.max(10, cfg.intervalSeconds || 30);
+    refresh();
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(refresh, seconds * 1000);
+  }
+
+  pill.addEventListener('mouseenter', () => { hovered = true; updateVisibility(); });
+  pill.addEventListener('mouseleave', () => { hovered = false; updateVisibility(); });
+
+  document.getElementById('openFull').addEventListener('click', async () => {
+    await ipcRenderer.invoke('set-widget-mode', 'floating');
+  });
+  document.getElementById('openCfg').addEventListener('click', () => {
+    ipcRenderer.invoke('open-config-window');
+  });
+
+  ipcRenderer.on('config-saved', () => startPolling());
+
+  startPolling();
+</script>
+</body>
+</html>

@@ -693,6 +693,32 @@
       <div id="scStatus" style="font-size: 9.5px; color: var(--text-dim);"></div>
     </div>
 
+    <div class="section-label">Modo do widget</div>
+    <div class="config-card">
+      <label class="config-row" style="cursor:pointer; font-size: 11px; color: var(--text);">
+        <input type="radio" name="widgetMode" value="floating" id="modeFloating" style="margin-right:8px;">
+        <span>Flutuante — janela fixa no canto da tela (modo clássico)</span>
+      </label>
+      <label class="config-row" style="cursor:pointer; font-size: 11px; color: var(--text);">
+        <input type="radio" name="widgetMode" value="notch" id="modeNotch" style="margin-right:8px;">
+        <span>Notch — pill no topo da tela, aparece só com pendências</span>
+      </label>
+      <div id="modeHint" style="font-size: 9.5px; color: var(--text-dim); margin-top: 4px;">
+        No modo notch, o widget esconde-se no topo e desce quando algum repo tem commit/push/pull pendente.
+      </div>
+    </div>
+
+    <div class="section-label">Inicialização</div>
+    <div class="config-card">
+      <label class="config-row" style="cursor:pointer; font-size: 11px; color: var(--text);">
+        <input type="checkbox" id="autoStart" style="margin-right:8px;">
+        <span>Iniciar junto com o Windows (em segundo plano)</span>
+      </label>
+      <div id="autoStartHint" style="font-size: 9.5px; color: var(--text-dim); margin-top: 4px;">
+        Só funciona no app instalado (não em dev mode). Inicia com <code>--hidden</code>.
+      </div>
+    </div>
+
     <div class="section-label">Sobre</div>
     <div class="config-card">
       <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -741,6 +767,12 @@
     document.getElementById('openaiKey').value = config.openaiKey || '';
     document.getElementById('githubToken').value = config.githubToken || '';
     setProvider(config.aiProvider || 'anthropic');
+
+    const currentMode = config.widgetMode === 'notch' ? 'notch' : 'floating';
+    const modeRadio = document.querySelector('input[name="widgetMode"][value="' + currentMode + '"]');
+    if (modeRadio) modeRadio.checked = true;
+    document.getElementById('autoStart').checked = config.autoStart !== false;
+
     document.getElementById('activeRepos').textContent   = '';
     document.getElementById('inactiveRepos').textContent = '';
     (config.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false));
@@ -1062,6 +1094,11 @@
     if (scToggleVal || scMinimizeVal) {
       await ipcRenderer.invoke('save-shortcuts', { toggle: scToggleVal, minimize: scMinimizeVal });
     }
+
+    const selectedMode = (document.querySelector('input[name="widgetMode"]:checked') || {}).value || 'floating';
+    const autoStartVal = document.getElementById('autoStart').checked;
+    await ipcRenderer.invoke('set-auto-start', autoStartVal);
+    await ipcRenderer.invoke('set-widget-mode', selectedMode);
 
     showToast('Configurações salvas!', 'success');
     setTimeout(() => ipcRenderer.invoke('close-config-window'), 700);
