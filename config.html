@@ -1005,19 +1005,8 @@
     document.getElementById('modeHint').textContent = modeHints[val] || '';
   }
 
-  function toggleKeyVisibility() {
-    const inp = document.getElementById('anthropicKey');
-    inp.type = inp.type === 'password' ? 'text' : 'password';
-  }
-
-  function toggleOpenaiVisibility() {
-    const inp = document.getElementById('openaiKey');
-    inp.type = inp.type === 'password' ? 'text' : 'password';
-  }
-
-  function toggleGhVisibility() {
-    const inp = document.getElementById('githubToken');
-    inp.type = inp.type === 'password' ? 'text' : 'password';
+  function clearEl(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
   }
 
   function setProvider(provider) {
@@ -1030,7 +1019,187 @@
     btnO.style.background  = !isAnthropic ? 'var(--blue-bg)' : 'transparent';
     btnO.style.color       = !isAnthropic ? 'var(--blue)' : 'var(--text-dim)';
     btnO.style.borderColor = !isAnthropic ? 'var(--blue)' : 'var(--border)';
+    renderBadges(provider);
     ipcRenderer.invoke('save-ai-provider', provider);
+  }
+
+  function renderBadges(principal) {
+    const bA = document.getElementById('badgeAnthropic');
+    const bO = document.getElementById('badgeOpenai');
+    if (!bA || !bO) return;
+    if (principal === 'anthropic') {
+      bA.textContent = 'PRINCIPAL'; bA.className = 'agent-badge principal';
+      bO.textContent = 'FALLBACK';  bO.className = 'agent-badge fallback';
+    } else {
+      bA.textContent = 'FALLBACK';  bA.className = 'agent-badge fallback';
+      bO.textContent = 'PRINCIPAL'; bO.className = 'agent-badge principal';
+    }
+  }
+
+  async function setAuthMode(agent, mode) {
+    const handler = agent === 'anthropic' ? 'save-anthropic-auth-mode' : 'save-openai-auth-mode';
+    await ipcRenderer.invoke(handler, mode);
+    if (agent === 'anthropic') configSafe.anthropicAuthMode = mode;
+    else configSafe.openaiAuthMode = mode;
+    renderAuthDetail(agent);
+  }
+
+  async function detectCliCreds() {
+    cliResult = await ipcRenderer.invoke('detect-cli-credentials');
+    updateCliBadge('claude', cliResult.claude);
+    updateCliBadge('openai', cliResult.openai);
+    renderAuthDetail('anthropic');
+    renderAuthDetail('openai');
+  }
+
+  function updateCliBadge(which, status) {
+    const el = which === 'claude'
+      ? document.getElementById('claudeCliStatus')
+      : document.getElementById('codexCliStatus');
+    if (!el) return;
+    if (which === 'claude') {
+      if (status.available) {
+        const days = status.expiresAt
+          ? Math.max(0, Math.floor((Number(status.expiresAt) - Date.now()) / 86400000))
+          : null;
+        el.textContent = '\u2713 detectado' + (days !== null ? ' \u00B7 expira em ' + days + 'd' : '');
+        el.className = 'cli-badge cli-ok';
+      } else if (status.expired) {
+        el.textContent = '\u26A0 expirado';
+        el.className = 'cli-badge cli-warn';
+      } else {
+        el.textContent = '\u2715 n\u00E3o encontrado';
+        el.className = 'cli-badge cli-err';
+      }
+    } else {
+      if (status.available) {
+        el.textContent = '\u2713 detectado';
+        el.className = 'cli-badge cli-ok';
+      } else if (status.mode && status.mode !== 'ApiKey') {
+        el.textContent = '\u26A0 modo ' + status.mode;
+        el.className = 'cli-badge cli-warn';
+      } else {
+        el.textContent = '\u2715 n\u00E3o encontrado';
+        el.className = 'cli-badge cli-err';
+      }
+    }
+  }
+
+  function getSelectedAuthMode(agent) {
+    const name = agent === 'anthropic' ? 'authModeAnthropic' : 'authModeOpenai';
+    const checked = document.querySelector('input[name="' + name + '"]:checked');
+    return checked ? checked.value : 'apiKey';
+  }
+
+  function renderAuthDetail(agent) {
+    const id = 'authDetail' + (agent === 'anthropic' ? 'Anthropic' : 'Openai');
+    const el = document.getElementById(id);
+    if (!el) return;
+    clearEl(el);
+    const mode = getSelectedAuthMode(agent);
+    const cli  = agent === 'anthropic' ? (cliResult.claude || {}) : (cliResult.openai || {});
+
+    if (mode === 'oauth') {
+      if (!cli.available) {
+        const warn = document.createElement('div');
+        warn.className = 'auth-warn';
+        if (agent === 'anthropic') {
+          warn.textContent = cli.expired
+            ? '\u26A0 Token Claude CLI expirado \u2014 rode `claude login` no terminal'
+            : '\u26A0 Claude CLI n\u00E3o encontrado \u2014 rode `claude login` no terminal';
+        } else {
+          warn.textContent = cli.mode && cli.mode !== 'ApiKey'
+            ? '\u26A0 Codex CLI em modo ' + cli.mode + ' \u2014 use Token manual ou reconfigure o Codex'
+            : '\u26A0 Codex CLI n\u00E3o encontrado \u2014 rode a configura\u00E7\u00E3o do Codex ou use Token manual';
+        }
+        el.appendChild(warn);
+      }
+    } else {
+      renderKeyFieldInto(el, agent);
+    }
+  }
+
+  function buildKeyRow(inp, hasKey, hint, saveCmd, ph, agent) {
+    const row = document.createElement('div');
+    row.className = 'key-row-new';
+    row.appendChild(inp);
+    if (hasKey) {
+      const btnEdit = document.createElement('button');
+      btnEdit.textContent = 'Editar';
+      btnEdit.className   = 'btn-key-action';
+      let editing = false;
+      btnEdit.onclick = () => {
+        editing = !editing;
+        if (editing) {
+          inp.readOnly = false; inp.value = ''; inp.className = 'key-masked-input';
+          inp.placeholder = ph; inp.focus(); btnEdit.textContent = 'Cancelar';
+        } else {
+          inp.readOnly = true; inp.value = hint; inp.className = 'key-masked-input masked';
+          btnEdit.textContent = 'Editar';
+        }
+      };
+      row.appendChild(btnEdit);
+
+      const btnRemove = document.createElement('button');
+      btnRemove.textContent = 'Remover';
+      btnRemove.className   = 'btn-key-action btn-key-remove';
+      btnRemove.onclick = async () => {
+        await ipcRenderer.invoke(saveCmd, '');
+        if (agent === 'anthropic') { configSafe.hasAnthropicKey = false; configSafe.anthropicKeyHint = ''; }
+        else if (agent === 'openai') { configSafe.hasOpenaiKey = false; configSafe.openaiKeyHint = ''; }
+        else { configSafe.hasGithubToken = false; configSafe.githubTokenHint = ''; }
+        if (agent === 'github') renderGithubTokenField();
+        else renderAuthDetail(agent);
+        showToast('Key removida', 'success');
+      };
+      row.appendChild(btnRemove);
+    }
+    return row;
+  }
+
+  function renderKeyFieldInto(container, agent) {
+    const isAnthropic = agent === 'anthropic';
+    const hasKey   = isAnthropic ? configSafe.hasAnthropicKey  : configSafe.hasOpenaiKey;
+    const hint     = isAnthropic ? configSafe.anthropicKeyHint : configSafe.openaiKeyHint;
+    const ph       = isAnthropic ? 'sk-ant-...' : 'sk-...';
+    const saveCmd  = isAnthropic ? 'save-anthropic-key' : 'save-openai-key';
+    const linkUrl  = isAnthropic ? 'https://console.anthropic.com/settings/keys' : 'https://platform.openai.com/api-keys';
+    const linkText = isAnthropic ? '\u2197 console.anthropic.com' : '\u2197 platform.openai.com';
+
+    const inp = document.createElement('input');
+    inp.type      = 'password';
+    inp.id        = agent + 'Key';
+    inp.className = 'key-masked-input' + (hasKey ? ' masked' : '');
+    inp.readOnly  = hasKey;
+    inp.value     = hasKey ? hint : '';
+    inp.placeholder = ph;
+
+    const row = buildKeyRow(inp, hasKey, hint, saveCmd, ph, agent);
+    container.appendChild(row);
+
+    const link = document.createElement('a');
+    link.href = '#'; link.className = 'key-link'; link.textContent = linkText;
+    link.onclick = () => ipcRenderer.invoke('open-git-url', linkUrl);
+    container.appendChild(link);
+  }
+
+  function renderGithubTokenField() {
+    const area = document.getElementById('githubTokenArea');
+    if (!area) return;
+    clearEl(area);
+    const hasKey = configSafe.hasGithubToken;
+    const hint   = configSafe.githubTokenHint || '';
+
+    const inp = document.createElement('input');
+    inp.type      = 'password';
+    inp.id        = 'githubToken';
+    inp.className = 'key-masked-input' + (hasKey ? ' masked' : '');
+    inp.readOnly  = hasKey;
+    inp.value     = hasKey ? hint : '';
+    inp.placeholder = 'ghp_...';
+
+    const row = buildKeyRow(inp, hasKey, hint, 'save-github-token', 'ghp_...', 'github');
+    area.appendChild(row);
   }
 
   // ---- Atalhos ----
@@ -1126,37 +1295,6 @@
   }
 
   // ---- Auto-auth CLI detect ----
-  async function detectCliCreds() {
-    const res      = await ipcRenderer.invoke('detect-cli-credentials');
-    const claudeEl = document.getElementById('claudeCliStatus');
-    const codexEl  = document.getElementById('codexCliStatus');
-
-    if (res.claude.available) {
-      const days = res.claude.expiresAt
-        ? Math.max(0, Math.floor((Number(res.claude.expiresAt) - Date.now()) / 86400000))
-        : null;
-      claudeEl.textContent = 'Claude CLI: \u2713 detectado' + (days !== null ? ' (expira em ' + days + 'd)' : '');
-      claudeEl.style.color = 'var(--green)';
-    } else if (res.claude.expired) {
-      claudeEl.textContent = 'Claude CLI: \u26A0 token expirado \u2014 rode `claude login`';
-      claudeEl.style.color = 'var(--yellow)';
-    } else {
-      claudeEl.textContent = 'Claude CLI: \u2715 n\u00E3o detectado (usar\u00E1 API key manual)';
-      claudeEl.style.color = 'var(--text-dim)';
-    }
-
-    if (res.openai.available) {
-      codexEl.textContent = 'Codex CLI: \u2713 ApiKey detectada';
-      codexEl.style.color = 'var(--green)';
-    } else if (res.openai.mode && res.openai.mode !== 'ApiKey') {
-      codexEl.textContent = 'Codex CLI: \u26A0 modo ' + res.openai.mode + ' n\u00E3o serve pra API \u2014 use key manual';
-      codexEl.style.color = 'var(--yellow)';
-    } else {
-      codexEl.textContent = 'Codex CLI: \u2715 n\u00E3o detectado (usar\u00E1 API key manual)';
-      codexEl.style.color = 'var(--text-dim)';
-    }
-  }
-
   // ---- Filter repos ----
   function filterRepos() {
     const input = document.getElementById('repoSearch');
@@ -1361,16 +1499,19 @@
       if (name && path) repos.push({ name, path, enabled });
     });
 
-    const interval     = parseInt(document.getElementById('intervalSelect').value);
-    const anthropicKey = document.getElementById('anthropicKey').value.trim();
-    const openaiKey    = document.getElementById('openaiKey').value.trim();
-    const githubToken  = document.getElementById('githubToken').value.trim();
+    const interval = parseInt(document.getElementById('intervalSelect').value);
+    await ipcRenderer.invoke('save-repos',   repos);
+    await ipcRenderer.invoke('set-interval', interval);
 
-    await ipcRenderer.invoke('save-repos',          repos);
-    await ipcRenderer.invoke('set-interval',        interval);
-    await ipcRenderer.invoke('save-anthropic-key',  anthropicKey);
-    await ipcRenderer.invoke('save-openai-key',     openaiKey);
-    await ipcRenderer.invoke('save-github-token',   githubToken);
+    const saveKeyIfEdited = async (id, handler) => {
+      const el = document.getElementById(id);
+      if (el && !el.readOnly && el.value.trim()) {
+        await ipcRenderer.invoke(handler, el.value.trim());
+      }
+    };
+    await saveKeyIfEdited('anthropicKey', 'save-anthropic-key');
+    await saveKeyIfEdited('openaiKey',    'save-openai-key');
+    await saveKeyIfEdited('githubToken',  'save-github-token');
 
     const scToggleVal   = document.getElementById('scToggle').value.trim();
     const scMinimizeVal = document.getElementById('scMinimize').value.trim();
