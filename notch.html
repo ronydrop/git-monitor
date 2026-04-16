@@ -1,21 +1,9 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8" />
-<title>Git Monitor Notch</title>
+<meta charset="UTF-8">
+<title>Git Monitor — Notch</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    background: transparent !important;
-    overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    color: #e6edf3;
-    -webkit-user-select: none;
-    user-select: none;
-    height: 100vh;
-    width: 100vw;
-  }
-
   :root {
     --bg: #000;
     --border: #22272e;
@@ -26,217 +14,345 @@
     --red: #f85149;
     --orange: #db6d28;
     --blue: #58a6ff;
-    --blue-bg: rgba(88,166,255,.1);
     --purple: #a371f7;
   }
 
-  #stage {
-    width: 100vw;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: transparent;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+    font-size: 12px;
+    overflow: hidden;
+    user-select: none;
+    cursor: default;
+  }
+
+  /* Wrapper não recebe mouse events — só o pill recebe */
+  #wrap {
+    position: absolute;
+    inset: 0;
     pointer-events: none;
   }
 
+  /* Pill: grudado na borda direita superior, colado no topo da tela.
+     Transições: width/height/border-radius com bouncy overshoot (open),
+     transform com easing suave (minimize/restore).
+     Close acontece via classe `.closing` — troca pra curva sem overshoot. */
   #pill {
-    pointer-events: auto;
-    background: var(--bg);
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 260px;
+    height: 38px;
+    background: #000;
     color: var(--text);
-    width: 420px;
-    min-height: 38px;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
     border-bottom-left-radius: 18px;
     border-bottom-right-radius: 18px;
-    border: 1px solid rgba(255,255,255,.04);
-    border-top: none;
-    box-shadow: 0 10px 40px rgba(0,0,0,.55), 0 2px 12px rgba(0,0,0,.35);
     overflow: hidden;
-    transform: translateY(-42px);
+    pointer-events: auto;
+    will-change: width, height, transform, box-shadow, border-radius;
     transition:
-      transform 280ms cubic-bezier(.22,.9,.3,1.15),
-      min-height 220ms ease,
-      border-radius 220ms ease,
-      box-shadow 220ms ease;
+      width 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      height 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      border-bottom-left-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      border-bottom-right-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      transform 280ms cubic-bezier(0.25, 0, 0, 1),
+      box-shadow 400ms ease;
   }
 
-  #pill.visible { transform: translateY(0); }
-  #pill.alert {
-    box-shadow:
-      0 10px 40px rgba(0,0,0,.55),
-      0 2px 12px rgba(0,0,0,.35),
-      0 0 0 1px rgba(219,109,40,.45),
-      0 0 22px rgba(219,109,40,.35);
-  }
-  #pill.alert.critical {
-    box-shadow:
-      0 10px 40px rgba(0,0,0,.55),
-      0 2px 12px rgba(0,0,0,.35),
-      0 0 0 1px rgba(248,81,73,.55),
-      0 0 22px rgba(248,81,73,.45);
+  #pill.closing {
+    transition:
+      width 300ms cubic-bezier(0.25, 0, 0, 1),
+      height 300ms cubic-bezier(0.25, 0, 0, 1),
+      border-bottom-left-radius 300ms cubic-bezier(0.25, 0, 0, 1),
+      border-bottom-right-radius 300ms cubic-bezier(0.25, 0, 0, 1),
+      transform 280ms cubic-bezier(0.25, 0, 0, 1),
+      box-shadow 400ms ease;
   }
 
   #pill.expanded {
-    border-bottom-left-radius: 24px;
-    border-bottom-right-radius: 24px;
+    width: 420px;
+    height: var(--expanded-h, 320px);
+    border-bottom-left-radius: 28px;
+    border-bottom-right-radius: 28px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.75);
   }
 
+  #pill.minimized {
+    transform: translateY(-34px);
+  }
+
+  #pill.alert {
+    box-shadow:
+      0 0 14px 3px rgba(219,109,40,0.35),
+      0 0 6px 1px rgba(219,109,40,0.20);
+  }
+  #pill.alert.critical {
+    box-shadow:
+      0 0 14px 3px rgba(248,81,73,0.45),
+      0 0 6px 1px rgba(248,81,73,0.25);
+  }
+  /* Quando expandido, a sombra de profundidade substitui o glow */
+  #pill.expanded.alert,
+  #pill.expanded.alert.critical {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.75);
+  }
+
+  /* Pin dot (canto superior direito quando pinned) */
+  #pinDot {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--orange);
+    box-shadow: 0 0 5px var(--orange);
+    opacity: 0;
+    transition: opacity 200ms ease;
+    pointer-events: none;
+  }
+  #pill.pinned:not(.expanded) #pinDot { opacity: 0; } /* esconde no compact */
+  #pill.pinned.expanded #pinDot { opacity: 1; }
+
+  /* Baseline compact (sempre renderizado, fade in/out via opacity) */
   #compact {
-    height: 38px;
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 16px;
-    gap: 10px;
-    font-size: 12px;
+    gap: 8px;
+    padding: 0 14px;
+    height: 38px;
+    opacity: 1;
+    transition: opacity 120ms ease;
   }
-
-  #compact .left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-  #compact .right { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 10px; }
+  #pill.expanded #compact { opacity: 0; pointer-events: none; }
 
   .dot {
-    width: 8px;
-    height: 8px;
+    width: 8px; height: 8px;
     border-radius: 50%;
-    flex: 0 0 8px;
+    background: var(--green);
     box-shadow: 0 0 8px currentColor;
+    flex-shrink: 0;
   }
-  .dot.clean { background: var(--green); color: var(--green); }
-  .dot.dirty, .dot.dirty-ahead { background: var(--yellow); color: var(--yellow); }
-  .dot.ahead { background: var(--blue); color: var(--blue); }
-  .dot.behind { background: var(--purple); color: var(--purple); }
-  .dot.diverged { background: var(--red); color: var(--red); }
+  .dot.clean     { color: var(--green);  background: var(--green);  box-shadow: none; }
+  .dot.dirty     { color: var(--yellow); background: var(--yellow); }
+  .dot.dirty-ahead { color: var(--orange); background: var(--orange); }
+  .dot.ahead     { color: var(--orange); background: var(--orange); }
+  .dot.behind    { color: var(--blue);   background: var(--blue); }
+  .dot.diverged  { color: var(--red);    background: var(--red); }
+  .dot.busy      { color: var(--yellow); background: var(--yellow); opacity: 0.6; }
+  .dot.error     { color: var(--red);    background: var(--red);    opacity: 0.7; }
 
-  #compact .summary {
-    white-space: nowrap;
+  #countText {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--orange);
+    font-feature-settings: 'tnum';
+    min-width: 14px;
+  }
+  #countText.clean { color: var(--text-dim); font-weight: 600; font-size: 13px; }
+
+  #compact #labelText {
+    font-size: 11px;
+    color: var(--text-dim);
+    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-weight: 600;
+    white-space: nowrap;
+    letter-spacing: 0.2px;
+  }
+
+  #gitIcon {
+    width: 16px; height: 16px;
+    opacity: 0.75;
+    flex-shrink: 0;
+  }
+
+  /* Expanded panel */
+  #expanded {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    transition: opacity 120ms ease 60ms; /* pequeno delay pra entrar depois do reshape */
+  }
+  #pill.expanded #expanded {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  #hdr {
+    height: 38px;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
+    padding: 0 12px;
+    background: #000;
+    position: sticky;
+    top: 0;
+    z-index: 2;
   }
-  .accent { color: var(--orange); }
-
-  #expand-chevron {
-    font-size: 10px;
+  .hdr-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+  .hdr-left .count { font-weight: 800; font-size: 14px; color: var(--orange); }
+  .hdr-left .count.clean { color: var(--text-dim); font-weight: 600; }
+  .hdr-left .label {
+    font-size: 11px;
     color: var(--text-dim);
-    opacity: .8;
-    transition: transform 220ms ease;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  #pill.expanded #expand-chevron { transform: rotate(180deg); }
+  .hdr-actions { display: flex; align-items: center; gap: 4px; }
 
+  .hdr-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    transition: background 150ms ease, color 150ms ease;
+    padding: 0;
+  }
+  .hdr-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+  /* Scrollable list */
   #list {
-    max-height: 0;
+    flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    transition: max-height 260ms ease, padding 260ms ease;
-    padding: 0 10px;
+    padding: 6px 10px 12px;
   }
-  #pill.expanded #list {
-    max-height: 240px;
-    padding: 4px 10px 10px 10px;
-  }
+  #list::-webkit-scrollbar { width: 6px; }
+  #list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+  #list::-webkit-scrollbar-track { background: transparent; }
 
   .row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 7px 8px;
-    border-radius: 10px;
-    transition: background 160ms ease;
-    min-height: 36px;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    transition: background 150ms ease;
+    min-height: 32px;
   }
-  .row:hover { background: #121418; }
-
+  .row:hover { background: rgba(255,255,255,0.06); }
   .row .name {
-    flex: 1;
     font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .row .detail {
-    font-size: 10px;
-    color: var(--text-dim);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex-shrink: 0;
+    font-weight: 500;
+    color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     max-width: 140px;
   }
-
+  .row .detail {
+    font-size: 10.5px;
+    color: var(--text-dim);
+    font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+    flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .row .actions {
     display: flex;
-    gap: 4px;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
   }
-  .row .btn {
+  .btn {
     background: transparent;
+    border: 1px solid rgba(255,255,255,0.1);
     color: var(--text-dim);
-    border: 1px solid #21262d;
-    border-radius: 7px;
-    padding: 3px 7px;
-    font-size: 10px;
-    font-family: inherit;
     cursor: pointer;
-    transition: all 140ms ease;
-    line-height: 1;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 5px;
+    font-size: 10.5px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
   }
-  .row .btn:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-bg); }
-  .row .btn.push { color: var(--orange); border-color: rgba(219,109,40,.25); }
-  .row .btn.push:hover { background: rgba(219,109,40,.1); border-color: var(--orange); }
-  .row .btn.pull { color: var(--purple); border-color: rgba(163,113,247,.25); }
-  .row .btn.pull:hover { background: rgba(163,113,247,.1); border-color: var(--purple); }
-  .row .btn.running {
+  .btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+  .btn.icon {
+    width: 24px; padding: 0;
+    font-size: 12px;
+  }
+  .btn.push {
+    color: var(--orange);
+    border-color: rgba(219,109,40,0.4);
+  }
+  .btn.push:hover { background: rgba(219,109,40,0.12); }
+  .btn.pull {
+    color: var(--purple);
+    border-color: rgba(163,113,247,0.4);
+  }
+  .btn.pull:hover { background: rgba(163,113,247,0.12); }
+  .btn.running {
     color: var(--yellow);
-    border-color: rgba(210,153,34,.3);
+    border-color: rgba(210,153,34,0.4);
     pointer-events: none;
   }
-  .row .btn.done { color: var(--green); border-color: rgba(63,185,80,.35); pointer-events: none; }
-  .row .btn.fail { color: var(--red); border-color: rgba(248,81,73,.35); pointer-events: none; }
-  .row .btn.icon { padding: 3px 6px; }
+  .btn.running .spin { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .btn.done {
+    color: var(--green);
+    border-color: rgba(63,185,80,0.4);
+  }
+  .btn.fail {
+    color: var(--red);
+    border-color: rgba(248,81,73,0.4);
+  }
 
-  #footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 12px 8px;
-    font-size: 10px;
+  #empty {
+    text-align: center;
+    padding: 24px 12px;
     color: var(--text-dim);
+    font-size: 11px;
   }
-  #footer .link {
-    cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 6px;
-    transition: background 120ms ease, color 120ms ease;
-  }
-  #footer .link:hover { color: var(--text); background: #121418; }
-
-  .spin { animation: spin 900ms linear infinite; display: inline-block; }
-  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-
-  #list::-webkit-scrollbar { width: 4px; }
-  #list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
-  #list::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
-<div id="stage">
+<div id="wrap">
   <div id="pill">
+    <div id="pinDot"></div>
+
+    <!-- Baseline compact -->
     <div id="compact">
-      <div class="left">
-        <span class="dot" id="statusDot"></span>
-        <span class="summary" id="summary"></span>
-      </div>
-      <div class="right">
-        <span id="expand-chevron">▾</span>
-      </div>
+      <span class="dot clean" id="dotCompact"></span>
+      <span id="countText" class="clean">0</span>
+      <span id="labelText">Tudo sincronizado</span>
+      <svg id="gitIcon" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="#e6edf3">
+        <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.223 1.223 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.587 5.918v4.362a1.226 1.226 0 1 1-1.008-.036V5.844a1.226 1.226 0 0 1-.666-1.608L5.1 2.42.301 7.22a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.954-6.954a1.031 1.031 0 0 0 0-1.422"/>
+      </svg>
     </div>
-    <div id="list"></div>
-    <div id="footer">
-      <span class="link" id="openFull">Abrir widget</span>
-      <span class="link" id="openCfg">Configurações</span>
+
+    <!-- Expanded panel -->
+    <div id="expanded">
+      <div id="hdr">
+        <div class="hdr-left">
+          <span class="dot clean" id="dotHdr"></span>
+          <span class="count clean" id="countHdr">0</span>
+          <span class="label" id="labelHdr">Tudo sincronizado</span>
+        </div>
+        <div class="hdr-actions">
+          <button class="hdr-btn" id="btnCfg" title="Configurações">⚙</button>
+          <button class="hdr-btn" id="btnFloat" title="Abrir widget flutuante">◰</button>
+          <button class="hdr-btn" id="btnMin" title="Minimizar (Ctrl+Shift+H)">–</button>
+        </div>
+      </div>
+      <div id="list">
+        <div id="empty" style="display:none;">Nenhum repositório configurado.</div>
+      </div>
     </div>
   </div>
 </div>
@@ -245,12 +361,31 @@
   const { ipcRenderer } = require('electron');
 
   const pill = document.getElementById('pill');
+  const compactEl = document.getElementById('compact');
+  const expandedEl = document.getElementById('expanded');
   const listEl = document.getElementById('list');
-  const summaryEl = document.getElementById('summary');
-  const statusDot = document.getElementById('statusDot');
+  const emptyEl = document.getElementById('empty');
 
-  let pending = [];
+  const dotCompact = document.getElementById('dotCompact');
+  const countText = document.getElementById('countText');
+  const labelText = document.getElementById('labelText');
+
+  const dotHdr = document.getElementById('dotHdr');
+  const countHdr = document.getElementById('countHdr');
+  const labelHdr = document.getElementById('labelHdr');
+
+  const btnCfg = document.getElementById('btnCfg');
+  const btnFloat = document.getElementById('btnFloat');
+  const btnMin = document.getElementById('btnMin');
+
+  const CLOSE_DELAY_MS = 300;
+  const RIGHT_MARGIN = 0; // pill colado na borda direita da window
+
+  let repos = [];
   let hovered = false;
+  let pinned = false;
+  let minimized = false;
+  let leaveTimer = null;
   let pollTimer = null;
   const runningActions = new Set();
 
@@ -267,62 +402,80 @@
     return el;
   }
 
-  function statusClass(s) {
-    return ['dirty','dirty-ahead','ahead','behind','diverged'].includes(s) ? s : 'dirty';
-  }
+  const STATUS_ORDER = {
+    diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3,
+    dirty: 4, busy: 5, error: 6, clean: 7
+  };
 
   function dominantStatus(list) {
-    if (list.some(r => r.status === 'diverged')) return 'diverged';
-    if (list.some(r => r.status === 'behind')) return 'behind';
-    if (list.some(r => r.status === 'dirty' || r.status === 'dirty-ahead')) return 'dirty';
-    if (list.some(r => r.status === 'ahead')) return 'ahead';
-    return 'dirty';
+    if (!list.length) return 'clean';
+    return [...list].sort((a, b) =>
+      (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
+    )[0].status;
   }
 
-  function updateVisibility() {
-    const hasPending = pending.length > 0;
-    const shouldShow = hasPending || hovered;
-    pill.classList.toggle('visible', shouldShow);
-
-    pill.classList.toggle('alert', hasPending);
-    pill.classList.toggle('critical', pending.some(r => r.status === 'diverged'));
-    pill.classList.toggle('expanded', hovered && hasPending);
+  function isPendingList() {
+    return repos.some(r => r.pending);
+  }
+  function hasDiverged() {
+    return repos.some(r => r.status === 'diverged');
+  }
+  function pendingCount() {
+    return repos.filter(r => r.pending).length;
   }
 
-  function renderSummary() {
-    summaryEl.replaceChildren();
-    if (pending.length === 0) {
-      statusDot.className = 'dot clean';
-      summaryEl.appendChild(makeEl('span', { textContent: 'Tudo sincronizado' }));
-      return;
-    }
+  function isExpanded() {
+    return !minimized && (hovered || pinned);
+  }
 
-    const top = dominantStatus(pending);
-    statusDot.className = 'dot ' + statusClass(top);
+  function updateSummary() {
+    const total = repos.length;
+    const nPending = pendingCount();
+    const hasPending = nPending > 0;
+    const dom = hasPending ? dominantStatus(repos.filter(r => r.pending)) : 'clean';
 
-    const verb = {
-      dirty: 'commit pendente',
-      'dirty-ahead': 'commit pendente',
-      ahead: 'push pendente',
-      behind: 'pull pendente',
-      diverged: 'diverged!'
-    }[top] || 'pendente';
+    const statusClass = 'dot ' + dom;
+    dotCompact.className = statusClass;
+    dotHdr.className = statusClass;
 
-    summaryEl.appendChild(makeEl('span', { className: 'accent', textContent: '●' }));
-    if (pending.length === 1) {
-      summaryEl.appendChild(makeEl('span', { textContent: pending[0].name + ' — ' + verb }));
+    if (hasPending) {
+      countText.className = '';
+      countHdr.className = 'count';
+      countText.textContent = String(nPending);
+      countHdr.textContent = String(nPending);
+
+      const verb = {
+        dirty: 'commit pendente',
+        'dirty-ahead': 'commit+push',
+        ahead: 'push pendente',
+        behind: 'pull pendente',
+        diverged: 'diverged'
+      }[dom] || 'pendente';
+
+      const first = repos.find(r => r.pending);
+      const label = nPending === 1
+        ? (first.name + ' — ' + verb)
+        : (nPending + ' repos — ' + verb);
+      labelText.textContent = label;
+      labelHdr.textContent = label;
     } else {
-      summaryEl.appendChild(makeEl('span', { textContent: pending.length + ' repos — ação pendente' }));
+      countText.className = 'clean';
+      countHdr.className = 'count clean';
+      countText.textContent = '✓';
+      countHdr.textContent = '✓';
+      const label = total === 0 ? 'Sem repos' : (total + ' repos sincronizados');
+      labelText.textContent = label;
+      labelHdr.textContent = label;
     }
   }
 
   function renderRow(r) {
-    const cls = statusClass(r.status);
+    const cls = r.status || 'clean';
     const isRunning = runningActions.has(r.path);
 
     const dot = makeEl('span', { className: 'dot ' + cls });
     const name = makeEl('span', { className: 'name', textContent: r.name || '(sem nome)', title: r.path || '' });
-    const detail = makeEl('span', { className: 'detail', textContent: r.detail || '' });
+    const detail = makeEl('span', { className: 'detail', textContent: r.detail || (r.status === 'clean' ? 'limpo' : '') });
 
     const actions = makeEl('div', { className: 'actions' });
 
@@ -335,40 +488,146 @@
     folderBtn.addEventListener('click', onRowAction);
     actions.appendChild(folderBtn);
 
-    const isPull = r.status === 'behind' || r.status === 'diverged';
-    const actBtn = makeEl('button', {
-      className: 'btn ' + (isPull ? 'pull' : 'push') + (isRunning ? ' running' : ''),
-      title: isPull ? 'Pull' : 'Commit + push',
-      dataset: {
-        act: isPull ? 'pull' : 'push',
-        path: r.path || '',
-        name: r.name || ''
+    if (r.pending) {
+      const isPull = r.status === 'behind' || r.status === 'diverged';
+      const actBtn = makeEl('button', {
+        className: 'btn ' + (isPull ? 'pull' : 'push') + (isRunning ? ' running' : ''),
+        title: isPull ? 'Pull' : 'Commit + push',
+        dataset: {
+          act: isPull ? 'pull' : 'push',
+          path: r.path || '',
+          name: r.name || ''
+        }
+      });
+      if (isRunning) {
+        actBtn.appendChild(makeEl('span', { className: 'spin', textContent: '↻' }));
+      } else {
+        actBtn.textContent = isPull ? '↓ pull' : '↑ push';
       }
-    });
-    if (isRunning) {
-      const sp = makeEl('span', { className: 'spin', textContent: '↻' });
-      actBtn.appendChild(sp);
-    } else {
-      actBtn.textContent = isPull ? '↓ pull' : '↑ push';
+      actBtn.addEventListener('click', onRowAction);
+      actions.appendChild(actBtn);
     }
-    actBtn.addEventListener('click', onRowAction);
-    actions.appendChild(actBtn);
 
     return makeEl('div', { className: 'row' }, [dot, name, detail, actions]);
   }
 
-  function render() {
-    renderSummary();
-    listEl.replaceChildren();
-    pending.forEach(r => listEl.appendChild(renderRow(r)));
+  function renderList() {
+    listEl.replaceChildren(emptyEl);
+    if (repos.length === 0) {
+      emptyEl.style.display = '';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    repos.forEach(r => listEl.appendChild(renderRow(r)));
   }
+
+  function measureExpandedHeight() {
+    // Usa scrollHeight do header + list real (fora do flex container).
+    // Fazemos via clone temporário pra evitar medir enquanto oculto.
+    const listNeeded = listEl.scrollHeight;
+    const total = 38 /* header */ + Math.min(listNeeded + 18 /* padding */, 320);
+    return Math.min(Math.max(total, 60), 390);
+  }
+
+  function updateShape() {
+    const exp = isExpanded();
+    pill.classList.toggle('expanded', exp);
+    pill.classList.toggle('minimized', minimized && !hovered);
+    pill.classList.toggle('alert', isPendingList());
+    pill.classList.toggle('critical', hasDiverged());
+    pill.classList.toggle('pinned', pinned);
+
+    if (exp) {
+      // Mede depois que o DOM renderizou
+      requestAnimationFrame(() => {
+        const h = measureExpandedHeight();
+        pill.style.setProperty('--expanded-h', h + 'px');
+        notifyRect();
+      });
+    } else {
+      notifyRect();
+    }
+  }
+
+  function notifyRect() {
+    const exp = isExpanded();
+    const w = exp ? 420 : 260;
+    let h = 38;
+    if (exp) {
+      const raw = parseFloat(
+        getComputedStyle(pill).getPropertyValue('--expanded-h')
+      );
+      h = !isNaN(raw) && raw > 0 ? raw : 320;
+    }
+    const isMin = minimized && !hovered;
+    const offsetY = isMin ? -34 : 0;
+    const hotzone = isMin ? 8 : null;
+    ipcRenderer.send('notch-rect', { w, h, offsetY, hotzone, right: RIGHT_MARGIN });
+  }
+
+  // ------ Interações ------
+
+  pill.addEventListener('mouseenter', () => {
+    if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+    pill.classList.remove('closing');
+    hovered = true;
+    updateShape();
+  });
+
+  pill.addEventListener('mouseleave', () => {
+    if (leaveTimer) clearTimeout(leaveTimer);
+    leaveTimer = setTimeout(() => {
+      leaveTimer = null;
+      hovered = false;
+      pill.classList.add('closing');
+      setTimeout(() => pill.classList.remove('closing'), 320);
+      updateShape();
+    }, CLOSE_DELAY_MS);
+  });
+
+  pill.addEventListener('click', (ev) => {
+    // Ignora clicks em botões internos (eles têm stopPropagation nos seus handlers)
+    if (ev.target.closest('.hdr-btn, .btn')) return;
+    if (minimized) {
+      minimized = false;
+    } else {
+      pinned = !pinned;
+    }
+    updateShape();
+  });
+
+  btnCfg.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    ipcRenderer.invoke('open-config-window');
+  });
+
+  btnFloat.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    await ipcRenderer.invoke('set-widget-mode', 'floating');
+  });
+
+  btnMin.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    minimized = true;
+    pinned = false;
+    hovered = false;
+    if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+    updateShape();
+  });
+
+  // Ctrl+Shift+H (via global shortcut no main) — toggle
+  ipcRenderer.on('notch-toggle-minimize', () => {
+    minimized = !minimized;
+    if (minimized) { pinned = false; hovered = false; }
+    if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+    updateShape();
+  });
 
   async function onRowAction(ev) {
     ev.stopPropagation();
     const btn = ev.currentTarget;
     const act = btn.dataset.act;
     const p = btn.dataset.path;
-
     if (!p) return;
 
     if (act === 'folder') {
@@ -377,9 +636,8 @@
     }
     if (act === 'push' || act === 'pull') {
       runningActions.add(p);
-      render();
-      let ok = false;
-      let errMsg = '';
+      renderList();
+      let ok = false, errMsg = '';
       try {
         const channel = act === 'push' ? 'commit-and-push' : 'git-pull';
         const res = await ipcRenderer.invoke(channel, p);
@@ -410,10 +668,11 @@
 
   async function refresh() {
     try {
-      const res = await ipcRenderer.invoke('notch-pending-repos');
-      pending = (res && res.pending) || [];
-      render();
-      updateVisibility();
+      const res = await ipcRenderer.invoke('notch-all-repos');
+      repos = (res && res.repos) || [];
+      renderList();
+      updateSummary();
+      updateShape();
     } catch (e) {
       console.warn('[notch] refresh falhou:', e);
     }
@@ -427,18 +686,10 @@
     pollTimer = setInterval(refresh, seconds * 1000);
   }
 
-  pill.addEventListener('mouseenter', () => { hovered = true; updateVisibility(); });
-  pill.addEventListener('mouseleave', () => { hovered = false; updateVisibility(); });
-
-  document.getElementById('openFull').addEventListener('click', async () => {
-    await ipcRenderer.invoke('set-widget-mode', 'floating');
-  });
-  document.getElementById('openCfg').addEventListener('click', () => {
-    ipcRenderer.invoke('open-config-window');
-  });
-
   ipcRenderer.on('config-saved', () => startPolling());
 
+  // Inicial: notifica rect baseline pro passthrough do main
+  updateShape();
   startPolling();
 </script>
 </body>

@@ -141,11 +141,9 @@ async function gitExec(cmd, opts) {
 // ============================================================
 // CONFIGURAÇÃO
 // ============================================================
-// Em produção: AppData\Roaming\Git Monitor\config.json (sobrevive a atualizações)
-// Em dev: pasta do projeto
-const CONFIG_FILE = app.isPackaged
-  ? path.join(app.getPath('userData'), 'config.json')
-  : path.join(__dirname, 'config.json');
+// Sempre AppData\Roaming\git-monitor\config.json — dev e prod compartilham
+// (nome do app vem de package.json "name"; electron-builder usa o mesmo).
+const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
 
 function migrateConfigIfNeeded() {
   if (!app.isPackaged) return;
@@ -352,12 +350,15 @@ function createFloatingWindow() {
   }, 150);
 }
 
+// Último rect reportado pelo renderer via IPC notch-rect.
+// Fallback = baseline 260x38 top-right da janela.
+let notchRect = { w: 260, h: 38, offsetY: 0, hotzone: null, right: 12 };
+
 function createNotchWindow() {
   const display = screen.getPrimaryDisplay();
-  const width = 420;
-  // Altura fixa da janela — precisa caber: compact (38) + list max (254) + footer (28) + folga.
-  // O pill usa transform pra esconder/descer; window fica sempre "presente" no topo.
-  const height = 380;
+  const width = 440;
+  // Folga pra glow (14px) + overshoot do spring bouncy + expansão máxima (~360).
+  const height = 420;
   const margin = 12;
   const x = display.bounds.x + display.bounds.width - width - margin;
   const y = display.bounds.y;
@@ -390,8 +391,11 @@ function createNotchWindow() {
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
   mainWindow.loadFile('notch.html');
 
-  // Passthrough de mouse — click fora do pill passa pra janela abaixo,
-  // dentro do pill o notch recebe. Polling copiado do claude-island-dock.
+  // Reset do rect pra baseline — o renderer vai notificar via notch-rect.
+  notchRect = { w: 260, h: 38, offsetY: 0, hotzone: null, right: 12 };
+
+  // Passthrough com bbox dinâmico do pill real (não da window inteira).
+  // O renderer envia `notch-rect` sempre que o state muda.
   let passthroughPoll = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       clearInterval(passthroughPoll);
@@ -400,8 +404,17 @@ function createNotchWindow() {
     try {
       const c = screen.getCursorScreenPoint();
       const b = mainWindow.getBounds();
-      const inside = c.x >= b.x && c.x < b.x + b.width
-                  && c.y >= b.y && c.y < b.y + b.height;
+      const r = notchRect;
+      const pillRight = b.x + b.width - r.right;
+      const pillLeft  = pillRight - r.w;
+      const pillTop   = b.y + (r.offsetY || 0);
+      const effectiveH = r.hotzone != null ? r.hotzone : r.h;
+      // Quando minimized com hotzone, o pill real está fora da tela (-34) mas
+      // queremos detectar mouse na faixa dos primeiros 8px pra peek.
+      const detectTop = r.hotzone != null ? b.y : pillTop;
+      const detectBot = r.hotzone != null ? b.y + r.hotzone : pillTop + r.h;
+      const inside = c.x >= pillLeft && c.x < pillRight
+                  && c.y >= detectTop && c.y < detectBot;
       mainWindow.setIgnoreMouseEvents(!inside, { forward: true });
     } catch (_) {}
   }, 100);
@@ -1402,6 +1415,15 @@ app.whenReady().then(() => {
       label: 'Alternar modo (flutuante/notch)',
       click: () => switchWidgetMode(config.widgetMode === 'notch' ? 'floating' : 'notch')
     },
+    {
+      label: 'Minimizar notch (Ctrl+Shift+H)',
+      click: () => {
+        if (config.widgetMode !== 'notch') return;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('notch-toggle-minimize');
+        }
+      }
+    },
     { label: 'Verificar atualizações', click: () => autoUpdater.checkForUpdates() },
     { type: 'separator' },
     { label: 'Sair', click: () => app.quit() }
@@ -1450,8 +1472,9 @@ function registerShortcuts() {
   globalShortcut.unregisterAll();
   const toggleAccel = config.shortcutToggle || 'Control+Shift+G';
   const minAccel = config.shortcutMinimize || 'Control+Shift+M';
+  const notchAccel = 'Control+Shift+H';
 
-  const result = { toggle: null, minimize: null };
+  const result = { toggle: null, minimize: null, notch: null };
   try {
     const ok = globalShortcut.register(toggleAccel, () => {
       if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -1465,6 +1488,15 @@ function registerShortcuts() {
     const ok = globalShortcut.register(minAccel, () => toggleCollapseApp());
     result.minimize = ok ? minAccel : null;
   } catch (e) { console.warn('[GitMonitor] shortcut minimize falhou:', e.message); }
+
+  try {
+    const ok = globalShortcut.register(notchAccel, () => {
+      if (config.widgetMode !== 'notch') return;
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.webContents.send('notch-toggle-minimize');
+    });
+    result.notch = ok ? notchAccel : null;
+  } catch (e) { console.warn('[GitMonitor] shortcut notch falhou:', e.message); }
 
   return result;
 }
@@ -1512,6 +1544,45 @@ ipcMain.handle('notch-pending-repos', async () => {
       remoteUrl: r.remoteUrl
     }));
   return { pending, total: results.length };
+});
+
+ipcMain.handle('notch-all-repos', async () => {
+  const results = await checkAllRepos();
+  const mapped = results.map(r => ({
+    name: r.name,
+    path: r.path,
+    status: r.status,
+    detail: r.detail,
+    branch: r.branch,
+    ahead: r.ahead,
+    behind: r.behind,
+    changedFiles: r.changedFiles,
+    remoteUrl: r.remoteUrl,
+    pending: PENDING_STATES.includes(r.status)
+  }));
+  // Ordenar: pending primeiro (diverged > behind > ahead > dirty-ahead > dirty > busy > error > clean)
+  const order = { diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3, dirty: 4, busy: 5, error: 6, clean: 7 };
+  mapped.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
+  return { repos: mapped, total: mapped.length };
+});
+
+ipcMain.on('notch-rect', (_, rect) => {
+  if (!rect) return;
+  notchRect = {
+    w: Math.max(40, Number(rect.w) || 260),
+    h: Math.max(8, Number(rect.h) || 38),
+    offsetY: Number(rect.offsetY) || 0,
+    hotzone: rect.hotzone != null ? Number(rect.hotzone) : null,
+    right: Number(rect.right) || 12
+  };
+});
+
+ipcMain.handle('notch-toggle-minimize', () => {
+  if (config.widgetMode === 'notch' && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('notch-toggle-minimize');
+    return true;
+  }
+  return false;
 });
 
 app.on('will-quit', () => {
