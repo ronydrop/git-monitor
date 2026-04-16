@@ -30,7 +30,7 @@
     font-family: 'JetBrains Mono', monospace;
     background: var(--bg);
     color: var(--text);
-    font-size: 12px;
+    font-size: 13px;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -102,7 +102,7 @@
     background: transparent;
     color: var(--text-dim);
     font-family: inherit;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     border-bottom: 2px solid transparent;
@@ -132,7 +132,7 @@
 
   /* ---- Section label ---- */
   .section-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--text-dim);
     text-transform: uppercase;
@@ -156,12 +156,18 @@
     background: var(--bg);
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 5px;
-    font-size: 11px;
+    border-radius: 6px;
+    font-size: 12px;
     font-family: inherit;
-    padding: 5px 10px;
+    padding: 7px 12px;
     cursor: pointer;
     outline: none;
+    min-width: 260px;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%237d8590' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
   }
   .config-card select:focus { border-color: var(--blue); }
 
@@ -209,6 +215,11 @@
     height: 1px;
     background: var(--border);
   }
+
+  .inactive-toggle {
+    cursor: pointer;
+  }
+  .inactive-toggle:hover { color: var(--text); }
 
   @keyframes slideIn {
     from { opacity: 0; transform: translateY(-6px); }
@@ -267,6 +278,8 @@
     color: var(--text);
     outline: none;
     font-weight: 600;
+    -webkit-user-drag: none;
+    user-select: text;
   }
   .name-input:focus { border-color: var(--blue); }
   .name-input::placeholder { color: var(--text-dim); font-weight: 400; }
@@ -339,6 +352,8 @@
     font-size: 10.5px;
     color: var(--text-dim);
     outline: none;
+    -webkit-user-drag: none;
+    user-select: text;
   }
   .path-input:focus { border-color: var(--blue); color: var(--text); }
   .path-input::placeholder { color: var(--text-dim); }
@@ -482,13 +497,13 @@
 
   /* ---- Shortcut inputs ---- */
   .sc-input {
-    width: 190px;
+    width: 200px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 5px;
-    padding: 6px 10px;
+    padding: 7px 12px;
     font-family: inherit;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text);
     outline: none;
     text-align: center;
@@ -496,6 +511,19 @@
     flex-shrink: 0;
   }
   .sc-input:focus { border-color: var(--blue); }
+
+  .sc-action-btn {
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .sc-btn-default { border: 1px solid var(--border); background: var(--bg); color: var(--text-dim); }
+  .sc-btn-default:hover { color: var(--text); }
+  .sc-btn-apply { border: 1px solid var(--blue); background: var(--blue-bg); color: var(--blue); }
 
   /* ---- Footer ---- */
   .footer {
@@ -509,13 +537,13 @@
 
   .btn-save {
     flex: 1;
-    padding: 9px;
+    padding: 10px;
     border-radius: 6px;
     border: 1px solid var(--green);
     background: var(--green-bg);
     color: var(--green);
     font-family: inherit;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s;
@@ -523,13 +551,13 @@
   .btn-save:hover { background: rgba(63, 185, 80, 0.2); }
 
   .btn-cancel {
-    padding: 9px 16px;
+    padding: 10px 18px;
     border-radius: 6px;
     border: 1px solid var(--border);
     background: transparent;
     color: var(--text-dim);
     font-family: inherit;
-    font-size: 11px;
+    font-size: 12px;
     cursor: pointer;
     transition: all 0.15s;
   }
@@ -586,12 +614,14 @@
            onkeydown="if(event.key==='Escape'){this.value='';filterRepos();}">
     <div class="repos-section" id="repoList">
       <div id="activeRepos"></div>
-      <div id="inactiveDivider" class="group-divider" style="display:none;"><span>Inativos</span></div>
-      <div id="inactiveRepos"></div>
+      <button class="btn-add-repo" onclick="addRepo()">
+        <span>+</span> Adicionar repositório
+      </button>
+      <div id="inactiveDivider" class="group-divider inactive-toggle" style="display:none;" onclick="toggleInactiveSection()">
+        <span id="inactiveLabel">&#x25B6; Inativos</span>
+      </div>
+      <div id="inactiveRepos" style="display:none;"></div>
     </div>
-    <button class="btn-add-repo" onclick="addRepo()">
-      <span>+</span> Adicionar repositório
-    </button>
   </div>
 
   <!-- ===== TAB: IA & AUTH ===== -->
@@ -660,7 +690,7 @@
     <div class="section-label">Polling</div>
     <div class="config-card">
       <div class="config-row">
-        <label style="font-size: 11px; color: var(--text);">Verificar repositórios a cada</label>
+        <label style="font-size: 13px; color: var(--text);">Verificar repositórios a cada</label>
         <select id="intervalSelect">
           <option value="10">10 segundos</option>
           <option value="30">30 segundos</option>
@@ -674,49 +704,60 @@
     <div class="section-label">Atalhos de teclado (globais)</div>
     <div class="config-card">
       <div class="config-row">
-        <span style="font-size: 10px; color: var(--text-dim);">Esconder / Mostrar</span>
-        <input type="text" id="scToggle" class="sc-input" readonly placeholder="clique e pressione..."
-               onfocus="captureShortcut(this)" onblur="this.placeholder='clique e pressione...'" />
-      </div>
-      <div class="config-row">
-        <span style="font-size: 10px; color: var(--text-dim);">Minimizar / Maximizar</span>
-        <input type="text" id="scMinimize" class="sc-input" readonly placeholder="clique e pressione..."
-               onfocus="captureShortcut(this)" onblur="this.placeholder='clique e pressione...'" />
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-        <span style="font-size: 9.5px; color: var(--text-dim);">Foque o campo e pressione a combinação. Esc cancela.</span>
-        <div style="display: flex; gap: 6px;">
-          <button onclick="resetShortcuts()" style="padding: 5px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 10px; font-family: inherit;">Padrão</button>
-          <button onclick="applyShortcuts()" style="padding: 5px 10px; border: 1px solid var(--blue); border-radius: 5px; background: var(--blue-bg); color: var(--blue); cursor: pointer; font-size: 10px; font-family: inherit;">Aplicar</button>
+        <span style="font-size: 12px; color: var(--text-dim);">Esconder / Mostrar</span>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button id="scToggle-reset" class="sc-action-btn sc-btn-default" onclick="resetShortcut('toggle')" style="display:none">Padrão</button>
+          <button id="scToggle-apply" class="sc-action-btn sc-btn-apply" onclick="applyShortcut('toggle')" style="display:none">Aplicar</button>
+          <input type="text" id="scToggle" class="sc-input" readonly placeholder="clique e pressione..."
+                 onfocus="captureShortcut(this)" onblur="this.placeholder='clique e pressione...'" />
         </div>
       </div>
-      <div id="scStatus" style="font-size: 9.5px; color: var(--text-dim);"></div>
+      <div class="config-row">
+        <span style="font-size: 12px; color: var(--text-dim);">Minimizar / Maximizar</span>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button id="scMinimize-reset" class="sc-action-btn sc-btn-default" onclick="resetShortcut('minimize')" style="display:none">Padrão</button>
+          <button id="scMinimize-apply" class="sc-action-btn sc-btn-apply" onclick="applyShortcut('minimize')" style="display:none">Aplicar</button>
+          <input type="text" id="scMinimize" class="sc-input" readonly placeholder="clique e pressione..."
+                 onfocus="captureShortcut(this)" onblur="this.placeholder='clique e pressione...'" />
+        </div>
+      </div>
+      <div>
+        <span style="font-size: 11px; color: var(--text-dim);">Foque o campo e pressione a combinação. Esc cancela.</span>
+      </div>
+      <div id="scStatus" style="font-size: 11px; color: var(--text-dim);"></div>
     </div>
 
     <div class="section-label">Modo do widget</div>
     <div class="config-card">
-      <label class="config-row" style="cursor:pointer; font-size: 11px; color: var(--text);">
-        <input type="radio" name="widgetMode" value="floating" id="modeFloating" style="margin-right:8px;">
-        <span>Flutuante — janela fixa no canto da tela (modo clássico)</span>
-      </label>
-      <label class="config-row" style="cursor:pointer; font-size: 11px; color: var(--text);">
-        <input type="radio" name="widgetMode" value="notch" id="modeNotch" style="margin-right:8px;">
-        <span>Notch — pill Dynamic-Island no topo direito</span>
-      </label>
-      <div id="modeHint" style="font-size: 9.5px; color: var(--text-dim); margin-top: 4px;">
-        Pill sempre visível com contagem de pendências. Hover expande a lista.
-        Click fixa (pin). <code>Ctrl+Shift+H</code> minimiza/restaura.
+      <div class="config-row">
+        <label style="font-size: 13px; color: var(--text);">Modo de exibição</label>
+        <select id="widgetModeSelect" onchange="updateModeHint()">
+          <option value="floating">Flutuante — Canto da tela (clássico)</option>
+          <option value="notch">Notch — Pill Dynamic-Island</option>
+        </select>
       </div>
+      <div id="modeHint" style="font-size: 11px; color: var(--text-dim); margin-top: 6px;"></div>
     </div>
 
     <div class="section-label">Inicialização</div>
     <div class="config-card">
-      <label class="config-row" style="cursor:pointer; font-size: 11px; color: var(--text);">
-        <input type="checkbox" id="autoStart" style="margin-right:8px;">
-        <span>Iniciar junto com o Windows (em segundo plano)</span>
-      </label>
-      <div id="autoStartHint" style="font-size: 9.5px; color: var(--text-dim); margin-top: 4px;">
-        Só funciona no app instalado (não em dev mode). Inicia com <code>--hidden</code>.
+      <div class="config-row" style="cursor:pointer;" onclick="var cb=document.getElementById('autoStart'); cb.checked=!cb.checked;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:32px; height:32px; border-radius:8px; background:var(--bg); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;">&#x26A1;</div>
+          <div>
+            <div style="font-size: 13px; color: var(--text); font-weight: 500;">Iniciar com o Windows</div>
+            <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">
+              Abre em segundo plano com <code style="background:var(--bg); border:1px solid var(--border); border-radius:3px; padding:1px 5px; font-family:inherit; font-size:10px;">--hidden</code>
+            </div>
+          </div>
+        </div>
+        <label class="toggle-switch" onclick="event.stopPropagation()">
+          <input type="checkbox" id="autoStart">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div id="autoStartHint" style="font-size: 10px; color: var(--text-dim); opacity:0.65; display:flex; align-items:center; gap:5px;">
+        <span style="font-size:9px;">&#x26A0;</span> Só funciona no app instalado — não em dev mode
       </div>
     </div>
 
@@ -724,12 +765,12 @@
     <div class="config-card">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <div style="font-size: 12px; color: var(--text); font-weight: 600;">Git Monitor</div>
-          <div style="font-size: 10px; color: var(--text-dim); margin-top: 3px;">by <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://github.com/ronydrop')" style="color:var(--blue); text-decoration:none;">@rony_drop</a></div>
+          <div style="font-size: 14px; color: var(--text); font-weight: 600;">Git Monitor</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 3px;">by <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://github.com/ronydrop')" style="color:var(--blue); text-decoration:none;">@rony_drop</a></div>
         </div>
         <div style="text-align: right;">
-          <div style="font-size: 10px; color: var(--text-dim);">versão</div>
-          <div style="font-size: 15px; color: var(--text); font-weight: 700; margin-top: 2px;" id="appVersion">...</div>
+          <div style="font-size: 11px; color: var(--text-dim);">versão</div>
+          <div style="font-size: 17px; color: var(--text); font-weight: 700; margin-top: 2px;" id="appVersion">...</div>
         </div>
       </div>
     </div>
@@ -770,8 +811,8 @@
     setProvider(config.aiProvider || 'anthropic');
 
     const currentMode = config.widgetMode === 'notch' ? 'notch' : 'floating';
-    const modeRadio = document.querySelector('input[name="widgetMode"][value="' + currentMode + '"]');
-    if (modeRadio) modeRadio.checked = true;
+    document.getElementById('widgetModeSelect').value = currentMode;
+    updateModeHint();
     document.getElementById('autoStart').checked = config.autoStart !== false;
 
     document.getElementById('activeRepos').textContent   = '';
@@ -781,6 +822,16 @@
     updateInactiveDivider();
     detectCliCreds();
     loadShortcuts();
+  }
+
+  const modeHints = {
+    floating: 'Janela fixa no canto da tela. Sempre visível, arraste para reposicionar.',
+    notch: 'Pill sempre visível com contagem de pendências. Hover expande a lista. Click fixa (pin). Ctrl+Shift+H minimiza/restaura.'
+  };
+
+  function updateModeHint() {
+    const val = document.getElementById('widgetModeSelect').value;
+    document.getElementById('modeHint').textContent = modeHints[val] || '';
   }
 
   function toggleKeyVisibility() {
@@ -812,6 +863,9 @@
   }
 
   // ---- Atalhos ----
+  const SC_DEFAULTS = { toggle: 'Control+Shift+G', minimize: 'Control+Shift+M' };
+  const scSaved = { toggle: '', minimize: '' };
+
   function formatAccelerator(e) {
     const parts = [];
     if (e.ctrlKey) parts.push('Control');
@@ -827,42 +881,77 @@
     return parts.join('+');
   }
 
+  function updateShortcutButtons(key) {
+    const id = key === 'toggle' ? 'scToggle' : 'scMinimize';
+    const val = document.getElementById(id).value.trim();
+    document.getElementById(id + '-apply').style.display = (val && val !== scSaved[key]) ? '' : 'none';
+    document.getElementById(id + '-reset').style.display = (val && val !== SC_DEFAULTS[key]) ? '' : 'none';
+  }
+
   function captureShortcut(input) {
     input.value = '';
     input.placeholder = 'pressione a combinação...';
+    const key = input.id === 'scToggle' ? 'toggle' : 'minimize';
     const handler = (ev) => {
       ev.preventDefault();
       if (ev.key === 'Escape') { input.blur(); return; }
       const accel = formatAccelerator(ev);
       if (!accel) return;
       input.value = accel;
+      updateShortcutButtons(key);
     };
     input.addEventListener('keydown', handler);
     input.addEventListener('blur', () => input.removeEventListener('keydown', handler), { once: true });
   }
 
+  async function applyShortcut(key) {
+    const id = key === 'toggle' ? 'scToggle' : 'scMinimize';
+    const val = document.getElementById(id).value.trim();
+    if (!val) return;
+    const res = await ipcRenderer.invoke('save-shortcuts', {
+      toggle:   document.getElementById('scToggle').value.trim(),
+      minimize: document.getElementById('scMinimize').value.trim()
+    });
+    const status = document.getElementById('scStatus');
+    if (res[key]) {
+      scSaved[key] = val;
+      updateShortcutButtons(key);
+      status.textContent = '\u2713 ' + (key === 'toggle' ? 'Toggle' : 'Min/Max') + ': ' + res[key];
+      status.style.color = 'var(--green)';
+    } else {
+      status.textContent = '\u2715 ' + (key === 'toggle' ? 'Toggle' : 'Min/Max') + ' falhou (conflito?)';
+      status.style.color = 'var(--yellow)';
+    }
+  }
+
+  async function resetShortcut(key) {
+    const id = key === 'toggle' ? 'scToggle' : 'scMinimize';
+    document.getElementById(id).value = SC_DEFAULTS[key];
+    await applyShortcut(key);
+  }
+
   async function applyShortcuts() {
     const toggle   = document.getElementById('scToggle').value.trim();
     const minimize = document.getElementById('scMinimize').value.trim();
-    const res    = await ipcRenderer.invoke('save-shortcuts', { toggle, minimize });
+    const res = await ipcRenderer.invoke('save-shortcuts', { toggle, minimize });
+    if (res.toggle)   { scSaved.toggle   = toggle;   updateShortcutButtons('toggle'); }
+    if (res.minimize) { scSaved.minimize = minimize; updateShortcutButtons('minimize'); }
     const status = document.getElementById('scStatus');
-    const parts  = [];
+    const parts = [];
     parts.push(res.toggle   ? '\u2713 Toggle: '  + res.toggle   : '\u2715 Toggle falhou (conflito?)');
     parts.push(res.minimize ? '\u2713 Min/Max: ' + res.minimize : '\u2715 Min/Max falhou (conflito?)');
     status.textContent = parts.join('  \u00B7  ');
     status.style.color = (res.toggle && res.minimize) ? 'var(--green)' : 'var(--yellow)';
   }
 
-  async function resetShortcuts() {
-    document.getElementById('scToggle').value   = 'Control+Shift+G';
-    document.getElementById('scMinimize').value = 'Control+Shift+M';
-    await applyShortcuts();
-  }
-
   async function loadShortcuts() {
     const sc = await ipcRenderer.invoke('get-shortcuts');
     document.getElementById('scToggle').value   = sc.toggle;
     document.getElementById('scMinimize').value = sc.minimize;
+    scSaved.toggle   = sc.toggle;
+    scSaved.minimize = sc.minimize;
+    updateShortcutButtons('toggle');
+    updateShortcutButtons('minimize');
   }
 
   // ---- Auto-auth CLI detect ----
@@ -984,8 +1073,19 @@
     btnRemove.addEventListener('click', () => { card.remove(); updateInactiveDivider(); renumber(); });
     btnBrowse.addEventListener('click', () => browse(btnBrowse));
     btnTest.addEventListener('click',   () => testRepo(btnTest));
+    pathInput.addEventListener('blur', async () => {
+      const p = pathInput.value.trim();
+      if (!p || nameInput.value.trim()) return;
+      const nm = await ipcRenderer.invoke('read-project-name', p);
+      if (nm) {
+        nameInput.value = nm;
+        nameInput.style.borderColor = 'var(--green)';
+        setTimeout(() => { nameInput.style.borderColor = ''; }, 2000);
+      }
+    });
 
     card.addEventListener('dragstart', e => {
+      if (!dragHandle.contains(e.target)) { e.preventDefault(); return; }
       dragSrc = card;
       card.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
@@ -1020,9 +1120,20 @@
   }
 
   function updateInactiveDivider() {
-    const ig  = document.getElementById('inactiveRepos');
-    const div = document.getElementById('inactiveDivider');
-    div.style.display = ig && ig.querySelector('.repo-card') ? '' : 'none';
+    const ig    = document.getElementById('inactiveRepos');
+    const div   = document.getElementById('inactiveDivider');
+    const cards = ig ? ig.querySelectorAll('.repo-card') : [];
+    div.style.display = cards.length > 0 ? '' : 'none';
+    const label = document.getElementById('inactiveLabel');
+    const open  = ig && ig.style.display !== 'none';
+    if (label) label.innerHTML = (open ? '&#x25BC;' : '&#x25B6;') + ' Inativos (' + cards.length + ')';
+  }
+
+  function toggleInactiveSection() {
+    const ig = document.getElementById('inactiveRepos');
+    if (!ig) return;
+    ig.style.display = ig.style.display === 'none' ? '' : 'none';
+    updateInactiveDivider();
   }
 
   function renumber() {
@@ -1096,7 +1207,7 @@
       await ipcRenderer.invoke('save-shortcuts', { toggle: scToggleVal, minimize: scMinimizeVal });
     }
 
-    const selectedMode = (document.querySelector('input[name="widgetMode"]:checked') || {}).value || 'floating';
+    const selectedMode = document.getElementById('widgetModeSelect').value || 'floating';
     const autoStartVal = document.getElementById('autoStart').checked;
     await ipcRenderer.invoke('set-auto-start', autoStartVal);
     await ipcRenderer.invoke('set-widget-mode', selectedMode);
@@ -1139,6 +1250,22 @@
   }
 
   init();
+
+  document.addEventListener('keydown', (e) => {
+    const active = document.activeElement;
+    const tag = active ? active.tagName : '';
+    const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || active.isContentEditable;
+    if (isEditable) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key.length !== 1) return;
+    const tabRepos = document.getElementById('tab-repos');
+    if (!tabRepos || !tabRepos.classList.contains('active')) return;
+    const search = document.getElementById('repoSearch');
+    if (!search) return;
+    search.focus();
+    search.value += e.key;
+    filterRepos();
+  });
 </script>
 </body>
 </html>

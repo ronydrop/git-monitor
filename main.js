@@ -171,6 +171,8 @@ function getDefaultConfig() {
     anthropicKey: '',
     openaiKey: '',
     aiProvider: 'anthropic',
+    anthropicAuthMode: 'oauth',
+    openaiAuthMode: 'apiKey',
     githubToken: '',
     ghostZone: null,
     shortcutToggle: 'Control+Shift+G',
@@ -181,14 +183,26 @@ function getDefaultConfig() {
 }
 
 function loadConfig() {
+  let cfg;
   try {
     if (fs.existsSync(CONFIG_FILE)) {
-      return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
     }
   } catch (e) { }
-  const def = getDefaultConfig();
-  saveConfig(def);
-  return def;
+  if (!cfg) {
+    const def = getDefaultConfig();
+    saveConfig(def);
+    return def;
+  }
+  // migração: novos campos de authMode
+  if (!cfg.anthropicAuthMode) cfg.anthropicAuthMode = 'oauth';
+  if (!cfg.openaiAuthMode)    cfg.openaiAuthMode    = 'apiKey';
+  return cfg;
+}
+
+function maskSecret(raw) {
+  if (!raw || raw.length < 8) return raw ? '••••••••' : '';
+  return raw.slice(0, 7) + '•'.repeat(Math.max(4, raw.length - 11)) + raw.slice(-4);
 }
 
 function saveConfig(cfg) {
@@ -775,8 +789,9 @@ ipcMain.handle('read-project-name', (_, repoPath) => {
     } catch (e) { }
   }
 
-  // Fallback: nome da pasta do projeto
-  return path.basename(repoPath);
+  // Fallback: nome da pasta formatado (use-matias → Use Matias)
+  const base = path.basename(repoPath);
+  return base.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 });
 
 function toggleCollapseApp() {
