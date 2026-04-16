@@ -891,6 +891,36 @@ ipcMain.handle('save-ai-provider', (_, provider) => {
   saveConfig(config);
 });
 
+ipcMain.handle('save-anthropic-auth-mode', (_, mode) => {
+  config.anthropicAuthMode = mode;
+  saveConfig(config);
+});
+
+ipcMain.handle('save-openai-auth-mode', (_, mode) => {
+  config.openaiAuthMode = mode;
+  saveConfig(config);
+});
+
+ipcMain.handle('get-config-safe', () => {
+  return {
+    repos:              config.repos,
+    intervalSeconds:    config.intervalSeconds,
+    aiProvider:         config.aiProvider,
+    anthropicAuthMode:  config.anthropicAuthMode,
+    openaiAuthMode:     config.openaiAuthMode,
+    hasAnthropicKey:    !!config.anthropicKey,
+    anthropicKeyHint:   maskSecret(config.anthropicKey),
+    hasOpenaiKey:       !!config.openaiKey,
+    openaiKeyHint:      maskSecret(config.openaiKey),
+    hasGithubToken:     !!config.githubToken,
+    githubTokenHint:    maskSecret(config.githubToken),
+    widgetMode:         config.widgetMode,
+    autoStart:          config.autoStart,
+    shortcutToggle:     config.shortcutToggle,
+    shortcutMinimize:   config.shortcutMinimize,
+  };
+});
+
 // ============================================================
 // Credentials dos CLIs (Claude Code + Codex/OpenAI)
 // Lê tokens locais pra evitar exigir API key manual.
@@ -1006,43 +1036,38 @@ async function generateCommitMessage(diff) {
   };
 
   const tryAnthropic = async () => {
-    const cli = readClaudeCredentials();
-    // 1. Tenta OAuth do Claude Code CLI
-    if (cli && !cli.expired) {
-      try {
-        const client = new Anthropic({
-          authToken: cli.token,
-          defaultHeaders: { 'anthropic-beta': 'oauth-2025-04-20' }
-        });
-        return await callAnthropic(client);
-      } catch (e) {
-        console.warn('[GitMonitor] OAuth Claude CLI falhou, tentando API key manual:', e.message);
-      }
-    }
-    // 2. Fallback pra API key manual
-    if (config.anthropicKey) {
+    const mode = config.anthropicAuthMode || 'oauth';
+    if (mode === 'oauth') {
+      const cli = readClaudeCredentials();
+      if (!cli || cli.expired) throw new Error('Claude CLI não autenticado — rode `claude login` ou troque para API key nas configurações');
+      const client = new Anthropic({ authToken: cli.token, defaultHeaders: { 'anthropic-beta': 'oauth-2025-04-20' } });
+      return await callAnthropic(client);
+    } else {
+      if (!config.anthropicKey) throw new Error('Anthropic: API key não configurada nas configurações');
       const client = new Anthropic({ apiKey: config.anthropicKey });
       return await callAnthropic(client);
     }
-    throw new Error('Anthropic: sem credencial (CLI ausente/expirado e API key não configurada)');
   };
 
   const tryOpenAI = async () => {
-    const cli = readCodexCredentials();
-    const apiKey = (cli && cli.apiKey) || config.openaiKey;
-    if (!apiKey) {
-      const hint = cli && cli.mode && cli.mode !== 'ApiKey'
-        ? 'Codex CLI em modo ChatGPT — não serve pra API; configure API key manual'
-        : 'OpenAI: sem credencial (Codex CLI ausente e API key não configurada)';
-      throw new Error(hint);
+    const mode = config.openaiAuthMode || 'apiKey';
+    if (mode === 'oauth') {
+      const cli = readCodexCredentials();
+      if (!cli || !cli.apiKey) {
+        const hint = cli && cli.mode && cli.mode !== 'ApiKey'
+          ? 'Codex CLI em modo ChatGPT — não serve pra API; troque para API key nas configurações'
+          : 'Codex CLI não detectado — rode a configuração do Codex ou troque para API key';
+        throw new Error(hint);
+      }
+      const client = new OpenAI({ apiKey: cli.apiKey });
+      const msg = await client.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 300, messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }] });
+      return cleanCommitMessage(msg.choices[0].message.content);
+    } else {
+      if (!config.openaiKey) throw new Error('OpenAI: API key não configurada nas configurações');
+      const client = new OpenAI({ apiKey: config.openaiKey });
+      const msg = await client.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 300, messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }] });
+      return cleanCommitMessage(msg.choices[0].message.content);
     }
-    const client = new OpenAI({ apiKey });
-    const msg = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      max_tokens: 300,
-      messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }]
-    });
-    return cleanCommitMessage(msg.choices[0].message.content);
   };
 
   const providers = { anthropic: tryAnthropic, openai: tryOpenAI };

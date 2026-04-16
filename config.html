@@ -440,13 +440,162 @@
   }
   .key-field .key-row input:focus { border-color: var(--blue); }
   .key-field .key-link {
-    font-size: 9px;
+    font-size: 10px;
     color: var(--blue);
     text-decoration: none;
     display: inline-block;
     margin-top: 4px;
   }
   .key-field .key-link:hover { text-decoration: underline; }
+
+  /* ---- Agent cards (IA & Auth) ---- */
+  .agent-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .agent-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .agent-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .agent-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .agent-badge.principal { background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue); }
+  .agent-badge.fallback  { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+
+  .auth-mode-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+
+  .auth-mode-opt {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 0;
+  }
+  .auth-mode-opt input[type="radio"] { flex-shrink: 0; cursor: pointer; accent-color: var(--blue); }
+
+  .auth-opt-label {
+    font-size: 12px;
+    color: var(--text);
+    flex: 1;
+  }
+
+  .cli-badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .cli-badge.cli-ok   { color: var(--green);  border-color: var(--green);  background: var(--green-bg); }
+  .cli-badge.cli-warn { color: var(--yellow); border-color: var(--yellow); background: var(--yellow-bg); }
+  .cli-badge.cli-err  { color: var(--text-dim); border-color: var(--border); }
+
+  .auth-detail {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+  .auth-detail:empty { display: none; }
+
+  .auth-warn {
+    background: var(--yellow-bg);
+    border: 1px solid var(--yellow);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--yellow);
+  }
+
+  .key-masked-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 7px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text);
+    outline: none;
+    min-width: 0;
+  }
+  .key-masked-input:focus { border-color: var(--blue); }
+  .key-masked-input.masked {
+    color: var(--text-dim);
+    font-style: italic;
+    cursor: default;
+    letter-spacing: 1px;
+  }
+  .key-masked-input::placeholder { color: var(--text-dim); font-style: normal; letter-spacing: normal; }
+
+  .key-row-new {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  .btn-key-action {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 10px;
+    font-family: inherit;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .btn-key-action:hover { background: var(--bg-hover); color: var(--text); }
+  .btn-key-action.btn-key-remove { color: var(--red); border-color: var(--border); }
+  .btn-key-action.btn-key-remove:hover { background: var(--red-bg); border-color: var(--red); }
+
+  .redetect-row {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .btn-redetect {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 10px;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .btn-redetect:hover { color: var(--text); background: var(--bg-hover); }
 
   .btn-eye {
     padding: 0 10px;
@@ -627,57 +776,63 @@
   <!-- ===== TAB: IA & AUTH ===== -->
   <div class="tab-panel" id="tab-ai">
 
-    <div class="section-label">IA para commits</div>
+    <div class="section-label">Provider principal</div>
     <div class="config-card">
-
-      <div>
-        <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px;">Provider principal (fallback automático para o outro)</div>
-        <div style="display: flex; gap: 8px;">
-          <button id="btnProviderAnthropic" class="provider-btn" onclick="setProvider('anthropic')">Claude (Anthropic)</button>
-          <button id="btnProviderOpenai" class="provider-btn" onclick="setProvider('openai')">GPT-4o mini (OpenAI)</button>
-        </div>
+      <div style="font-size: 11px; color: var(--text-dim);">O outro agent entra como fallback automático se o principal falhar</div>
+      <div style="display: flex; gap: 8px;">
+        <button id="btnProviderAnthropic" class="provider-btn" onclick="setProvider('anthropic')">Claude (Anthropic)</button>
+        <button id="btnProviderOpenai" class="provider-btn" onclick="setProvider('openai')">GPT-4o mini (OpenAI)</button>
       </div>
+    </div>
 
-      <div class="cli-status-box">
-        <div class="cli-status-header">
-          <span style="font-size: 10px; color: var(--text-dim);">Detecção automática de credenciais</span>
-          <button onclick="detectCliCreds()" style="padding: 3px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 10px; font-family: inherit;">&#x21BB; Re-detectar</button>
-        </div>
-        <div id="claudeCliStatus" style="font-size: 10px; color: var(--text-dim);">Claude CLI: verificando...</div>
-        <div id="codexCliStatus" style="font-size: 10px; color: var(--text-dim);">Codex CLI: verificando...</div>
-        <div style="font-size: 9px; color: var(--text-dim); opacity: 0.7; margin-top: 2px;">API keys abaixo são fallback opcional — CLI detectado tem prioridade.</div>
+    <!-- Agent: Anthropic -->
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <span class="agent-name">Claude (Anthropic)</span>
+        <span id="badgeAnthropic" class="agent-badge"></span>
       </div>
+      <div class="auth-mode-row">
+        <label class="auth-mode-opt">
+          <input type="radio" name="authModeAnthropic" value="oauth" onchange="setAuthMode('anthropic','oauth')">
+          <span class="auth-opt-label">OAuth — Claude CLI</span>
+          <span id="claudeCliStatus" class="cli-badge">verificando...</span>
+        </label>
+        <label class="auth-mode-opt">
+          <input type="radio" name="authModeAnthropic" value="apiKey" onchange="setAuthMode('anthropic','apiKey')">
+          <span class="auth-opt-label">API Key (Token)</span>
+        </label>
+      </div>
+      <div id="authDetailAnthropic" class="auth-detail"></div>
+      <div class="redetect-row">
+        <button class="btn-redetect" onclick="detectCliCreds()">&#x21BB; Re-detectar CLIs</button>
+      </div>
+    </div>
 
-      <div class="key-field">
-        <span class="key-label">Anthropic API Key (fallback)</span>
-        <div class="key-row">
-          <input type="password" id="anthropicKey" placeholder="sk-ant-..."
-                 onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
-          <button class="btn-eye" onclick="toggleKeyVisibility()">&#x1F441;</button>
-        </div>
-        <a href="#" class="key-link" onclick="ipcRenderer.invoke('open-git-url','https://console.anthropic.com/settings/keys')">&#x2197; console.anthropic.com</a>
+    <!-- Agent: OpenAI -->
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <span class="agent-name">GPT-4o mini (OpenAI)</span>
+        <span id="badgeOpenai" class="agent-badge"></span>
       </div>
-
-      <div class="key-field">
-        <span class="key-label">OpenAI API Key (fallback)</span>
-        <div class="key-row">
-          <input type="password" id="openaiKey" placeholder="sk-..."
-                 onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
-          <button class="btn-eye" onclick="toggleOpenaiVisibility()">&#x1F441;</button>
-        </div>
-        <a href="#" class="key-link" onclick="ipcRenderer.invoke('open-git-url','https://platform.openai.com/api-keys')">&#x2197; platform.openai.com</a>
+      <div class="auth-mode-row">
+        <label class="auth-mode-opt">
+          <input type="radio" name="authModeOpenai" value="oauth" onchange="setAuthMode('openai','oauth')">
+          <span class="auth-opt-label">Codex CLI</span>
+          <span id="codexCliStatus" class="cli-badge">verificando...</span>
+        </label>
+        <label class="auth-mode-opt">
+          <input type="radio" name="authModeOpenai" value="apiKey" onchange="setAuthMode('openai','apiKey')">
+          <span class="auth-opt-label">API Key (Token)</span>
+        </label>
       </div>
+      <div id="authDetailOpenai" class="auth-detail"></div>
     </div>
 
     <div class="section-label">Deploy &amp; CI/CD</div>
     <div class="config-card">
       <div class="key-field">
-        <span class="key-label">Token GitHub — para monitorar status CI/CD após push</span>
-        <div class="key-row">
-          <input type="password" id="githubToken" placeholder="ghp_..."
-                 onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
-          <button class="btn-eye" onclick="toggleGhVisibility()">&#x1F441;</button>
-        </div>
+        <span class="key-label">Token GitHub — monitorar status CI/CD após push</span>
+        <div id="githubTokenArea"></div>
         <a href="#" class="key-link" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/tokens')">&#x2197; github.com/settings/tokens (escopo: repo)</a>
       </div>
     </div>
