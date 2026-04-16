@@ -954,29 +954,45 @@
   }
 
   // ---- Init ----
+  let configSafe = {};
+  let cliResult  = { claude: {}, openai: {} };
+
   async function init() {
     const version = await ipcRenderer.invoke('get-app-version');
     document.getElementById('appVersion').textContent = 'v' + version;
 
-    const config = await ipcRenderer.invoke('get-config');
-    document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
-    document.getElementById('anthropicKey').value = config.anthropicKey || '';
-    document.getElementById('openaiKey').value = config.openaiKey || '';
-    document.getElementById('githubToken').value = config.githubToken || '';
-    setProvider(config.aiProvider || 'anthropic');
+    configSafe = await ipcRenderer.invoke('get-config-safe');
 
-    const currentMode = config.widgetMode === 'notch' ? 'notch' : 'floating';
+    document.getElementById('intervalSelect').value = configSafe.intervalSeconds || 30;
+
+    const currentMode = configSafe.widgetMode === 'notch' ? 'notch' : 'floating';
     document.getElementById('widgetModeSelect').value = currentMode;
     updateModeHint();
-    document.getElementById('autoStart').checked = config.autoStart !== false;
+    document.getElementById('autoStart').checked = configSafe.autoStart !== false;
 
+    const rawConfig = await ipcRenderer.invoke('get-config');
     document.getElementById('activeRepos').textContent   = '';
     document.getElementById('inactiveRepos').textContent = '';
-    (config.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false));
-    if (!config.repos || config.repos.length === 0) addRepo();
+    (rawConfig.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false));
+    if (!rawConfig.repos || rawConfig.repos.length === 0) addRepo();
     updateInactiveDivider();
-    detectCliCreds();
     loadShortcuts();
+
+    await initAiTab();
+  }
+
+  async function initAiTab() {
+    setProvider(configSafe.aiProvider || 'anthropic');
+
+    const modeA = configSafe.anthropicAuthMode || 'oauth';
+    const modeO = configSafe.openaiAuthMode    || 'apiKey';
+    const radioA = document.querySelector(`input[name="authModeAnthropic"][value="${modeA}"]`);
+    const radioO = document.querySelector(`input[name="authModeOpenai"][value="${modeO}"]`);
+    if (radioA) radioA.checked = true;
+    if (radioO) radioO.checked = true;
+
+    await detectCliCreds();
+    renderGithubTokenField();
   }
 
   const modeHints = {
