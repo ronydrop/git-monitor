@@ -191,6 +191,31 @@
   /* ---- Repo list ---- */
   .repos-section { margin-bottom: 14px; }
 
+  .group-divider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0 8px;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .group-divider::before,
+  .group-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .repo-card.moving { animation: slideIn 0.18s ease; }
+
   .repo-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -559,7 +584,11 @@
            placeholder="Buscar por nome ou path..."
            oninput="filterRepos()"
            onkeydown="if(event.key==='Escape'){this.value='';filterRepos();}">
-    <div class="repos-section" id="repoList"></div>
+    <div class="repos-section" id="repoList">
+      <div id="activeRepos"></div>
+      <div id="inactiveDivider" class="group-divider" style="display:none;"><span>Inativos</span></div>
+      <div id="inactiveRepos"></div>
+    </div>
     <button class="btn-add-repo" onclick="addRepo()">
       <span>+</span> Adicionar repositório
     </button>
@@ -712,10 +741,11 @@
     document.getElementById('openaiKey').value = config.openaiKey || '';
     document.getElementById('githubToken').value = config.githubToken || '';
     setProvider(config.aiProvider || 'anthropic');
-    const list = document.getElementById('repoList');
-    list.textContent = '';
+    document.getElementById('activeRepos').textContent   = '';
+    document.getElementById('inactiveRepos').textContent = '';
     (config.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false));
     if (!config.repos || config.repos.length === 0) addRepo();
+    updateInactiveDivider();
     detectCliCreds();
     loadShortcuts();
   }
@@ -863,7 +893,9 @@
     repoPath = repoPath || '';
     enabled  = enabled  !== false;
 
-    const list = document.getElementById('repoList');
+    const activeGroup   = document.getElementById('activeRepos');
+    const inactiveGroup = document.getElementById('inactiveRepos');
+    const list = enabled ? activeGroup : inactiveGroup;
 
     // header row
     const dragHandle = makeEl('span', { className: 'drag-handle', title: 'Arrastar para reordenar', textContent: '\u2837' });
@@ -905,8 +937,18 @@
     card.appendChild(pathRow);
 
     // events
-    checkbox.addEventListener('change', () => card.classList.toggle('disabled', !checkbox.checked));
-    btnRemove.addEventListener('click', () => { card.remove(); renumber(); });
+    checkbox.addEventListener('change', () => {
+      card.classList.toggle('disabled', !checkbox.checked);
+      const ag = document.getElementById('activeRepos');
+      const ig = document.getElementById('inactiveRepos');
+      if (checkbox.checked) ag.appendChild(card);
+      else ig.appendChild(card);
+      card.classList.add('moving');
+      setTimeout(() => card.classList.remove('moving'), 220);
+      updateInactiveDivider();
+      renumber();
+    });
+    btnRemove.addEventListener('click', () => { card.remove(); updateInactiveDivider(); renumber(); });
     btnBrowse.addEventListener('click', () => browse(btnBrowse));
     btnTest.addEventListener('click',   () => testRepo(btnTest));
 
@@ -930,17 +972,24 @@
     });
     card.addEventListener('drop', e => {
       e.preventDefault();
-      if (dragSrc && dragSrc !== card) {
-        const cards  = [...list.children];
+      if (dragSrc && dragSrc !== card && dragSrc.parentElement === card.parentElement) {
+        const cards  = [...card.parentElement.children];
         const srcIdx = cards.indexOf(dragSrc);
         const dstIdx = cards.indexOf(card);
-        if (srcIdx < dstIdx) list.insertBefore(dragSrc, card.nextSibling);
-        else list.insertBefore(dragSrc, card);
+        if (srcIdx < dstIdx) card.parentElement.insertBefore(dragSrc, card.nextSibling);
+        else card.parentElement.insertBefore(dragSrc, card);
       }
       document.querySelectorAll('.repo-card').forEach(c => c.classList.remove('drag-over'));
     });
 
     list.appendChild(card);
+    updateInactiveDivider();
+  }
+
+  function updateInactiveDivider() {
+    const ig  = document.getElementById('inactiveRepos');
+    const div = document.getElementById('inactiveDivider');
+    div.style.display = ig && ig.querySelector('.repo-card') ? '' : 'none';
   }
 
   function renumber() {
