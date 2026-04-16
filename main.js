@@ -1237,6 +1237,12 @@ app.whenReady().then(() => {
   const icon = nativeImage.createFromPath(getIconPath());
   tray = new Tray(icon);
   tray.setToolTip('Git Monitor');
+  tray.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isVisible()) mainWindow.focus();
+    else { mainWindow.show(); mainWindow.focus(); }
+  });
+
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Mostrar', click: () => { mainWindow.show(); mainWindow.focus(); } },
     { label: 'Verificar atualizações', click: () => autoUpdater.checkForUpdates() },
