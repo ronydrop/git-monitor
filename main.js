@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage, shell, dialog, globalShortcut } = require('electron');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const Anthropic = require('@anthropic-ai/sdk');
@@ -1227,6 +1227,13 @@ ipcMain.handle('check-deploy-status', async (_, repoPath) => {
 app.whenReady().then(() => {
   migrateConfigIfNeeded();
   config = loadConfig();
+
+  if (process.platform === 'win32' && app.isPackaged && config._iconCacheVersion !== app.getVersion()) {
+    execFile('ie4uinit.exe', ['-show'], { windowsHide: true, timeout: 5000 }, () => {});
+    config._iconCacheVersion = app.getVersion();
+    saveConfig(config);
+  }
+
   createWindow();
 
   if (config.collapsed) {
