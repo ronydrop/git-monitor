@@ -568,10 +568,10 @@ ipcMain.handle('open-config-window', () => {
   }
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
   configWindow = new BrowserWindow({
-    width: 520,
-    height: 620,
-    x: Math.round((sw - 520) / 2),
-    y: Math.round((sh - 620) / 2),
+    width: 640,
+    height: 720,
+    x: Math.round((sw - 640) / 2),
+    y: Math.round((sh - 720) / 2),
     frame: false,
     backgroundColor: '#0d1117',
     alwaysOnTop: true,

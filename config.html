@@ -42,7 +42,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 16px;
+    padding: 12px 20px;
     background: var(--bg-card);
     border-bottom: 1px solid var(--border);
     -webkit-app-region: drag;
@@ -86,11 +86,43 @@
   }
   .btn-close-titlebar:hover { background: var(--red-bg); color: var(--red); }
 
+  /* ---- Tab bar ---- */
+  .tab-bar {
+    display: flex;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    padding: 0 20px;
+    -webkit-app-region: no-drag;
+  }
+
+  .tab-btn {
+    padding: 10px 18px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
   /* ---- Main content ---- */
   .content {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: 22px 24px;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
   }
@@ -98,69 +130,72 @@
   .content::-webkit-scrollbar-track { background: transparent; }
   .content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-  /* ---- Section ---- */
+  /* ---- Section label ---- */
   .section-label {
     font-size: 10px;
     font-weight: 600;
     color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.8px;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
   }
 
-  /* ---- Interval ---- */
-  .interval-section {
+  /* ---- Config card ---- */
+  .config-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
-    margin-bottom: 18px;
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 20px;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 14px;
   }
 
-  .interval-section label {
-    font-size: 11px;
-    color: var(--text);
-  }
-
-  .interval-section select {
+  .config-card select {
     background: var(--bg);
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 5px;
     font-size: 11px;
     font-family: inherit;
-    padding: 4px 8px;
+    padding: 5px 10px;
     cursor: pointer;
     outline: none;
   }
-  .interval-section select:focus { border-color: var(--blue); }
+  .config-card select:focus { border-color: var(--blue); }
 
-  /* ---- Repo list ---- */
-  .repos-section { margin-bottom: 14px; }
+  .config-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
 
+  /* ---- Search ---- */
   .search-input {
     width: 100%;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 6px 10px;
+    border-radius: 6px;
+    padding: 7px 12px;
     font-family: inherit;
     font-size: 11px;
     color: var(--text);
     outline: none;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
   }
   .search-input:focus { border-color: var(--blue); }
   .search-input::placeholder { color: var(--text-dim); }
+
+  /* ---- Repo list ---- */
+  .repos-section { margin-bottom: 14px; }
 
   .repo-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 12px;
+    padding: 14px;
     margin-bottom: 8px;
     transition: border-color 0.15s;
     position: relative;
@@ -291,13 +326,12 @@
     background: var(--bg);
     color: var(--text-dim);
     cursor: pointer;
-    font-size: 13px;
+    font-size: 10px;
     display: flex;
     align-items: center;
     gap: 4px;
     white-space: nowrap;
     font-family: inherit;
-    font-size: 10px;
     transition: all 0.15s;
     flex-shrink: 0;
   }
@@ -328,7 +362,7 @@
   /* ---- Add button ---- */
   .btn-add-repo {
     width: 100%;
-    padding: 10px;
+    padding: 11px;
     border: 1px dashed var(--border);
     border-radius: 8px;
     background: transparent;
@@ -344,11 +378,105 @@
   }
   .btn-add-repo:hover { background: var(--bg-hover); color: var(--blue); border-color: var(--blue); border-style: solid; }
 
+  /* ---- Key fields ---- */
+  .key-field { width: 100%; }
+  .key-field .key-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    display: block;
+    margin-bottom: 5px;
+  }
+  .key-field .key-row { display: flex; gap: 6px; }
+  .key-field .key-row input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text);
+    outline: none;
+  }
+  .key-field .key-row input:focus { border-color: var(--blue); }
+  .key-field .key-link {
+    font-size: 9px;
+    color: var(--blue);
+    text-decoration: none;
+    display: inline-block;
+    margin-top: 4px;
+  }
+  .key-field .key-link:hover { text-decoration: underline; }
+
+  .btn-eye {
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+    flex-shrink: 0;
+  }
+  .btn-eye:hover { color: var(--text); }
+
+  /* ---- Provider buttons ---- */
+  .provider-btn {
+    flex: 1;
+    padding: 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .provider-btn:hover { background: var(--bg-hover); }
+
+  /* ---- CLI status ---- */
+  .cli-status-box {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .cli-status-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  /* ---- Shortcut inputs ---- */
+  .sc-input {
+    width: 190px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text);
+    outline: none;
+    text-align: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .sc-input:focus { border-color: var(--blue); }
+
   /* ---- Footer ---- */
   .footer {
     display: flex;
     gap: 8px;
-    padding: 14px 16px;
+    padding: 14px 20px;
     border-top: 1px solid var(--border);
     background: var(--bg-card);
     flex-shrink: 0;
@@ -356,7 +484,7 @@
 
   .btn-save {
     flex: 1;
-    padding: 8px;
+    padding: 9px;
     border-radius: 6px;
     border: 1px solid var(--green);
     background: var(--green-bg);
@@ -370,7 +498,7 @@
   .btn-save:hover { background: rgba(63, 185, 80, 0.2); }
 
   .btn-cancel {
-    padding: 8px 16px;
+    padding: 9px 16px;
     border-radius: 6px;
     border: 1px solid var(--border);
     background: transparent;
@@ -391,7 +519,7 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 8px 14px;
+    padding: 8px 16px;
     font-size: 11px;
     color: var(--text);
     opacity: 0;
@@ -413,134 +541,150 @@
     </svg>
     <h1>Configurações</h1>
   </div>
-  <button class="btn-close-titlebar" onclick="cancelAndClose()" title="Fechar">✕</button>
+  <button class="btn-close-titlebar" onclick="cancelAndClose()" title="Fechar">&#x2715;</button>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="repos" onclick="switchTab('repos')">Repositórios</button>
+  <button class="tab-btn" data-tab="ai" onclick="switchTab('ai')">IA &amp; Auth</button>
+  <button class="tab-btn" data-tab="general" onclick="switchTab('general')">Geral</button>
 </div>
 
 <div class="content">
 
-  <!-- Anthropic API Key -->
-  <div class="section-label">IA para commits</div>
-  <div class="interval-section" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+  <!-- ===== TAB: REPOSITÓRIOS ===== -->
+  <div class="tab-panel active" id="tab-repos">
+    <div class="section-label">Repositórios monitorados</div>
+    <input type="text" id="repoSearch" class="search-input"
+           placeholder="Buscar por nome ou path..."
+           oninput="filterRepos()"
+           onkeydown="if(event.key==='Escape'){this.value='';filterRepos();}">
+    <div class="repos-section" id="repoList"></div>
+    <button class="btn-add-repo" onclick="addRepo()">
+      <span>+</span> Adicionar repositório
+    </button>
+  </div>
 
-    <!-- Provider selector -->
-    <div style="width: 100%;">
-      <label style="color: var(--text-dim); font-size: 10px; display: block; margin-bottom: 6px;">Provider principal (fallback automático para o outro)</label>
-      <div style="display: flex; gap: 6px;">
-        <button id="btnProviderAnthropic" onclick="setProvider('anthropic')" style="flex:1; padding: 5px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; font-family: inherit; font-size: 10px; transition: all 0.15s;">Claude (Anthropic)</button>
-        <button id="btnProviderOpenai" onclick="setProvider('openai')" style="flex:1; padding: 5px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; font-family: inherit; font-size: 10px; transition: all 0.15s;">GPT-4o mini (OpenAI)</button>
+  <!-- ===== TAB: IA & AUTH ===== -->
+  <div class="tab-panel" id="tab-ai">
+
+    <div class="section-label">IA para commits</div>
+    <div class="config-card">
+
+      <div>
+        <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px;">Provider principal (fallback automático para o outro)</div>
+        <div style="display: flex; gap: 8px;">
+          <button id="btnProviderAnthropic" class="provider-btn" onclick="setProvider('anthropic')">Claude (Anthropic)</button>
+          <button id="btnProviderOpenai" class="provider-btn" onclick="setProvider('openai')">GPT-4o mini (OpenAI)</button>
+        </div>
+      </div>
+
+      <div class="cli-status-box">
+        <div class="cli-status-header">
+          <span style="font-size: 10px; color: var(--text-dim);">Detecção automática de credenciais</span>
+          <button onclick="detectCliCreds()" style="padding: 3px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 10px; font-family: inherit;">&#x21BB; Re-detectar</button>
+        </div>
+        <div id="claudeCliStatus" style="font-size: 10px; color: var(--text-dim);">Claude CLI: verificando...</div>
+        <div id="codexCliStatus" style="font-size: 10px; color: var(--text-dim);">Codex CLI: verificando...</div>
+        <div style="font-size: 9px; color: var(--text-dim); opacity: 0.7; margin-top: 2px;">API keys abaixo são fallback opcional — CLI detectado tem prioridade.</div>
+      </div>
+
+      <div class="key-field">
+        <span class="key-label">Anthropic API Key (fallback)</span>
+        <div class="key-row">
+          <input type="password" id="anthropicKey" placeholder="sk-ant-..."
+                 onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
+          <button class="btn-eye" onclick="toggleKeyVisibility()">&#x1F441;</button>
+        </div>
+        <a href="#" class="key-link" onclick="ipcRenderer.invoke('open-git-url','https://console.anthropic.com/settings/keys')">&#x2197; console.anthropic.com</a>
+      </div>
+
+      <div class="key-field">
+        <span class="key-label">OpenAI API Key (fallback)</span>
+        <div class="key-row">
+          <input type="password" id="openaiKey" placeholder="sk-..."
+                 onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
+          <button class="btn-eye" onclick="toggleOpenaiVisibility()">&#x1F441;</button>
+        </div>
+        <a href="#" class="key-link" onclick="ipcRenderer.invoke('open-git-url','https://platform.openai.com/api-keys')">&#x2197; platform.openai.com</a>
       </div>
     </div>
 
-    <!-- Auto-auth status -->
-    <div style="width: 100%; display: flex; flex-direction: column; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 8px;">
+    <div class="section-label">Deploy &amp; CI/CD</div>
+    <div class="config-card">
+      <div class="key-field">
+        <span class="key-label">Token GitHub — para monitorar status CI/CD após push</span>
+        <div class="key-row">
+          <input type="password" id="githubToken" placeholder="ghp_..."
+                 onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
+          <button class="btn-eye" onclick="toggleGhVisibility()">&#x1F441;</button>
+        </div>
+        <a href="#" class="key-link" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/tokens')">&#x2197; github.com/settings/tokens (escopo: repo)</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===== TAB: GERAL ===== -->
+  <div class="tab-panel" id="tab-general">
+
+    <div class="section-label">Polling</div>
+    <div class="config-card">
+      <div class="config-row">
+        <label style="font-size: 11px; color: var(--text);">Verificar repositórios a cada</label>
+        <select id="intervalSelect">
+          <option value="10">10 segundos</option>
+          <option value="30">30 segundos</option>
+          <option value="60">1 minuto</option>
+          <option value="120">2 minutos</option>
+          <option value="300">5 minutos</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section-label">Atalhos de teclado (globais)</div>
+    <div class="config-card">
+      <div class="config-row">
+        <span style="font-size: 10px; color: var(--text-dim);">Esconder / Mostrar</span>
+        <input type="text" id="scToggle" class="sc-input" readonly placeholder="clique e pressione..."
+               onfocus="captureShortcut(this)" onblur="this.placeholder='clique e pressione...'" />
+      </div>
+      <div class="config-row">
+        <span style="font-size: 10px; color: var(--text-dim);">Minimizar / Maximizar</span>
+        <input type="text" id="scMinimize" class="sc-input" readonly placeholder="clique e pressione..."
+               onfocus="captureShortcut(this)" onblur="this.placeholder='clique e pressione...'" />
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+        <span style="font-size: 9.5px; color: var(--text-dim);">Foque o campo e pressione a combinação. Esc cancela.</span>
+        <div style="display: flex; gap: 6px;">
+          <button onclick="resetShortcuts()" style="padding: 5px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 10px; font-family: inherit;">Padrão</button>
+          <button onclick="applyShortcuts()" style="padding: 5px 10px; border: 1px solid var(--blue); border-radius: 5px; background: var(--blue-bg); color: var(--blue); cursor: pointer; font-size: 10px; font-family: inherit;">Aplicar</button>
+        </div>
+      </div>
+      <div id="scStatus" style="font-size: 9.5px; color: var(--text-dim);"></div>
+    </div>
+
+    <div class="section-label">Sobre</div>
+    <div class="config-card">
       <div style="display: flex; justify-content: space-between; align-items: center;">
-        <label style="color: var(--text-dim); font-size: 10px;">Detecção automática de credenciais</label>
-        <button onclick="detectCliCreds()" style="padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 10px; font-family: inherit;">↻ Re-detectar</button>
-      </div>
-      <div id="claudeCliStatus" style="font-size: 10px; color: var(--text-dim);">Claude CLI: verificando...</div>
-      <div id="codexCliStatus" style="font-size: 10px; color: var(--text-dim);">Codex CLI: verificando...</div>
-      <div style="font-size: 9px; color: var(--text-dim); opacity: 0.7; margin-top: 2px;">API keys abaixo são fallback opcional — CLI detectado tem prioridade.</div>
-    </div>
-
-    <!-- Anthropic -->
-    <div style="width: 100%;">
-      <label style="color: var(--text-dim); font-size: 10px; display: block; margin-bottom: 4px;">Anthropic API Key (fallback)</label>
-      <div style="display: flex; gap: 6px;">
-        <input type="password" id="anthropicKey" placeholder="sk-ant-..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
-        <button onclick="toggleKeyVisibility()" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit;">👁</button>
-      </div>
-      <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://console.anthropic.com/settings/keys')" style="font-size: 9px; color: var(--blue); text-decoration: none;">↗ console.anthropic.com</a>
-    </div>
-
-    <!-- OpenAI -->
-    <div style="width: 100%;">
-      <label style="color: var(--text-dim); font-size: 10px; display: block; margin-bottom: 4px;">OpenAI API Key (fallback)</label>
-      <div style="display: flex; gap: 6px;">
-        <input type="password" id="openaiKey" placeholder="sk-..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
-        <button onclick="toggleOpenaiVisibility()" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit;">👁</button>
-      </div>
-      <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://platform.openai.com/api-keys')" style="font-size: 9px; color: var(--blue); text-decoration: none;">↗ platform.openai.com</a>
-    </div>
-  </div>
-
-  <!-- GitHub Token -->
-  <div class="section-label" style="margin-top: 14px;">Deploy status</div>
-  <div class="interval-section" style="flex-direction: column; align-items: flex-start; gap: 8px;">
-    <label style="color: var(--text-dim); font-size: 10px;">Token GitHub — para monitorar CI/CD após push</label>
-    <div style="display: flex; gap: 6px; width: 100%;">
-      <input type="password" id="githubToken" placeholder="ghp_..." style="flex:1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none;" onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'" />
-      <button onclick="toggleGhVisibility()" style="padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 11px; font-family: inherit; white-space: nowrap;">👁</button>
-    </div>
-    <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/tokens')" style="font-size: 9.5px; color: var(--blue); text-decoration: none;">↗ Criar token em github.com/settings/tokens (escopo: repo)</a>
-  </div>
-
-  <!-- Interval -->
-  <div class="section-label">Intervalo de atualização</div>
-  <div class="interval-section">
-    <label>Verificar repositórios a cada</label>
-    <select id="intervalSelect">
-      <option value="10">10 segundos</option>
-      <option value="30">30 segundos</option>
-      <option value="60">1 minuto</option>
-      <option value="120">2 minutos</option>
-      <option value="300">5 minutos</option>
-    </select>
-  </div>
-
-  <!-- Versão -->
-  <div class="interval-section" style="justify-content: space-between; margin-bottom: 14px;">
-    <div>
-      <div style="font-size: 11px; color: var(--text); font-weight: 600;">Git Monitor</div>
-      <div style="font-size: 10px; color: var(--text-dim); margin-top: 2px;">by <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://github.com/ronydrop')" style="color:var(--blue); text-decoration:none;">@rony_drop</a></div>
-    </div>
-    <div style="text-align: right;">
-      <div style="font-size: 11px; color: var(--text-dim);">versão</div>
-      <div style="font-size: 13px; color: var(--text); font-weight: 600;" id="appVersion">...</div>
-    </div>
-  </div>
-
-  <!-- Atalhos -->
-  <div class="section-label">Atalhos de teclado (globais)</div>
-  <div class="interval-section" style="flex-direction: column; align-items: stretch; gap: 10px;">
-    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-      <label style="color: var(--text-dim); font-size: 10px; flex: 1;">Esconder / Mostrar</label>
-      <input type="text" id="scToggle" readonly placeholder="clique e pressione..."
-             onfocus="captureShortcut(this)" onblur="this.placeholder='clique e pressione...'"
-             style="width: 180px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none; text-align: center; cursor: pointer;" />
-    </div>
-    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-      <label style="color: var(--text-dim); font-size: 10px; flex: 1;">Minimizar / Maximizar</label>
-      <input type="text" id="scMinimize" readonly placeholder="clique e pressione..."
-             onfocus="captureShortcut(this)" onblur="this.placeholder='clique e pressione...'"
-             style="width: 180px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px; color: var(--text); outline: none; text-align: center; cursor: pointer;" />
-    </div>
-    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-      <span style="font-size: 9.5px; color: var(--text-dim);">Foque o campo e pressione a combinação. Esc para cancelar.</span>
-      <div style="display: flex; gap: 6px;">
-        <button onclick="resetShortcuts()" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 10px; font-family: inherit;">Padrão</button>
-        <button onclick="applyShortcuts()" style="padding: 4px 8px; border: 1px solid var(--blue); border-radius: 4px; background: var(--blue-bg); color: var(--blue); cursor: pointer; font-size: 10px; font-family: inherit;">Aplicar</button>
+        <div>
+          <div style="font-size: 12px; color: var(--text); font-weight: 600;">Git Monitor</div>
+          <div style="font-size: 10px; color: var(--text-dim); margin-top: 3px;">by <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://github.com/ronydrop')" style="color:var(--blue); text-decoration:none;">@rony_drop</a></div>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-size: 10px; color: var(--text-dim);">versão</div>
+          <div style="font-size: 15px; color: var(--text); font-weight: 700; margin-top: 2px;" id="appVersion">...</div>
+        </div>
       </div>
     </div>
-    <div id="scStatus" style="font-size: 9.5px; color: var(--text-dim);"></div>
+
   </div>
-
-  <!-- Repos -->
-  <div class="section-label">Repositórios</div>
-  <input type="text" id="repoSearch" class="search-input"
-         placeholder="Buscar repositório por nome ou path..."
-         oninput="filterRepos()"
-         onkeydown="if(event.key==='Escape'){this.value='';filterRepos();}">
-  <div class="repos-section" id="repoList"></div>
-
-  <button class="btn-add-repo" onclick="addRepo()">
-    <span>+</span> Adicionar repositório
-  </button>
 
 </div>
 
 <div class="footer">
-  <button class="btn-save" onclick="save()">✓ Salvar configurações</button>
-  <button class="btn-cancel" id="btnCheckUpdate" onclick="checkUpdate()" style="color: var(--blue); border-color: var(--border);" title="Verificar atualizações">↻ Verificar atualizações</button>
+  <button class="btn-save" onclick="save()">&#x2713; Salvar configurações</button>
+  <button class="btn-cancel" id="btnCheckUpdate" onclick="checkUpdate()" style="color: var(--blue); border-color: var(--border);" title="Verificar atualizações">&#x21BB; Verificar atualizações</button>
   <button class="btn-cancel" onclick="cancelAndClose()">Cancelar</button>
 </div>
 
@@ -551,10 +695,16 @@
 
   let dragSrc = null;
 
+  // ---- Tabs ----
+  function switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  }
+
   // ---- Init ----
   async function init() {
     const version = await ipcRenderer.invoke('get-app-version');
-    document.getElementById('appVersion').textContent = `v${version}`;
+    document.getElementById('appVersion').textContent = 'v' + version;
 
     const config = await ipcRenderer.invoke('get-config');
     document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
@@ -563,7 +713,7 @@
     document.getElementById('githubToken').value = config.githubToken || '';
     setProvider(config.aiProvider || 'anthropic');
     const list = document.getElementById('repoList');
-    list.innerHTML = '';
+    list.textContent = '';
     (config.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false));
     if (!config.repos || config.repos.length === 0) addRepo();
     detectCliCreds();
@@ -589,11 +739,11 @@
     const btnA = document.getElementById('btnProviderAnthropic');
     const btnO = document.getElementById('btnProviderOpenai');
     const isAnthropic = provider === 'anthropic';
-    btnA.style.background = isAnthropic ? 'var(--blue-bg)' : 'transparent';
-    btnA.style.color      = isAnthropic ? 'var(--blue)' : 'var(--text-dim)';
+    btnA.style.background  = isAnthropic ? 'var(--blue-bg)' : 'transparent';
+    btnA.style.color       = isAnthropic ? 'var(--blue)' : 'var(--text-dim)';
     btnA.style.borderColor = isAnthropic ? 'var(--blue)' : 'var(--border)';
-    btnO.style.background = !isAnthropic ? 'var(--blue-bg)' : 'transparent';
-    btnO.style.color      = !isAnthropic ? 'var(--blue)' : 'var(--text-dim)';
+    btnO.style.background  = !isAnthropic ? 'var(--blue-bg)' : 'transparent';
+    btnO.style.color       = !isAnthropic ? 'var(--blue)' : 'var(--text-dim)';
     btnO.style.borderColor = !isAnthropic ? 'var(--blue)' : 'var(--border)';
     ipcRenderer.invoke('save-ai-provider', provider);
   }
@@ -629,57 +779,57 @@
   }
 
   async function applyShortcuts() {
-    const toggle = document.getElementById('scToggle').value.trim();
+    const toggle   = document.getElementById('scToggle').value.trim();
     const minimize = document.getElementById('scMinimize').value.trim();
-    const res = await ipcRenderer.invoke('save-shortcuts', { toggle, minimize });
+    const res    = await ipcRenderer.invoke('save-shortcuts', { toggle, minimize });
     const status = document.getElementById('scStatus');
-    const parts = [];
-    parts.push(res.toggle ? `✓ Toggle: ${res.toggle}` : '✕ Toggle falhou (conflito?)');
-    parts.push(res.minimize ? `✓ Min/Max: ${res.minimize}` : '✕ Min/Max falhou (conflito?)');
-    status.textContent = parts.join('  ·  ');
+    const parts  = [];
+    parts.push(res.toggle   ? '\u2713 Toggle: '  + res.toggle   : '\u2715 Toggle falhou (conflito?)');
+    parts.push(res.minimize ? '\u2713 Min/Max: ' + res.minimize : '\u2715 Min/Max falhou (conflito?)');
+    status.textContent = parts.join('  \u00B7  ');
     status.style.color = (res.toggle && res.minimize) ? 'var(--green)' : 'var(--yellow)';
   }
 
   async function resetShortcuts() {
-    document.getElementById('scToggle').value = 'Control+Shift+G';
+    document.getElementById('scToggle').value   = 'Control+Shift+G';
     document.getElementById('scMinimize').value = 'Control+Shift+M';
     await applyShortcuts();
   }
 
   async function loadShortcuts() {
     const sc = await ipcRenderer.invoke('get-shortcuts');
-    document.getElementById('scToggle').value = sc.toggle;
+    document.getElementById('scToggle').value   = sc.toggle;
     document.getElementById('scMinimize').value = sc.minimize;
   }
 
   // ---- Auto-auth CLI detect ----
   async function detectCliCreds() {
-    const res = await ipcRenderer.invoke('detect-cli-credentials');
+    const res      = await ipcRenderer.invoke('detect-cli-credentials');
     const claudeEl = document.getElementById('claudeCliStatus');
-    const codexEl = document.getElementById('codexCliStatus');
+    const codexEl  = document.getElementById('codexCliStatus');
 
     if (res.claude.available) {
       const days = res.claude.expiresAt
         ? Math.max(0, Math.floor((Number(res.claude.expiresAt) - Date.now()) / 86400000))
         : null;
-      claudeEl.textContent = `Claude CLI: ✓ detectado${days !== null ? ` (expira em ${days}d)` : ''}`;
+      claudeEl.textContent = 'Claude CLI: \u2713 detectado' + (days !== null ? ' (expira em ' + days + 'd)' : '');
       claudeEl.style.color = 'var(--green)';
     } else if (res.claude.expired) {
-      claudeEl.textContent = 'Claude CLI: ⚠ token expirado — rode `claude login`';
+      claudeEl.textContent = 'Claude CLI: \u26A0 token expirado \u2014 rode `claude login`';
       claudeEl.style.color = 'var(--yellow)';
     } else {
-      claudeEl.textContent = 'Claude CLI: ✕ não detectado (usará API key manual)';
+      claudeEl.textContent = 'Claude CLI: \u2715 n\u00E3o detectado (usar\u00E1 API key manual)';
       claudeEl.style.color = 'var(--text-dim)';
     }
 
     if (res.openai.available) {
-      codexEl.textContent = 'Codex CLI: ✓ ApiKey detectada';
+      codexEl.textContent = 'Codex CLI: \u2713 ApiKey detectada';
       codexEl.style.color = 'var(--green)';
     } else if (res.openai.mode && res.openai.mode !== 'ApiKey') {
-      codexEl.textContent = `Codex CLI: ⚠ modo ${res.openai.mode} não serve pra API — use key manual`;
+      codexEl.textContent = 'Codex CLI: \u26A0 modo ' + res.openai.mode + ' n\u00E3o serve pra API \u2014 use key manual';
       codexEl.style.color = 'var(--yellow)';
     } else {
-      codexEl.textContent = 'Codex CLI: ✕ não detectado (usará API key manual)';
+      codexEl.textContent = 'Codex CLI: \u2715 n\u00E3o detectado (usar\u00E1 API key manual)';
       codexEl.style.color = 'var(--text-dim)';
     }
   }
@@ -687,40 +837,79 @@
   // ---- Filter repos ----
   function filterRepos() {
     const input = document.getElementById('repoSearch');
-    const q = (input?.value || '').toLowerCase().trim();
+    const q = (input ? input.value : '').toLowerCase().trim();
     document.querySelectorAll('#repoList .repo-card').forEach(card => {
-      const name = (card.querySelector('.name-input')?.value || '').toLowerCase();
-      const repoPath = (card.querySelector('.path-input')?.value || '').toLowerCase();
-      const match = !q || name.includes(q) || repoPath.includes(q);
-      card.style.display = match ? '' : 'none';
+      const name     = (card.querySelector('.name-input')  ? card.querySelector('.name-input').value  : '').toLowerCase();
+      const repoPath = (card.querySelector('.path-input')  ? card.querySelector('.path-input').value  : '').toLowerCase();
+      card.style.display = (!q || name.includes(q) || repoPath.includes(q)) ? '' : 'none';
     });
   }
 
-  // ---- Add repo card ----
-  function addRepo(name = '', repoPath = '', enabled = true) {
-    const list = document.getElementById('repoList');
-    const card = document.createElement('div');
-    card.className = 'repo-card' + (enabled ? '' : ' disabled');
-    card.draggable = true;
-    card.innerHTML = `
-      <div class="repo-card-header">
-        <span class="drag-handle" title="Arrastar para reordenar">⠿</span>
-        <span class="repo-num">${list.children.length + 1}</span>
-        <label class="toggle-switch" title="Ativo no workspace">
-          <input type="checkbox" class="enabled-toggle" ${enabled ? 'checked' : ''} onchange="this.closest('.repo-card').classList.toggle('disabled', !this.checked)" />
-          <span class="toggle-slider"></span>
-        </label>
-        <input type="text" class="name-input" placeholder="Nome do projeto" value="${escHtml(name)}" />
-        <button class="btn-remove" onclick="this.closest('.repo-card').remove(); renumber()" title="Remover">×</button>
-      </div>
-      <div class="path-row">
-        <input type="text" class="path-input" placeholder="C:\\caminho\\do\\repositorio" value="${escHtml(repoPath)}" />
-        <button class="btn-browse" onclick="browse(this)" title="Escolher pasta">📁 Procurar</button>
-        <button class="btn-test" onclick="testRepo(this)" title="Testar caminho">⚡ Testar</button>
-      </div>
-    `;
+  // ---- Build repo card via DOM (no innerHTML) ----
+  function makeEl(tag, props, children) {
+    const el = document.createElement(tag);
+    if (props) Object.entries(props).forEach(([k, v]) => {
+      if (k === 'className') el.className = v;
+      else if (k === 'textContent') el.textContent = v;
+      else if (k === 'style') Object.assign(el.style, v);
+      else el.setAttribute(k, v);
+    });
+    if (children) children.forEach(c => c && el.appendChild(c));
+    return el;
+  }
 
-    // Drag & drop
+  function addRepo(name, repoPath, enabled) {
+    name     = name     || '';
+    repoPath = repoPath || '';
+    enabled  = enabled  !== false;
+
+    const list = document.getElementById('repoList');
+
+    // header row
+    const dragHandle = makeEl('span', { className: 'drag-handle', title: 'Arrastar para reordenar', textContent: '\u2837' });
+
+    const numSpan = makeEl('span', { className: 'repo-num', textContent: String(list.children.length + 1) });
+
+    const checkbox = makeEl('input', { type: 'checkbox', className: 'enabled-toggle' });
+    checkbox.checked = enabled;
+    const toggleSlider = makeEl('span', { className: 'toggle-slider' });
+    const toggleLabel = makeEl('label', { className: 'toggle-switch', title: 'Ativo no workspace' }, [checkbox, toggleSlider]);
+
+    const nameInput = makeEl('input', {
+      type: 'text', className: 'name-input', placeholder: 'Nome do projeto'
+    });
+    nameInput.value = name;
+
+    const btnRemove = makeEl('button', { className: 'btn-remove', title: 'Remover', textContent: '\xD7' });
+
+    const header = makeEl('div', { className: 'repo-card-header' }, [dragHandle, numSpan, toggleLabel, nameInput, btnRemove]);
+
+    // path row
+    const pathInput = makeEl('input', {
+      type: 'text', className: 'path-input', placeholder: 'C:\\caminho\\do\\repositorio'
+    });
+    pathInput.value = repoPath;
+
+    const browseIcon = makeEl('span', { textContent: '\uD83D\uDCC1 Procurar' });
+    const btnBrowse = makeEl('button', { className: 'btn-browse', title: 'Escolher pasta' }, [browseIcon]);
+
+    const testIcon = makeEl('span', { textContent: '\u26A1 Testar' });
+    const btnTest = makeEl('button', { className: 'btn-test', title: 'Testar caminho' }, [testIcon]);
+
+    const pathRow = makeEl('div', { className: 'path-row' }, [pathInput, btnBrowse, btnTest]);
+
+    // card
+    const card = makeEl('div', { className: 'repo-card' + (enabled ? '' : ' disabled') });
+    card.draggable = true;
+    card.appendChild(header);
+    card.appendChild(pathRow);
+
+    // events
+    checkbox.addEventListener('change', () => card.classList.toggle('disabled', !checkbox.checked));
+    btnRemove.addEventListener('click', () => { card.remove(); renumber(); });
+    btnBrowse.addEventListener('click', () => browse(btnBrowse));
+    btnTest.addEventListener('click',   () => testRepo(btnTest));
+
     card.addEventListener('dragstart', e => {
       dragSrc = card;
       card.classList.add('dragging');
@@ -742,15 +931,11 @@
     card.addEventListener('drop', e => {
       e.preventDefault();
       if (dragSrc && dragSrc !== card) {
-        const list = document.getElementById('repoList');
-        const cards = [...list.children];
+        const cards  = [...list.children];
         const srcIdx = cards.indexOf(dragSrc);
         const dstIdx = cards.indexOf(card);
-        if (srcIdx < dstIdx) {
-          list.insertBefore(dragSrc, card.nextSibling);
-        } else {
-          list.insertBefore(dragSrc, card);
-        }
+        if (srcIdx < dstIdx) list.insertBefore(dragSrc, card.nextSibling);
+        else list.insertBefore(dragSrc, card);
       }
       document.querySelectorAll('.repo-card').forEach(c => c.classList.remove('drag-over'));
     });
@@ -762,78 +947,73 @@
     document.querySelectorAll('.repo-num').forEach((el, i) => { el.textContent = i + 1; });
   }
 
-  // ---- Browse folder ----
   async function browse(btn) {
     const result = await ipcRenderer.invoke('open-dialog');
     if (!result) return;
-
     const card = btn.closest('.repo-card');
     card.querySelector('.path-input').value = result;
     resetTestBtn(card.querySelector('.btn-test'));
-
-    // Preenche o nome automaticamente se ainda estiver vazio
     const nameInput = card.querySelector('.name-input');
     if (!nameInput.value.trim()) {
-      const name = await ipcRenderer.invoke('read-project-name', result);
-      if (name) {
-        nameInput.value = name;
+      const nm = await ipcRenderer.invoke('read-project-name', result);
+      if (nm) {
+        nameInput.value = nm;
         nameInput.style.borderColor = 'var(--green)';
         setTimeout(() => { nameInput.style.borderColor = ''; }, 2000);
       }
     }
   }
 
-  // ---- Test repo ----
   async function testRepo(btn) {
     const pathInput = btn.closest('.path-row').querySelector('.path-input');
-    const repoPath = pathInput.value.trim();
+    const repoPath  = pathInput.value.trim();
     if (!repoPath) { showToast('Digite um caminho primeiro', 'error'); return; }
-
-    btn.textContent = '⏳ Testando...';
-    btn.className = 'btn-test testing';
-    btn.disabled = true;
-
+    btn.textContent = '\u23F3 Testando...';
+    btn.className   = 'btn-test testing';
+    btn.disabled    = true;
     const ok = await ipcRenderer.invoke('test-repo', repoPath);
     btn.disabled = false;
     if (ok) {
-      btn.textContent = '✓ Válido';
-      btn.className = 'btn-test ok';
+      btn.textContent = '\u2713 V\u00E1lido';
+      btn.className   = 'btn-test ok';
     } else {
-      btn.textContent = '✕ Inválido';
-      btn.className = 'btn-test fail';
+      btn.textContent = '\u2715 Inv\u00E1lido';
+      btn.className   = 'btn-test fail';
     }
   }
 
   function resetTestBtn(btn) {
-    btn.textContent = '⚡ Testar';
-    btn.className = 'btn-test';
+    btn.textContent = '\u26A1 Testar';
+    btn.className   = 'btn-test';
   }
 
   // ---- Save ----
   async function save() {
-    const cards = document.querySelectorAll('.repo-card');
     const repos = [];
-    cards.forEach(card => {
-      const name = card.querySelector('.name-input').value.trim();
-      const path = card.querySelector('.path-input').value.trim();
+    document.querySelectorAll('.repo-card').forEach(card => {
+      const name    = card.querySelector('.name-input').value.trim();
+      const path    = card.querySelector('.path-input').value.trim();
       const enabled = card.querySelector('.enabled-toggle').checked;
       if (name && path) repos.push({ name, path, enabled });
     });
 
-    const interval = parseInt(document.getElementById('intervalSelect').value);
+    const interval     = parseInt(document.getElementById('intervalSelect').value);
     const anthropicKey = document.getElementById('anthropicKey').value.trim();
     const openaiKey    = document.getElementById('openaiKey').value.trim();
     const githubToken  = document.getElementById('githubToken').value.trim();
-    await ipcRenderer.invoke('save-repos', repos);
-    await ipcRenderer.invoke('set-interval', interval);
-    await ipcRenderer.invoke('save-anthropic-key', anthropicKey);
-    await ipcRenderer.invoke('save-openai-key', openaiKey);
-    await ipcRenderer.invoke('save-github-token', githubToken);
-    const scToggleVal = document.getElementById('scToggle').value.trim();
+
+    await ipcRenderer.invoke('save-repos',          repos);
+    await ipcRenderer.invoke('set-interval',        interval);
+    await ipcRenderer.invoke('save-anthropic-key',  anthropicKey);
+    await ipcRenderer.invoke('save-openai-key',     openaiKey);
+    await ipcRenderer.invoke('save-github-token',   githubToken);
+
+    const scToggleVal   = document.getElementById('scToggle').value.trim();
     const scMinimizeVal = document.getElementById('scMinimize').value.trim();
     if (scToggleVal || scMinimizeVal) {
       await ipcRenderer.invoke('save-shortcuts', { toggle: scToggleVal, minimize: scMinimizeVal });
     }
+
     showToast('Configurações salvas!', 'success');
     setTimeout(() => ipcRenderer.invoke('close-config-window'), 700);
   }
@@ -844,55 +1024,26 @@
 
   async function checkUpdate() {
     const btn = document.getElementById('btnCheckUpdate');
-    btn.textContent = '⏳ Verificando...';
+    btn.textContent = '\u23F3 Verificando...';
     btn.disabled = true;
-
     ipcRenderer.invoke('check-for-updates');
-
     const onResult = (_, status) => {
       ipcRenderer.removeListener('update-check-result', onResult);
-      if (status.type === 'latest') {
-        btn.textContent = '✓ Já está atualizado';
-        btn.style.color = 'var(--green)';
-      } else if (status.type === 'available') {
-        btn.textContent = `⬇ v${status.version} disponível!`;
-        btn.style.color = 'var(--blue)';
-      } else if (status.type === 'ready') {
-        btn.textContent = '✓ Pronto para instalar';
-        btn.style.color = 'var(--green)';
-      } else if (status.type === 'dev') {
-        btn.textContent = '⚠ Indisponível em dev mode';
-        btn.style.color = 'var(--yellow)';
-      } else if (status.type === 'error') {
-        btn.textContent = '✕ Erro: sem release publicado';
-        btn.style.color = 'var(--red)';
-      }
-      setTimeout(() => {
-        btn.textContent = '↻ Verificar atualizações';
-        btn.style.color = '';
-        btn.disabled = false;
-      }, 4000);
+      if      (status.type === 'latest')    { btn.textContent = '\u2713 J\u00E1 est\u00E1 atualizado';     btn.style.color = 'var(--green)'; }
+      else if (status.type === 'available') { btn.textContent = '\u2B07 v' + status.version + ' dispon\u00EDvel!'; btn.style.color = 'var(--blue)';  }
+      else if (status.type === 'ready')     { btn.textContent = '\u2713 Pronto para instalar';             btn.style.color = 'var(--green)'; }
+      else if (status.type === 'dev')       { btn.textContent = '\u26A0 Indispon\u00EDvel em dev mode';    btn.style.color = 'var(--yellow)';}
+      else if (status.type === 'error')     { btn.textContent = '\u2715 Erro: sem release publicado';      btn.style.color = 'var(--red)';   }
+      setTimeout(() => { btn.textContent = '\u21BB Verificar atualiza\u00E7\u00F5es'; btn.style.color = ''; btn.disabled = false; }, 4000);
     };
-
     ipcRenderer.on('update-check-result', onResult);
-
-    // Timeout de segurança
     setTimeout(() => {
       ipcRenderer.removeListener('update-check-result', onResult);
-      if (btn.disabled) {
-        btn.textContent = '↻ Verificar atualizações';
-        btn.style.color = '';
-        btn.disabled = false;
-      }
+      if (btn.disabled) { btn.textContent = '\u21BB Verificar atualiza\u00E7\u00F5es'; btn.style.color = ''; btn.disabled = false; }
     }, 15000);
   }
 
-  // ---- Helpers ----
-  function escHtml(str) {
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  function showToast(msg, type = '') {
+  function showToast(msg, type) {
     const toast = document.getElementById('toast');
     toast.textContent = msg;
     toast.className = 'toast show' + (type ? ' ' + type : '');
