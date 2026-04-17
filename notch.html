@@ -463,7 +463,7 @@
   }
 
   function isExpanded() {
-    return !minimized && (hovered || pinned || isPendingList());
+    return !minimized && (hovered || pinned);
   }
 
   function updateSummary() {
@@ -749,24 +749,39 @@
     }
   }
 
-  async function startPolling() {
+  async function startPolling(skipFirstRefresh = false) {
     try {
       const cfg = (await ipcRenderer.invoke('get-config')) || {};
       const seconds = Math.max(10, cfg.intervalSeconds || 30);
-      refresh();
+      if (!skipFirstRefresh) refresh();
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(refresh, seconds * 1000);
     } catch (e) {
       console.warn('[notch] startPolling falhou:', e);
-      setTimeout(startPolling, 2000);
+      setTimeout(() => startPolling(), 2000);
     }
   }
 
   ipcRenderer.on('config-saved', () => startPolling());
 
+  async function paintFromCache() {
+    try {
+      const cache = await ipcRenderer.invoke('get-cached-repos');
+      if (cache && cache.notch && cache.notch.repos && cache.notch.repos.length > 0) {
+        repos = cache.notch.repos;
+        loaded = true;
+        renderList();
+        updateSummary();
+        updateShape();
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   // Inicial: notifica rect baseline pro passthrough do main
   updateShape();
-  startPolling();
+  paintFromCache().then(hasCached => startPolling(hasCached));
 </script>
 </body>
 </html>

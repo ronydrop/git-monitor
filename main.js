@@ -233,6 +233,20 @@ function clampWindowPos(x, y, w = 300, h = 420) {
 
 const PENDING_STATES = ['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged'];
 
+let lastRepoResults = null;
+
+function mapReposForNotch(results) {
+  const mapped = results.map(r => ({
+    name: r.name, path: r.path, status: r.status, detail: r.detail,
+    branch: r.branch, ahead: r.ahead, behind: r.behind,
+    changedFiles: r.changedFiles, remoteUrl: r.remoteUrl,
+    pending: PENDING_STATES.includes(r.status)
+  }));
+  const order = { diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3, dirty: 4, busy: 5, error: 6, clean: 7 };
+  mapped.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
+  return mapped;
+}
+
 function createFloatingWindow() {
   const { width: screenW } = screen.getPrimaryDisplay().workAreaSize;
 
@@ -603,6 +617,7 @@ async function checkAllRepos() {
     results.push(...batchResults);
   }
 
+  lastRepoResults = results;
   return results;
 }
 
@@ -612,9 +627,22 @@ async function checkAllRepos() {
 ipcMain.handle('check-repos', () => checkAllRepos());
 ipcMain.handle('get-config', () => config);
 
+ipcMain.handle('get-cached-repos', () => {
+  if (!lastRepoResults) return { repos: null, notch: null };
+  const activePaths = new Set(
+    config.repos.filter(r => r.enabled !== false).map(r => path.resolve(r.path))
+  );
+  const filtered = lastRepoResults.filter(r => activePaths.has(path.resolve(r.path)));
+  return {
+    repos: filtered,
+    notch: { repos: mapReposForNotch(filtered), total: filtered.length }
+  };
+});
+
 ipcMain.handle('save-repos', (_, repos) => {
   config.repos = repos;
   saveConfig(config);
+  lastRepoResults = null;
   return true;
 });
 
@@ -642,6 +670,7 @@ ipcMain.handle('check-for-updates', () => {
 let zoneWindow = null;
 
 ipcMain.handle('start-zone-select', () => {
+  if (config.widgetMode === 'notch') return;
   if (zoneWindow && !zoneWindow.isDestroyed()) {
     zoneWindow.focus();
     return;
@@ -834,7 +863,7 @@ ipcMain.handle('minimize-app', () => toggleCollapseApp());
 ipcMain.handle('set-opacity', (_, value) => {
   config.opacity = value;
   saveConfig(config);
-  mainWindow.setOpacity(value);
+  if (config.widgetMode !== 'notch') mainWindow.setOpacity(value);
 });
 
 
@@ -1613,21 +1642,7 @@ ipcMain.handle('notch-pending-repos', async () => {
 
 ipcMain.handle('notch-all-repos', async () => {
   const results = await checkAllRepos();
-  const mapped = results.map(r => ({
-    name: r.name,
-    path: r.path,
-    status: r.status,
-    detail: r.detail,
-    branch: r.branch,
-    ahead: r.ahead,
-    behind: r.behind,
-    changedFiles: r.changedFiles,
-    remoteUrl: r.remoteUrl,
-    pending: PENDING_STATES.includes(r.status)
-  }));
-  // Ordenar: pending primeiro (diverged > behind > ahead > dirty-ahead > dirty > busy > error > clean)
-  const order = { diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3, dirty: 4, busy: 5, error: 6, clean: 7 };
-  mapped.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
+  const mapped = mapReposForNotch(results);
   return { repos: mapped, total: mapped.length };
 });
 
