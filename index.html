@@ -628,6 +628,31 @@
     display: none;
   }
 
+  #pendingToggleBtn { display: none; }
+  .container.collapsed #pendingToggleBtn { display: flex; }
+
+  .pending-preview {
+    display: none;
+    padding: 2px 6px 6px;
+    border-top: 1px solid var(--border);
+  }
+  .container.collapsed.pending-visible .pending-preview {
+    display: block;
+  }
+  .pending-preview .repo-item {
+    padding: 4px 6px;
+    gap: 6px;
+    min-height: 26px;
+  }
+  .pending-preview .repo-item .repo-name { font-size: 11px; }
+  .pending-preview .repo-item .repo-detail { font-size: 10px; }
+  .pending-preview .empty-pending {
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 4px 6px;
+    opacity: 0.6;
+  }
+
   /* ---- Loading shimmer ---- */
   .loading-shimmer {
     background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-hover) 50%, var(--bg-card) 75%);
@@ -658,10 +683,15 @@
     <div class="titlebar-actions">
       <button class="btn-refresh" id="refreshBtn" onclick="refreshNow()" title="Atualizar"></button>
       <button id="configBtn" onclick="openConfig()" title="Configurar"></button>
+      <button id="pendingToggleBtn" onclick="togglePending()" title="Mostrar pendentes"></button>
+      <button id="modeBtn" onclick="switchMode()" title="Mudar para modo notch"></button>
       <button id="collapseBtn" onclick="toggleCollapse()" title="Minimizar"></button>
       <button class="btn-close" id="closeBtn" onclick="closeApp()" title="Fechar"></button>
     </div>
   </div>
+
+  <!-- Pending preview (collapsed mode) -->
+  <div class="pending-preview" id="pendingPreview"></div>
 
   <!-- Update banner -->
   <div class="update-banner" id="updateBanner">
@@ -752,6 +782,7 @@
     'hourglass':    '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
     'zap':          '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
     'eye':          '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+    'eye-off':      '<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>',
     'app-window':   '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>',
     'grip':         '<circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>',
   };
@@ -925,6 +956,7 @@
     const results = await ipcRenderer.invoke('check-repos');
     lastResults = results || [];
     renderRepos(results);
+    if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
     document.getElementById('lastCheck').textContent = `Último: ${new Date().toLocaleTimeString('pt-BR')}`;
     setTimeout(() => btn.classList.remove('spinning'), 600);
   }
@@ -952,6 +984,57 @@
     const btn = document.getElementById('collapseBtn');
     setIcon(btn, collapsed ? 'chevron-down' : 'chevron-up');
     btn.title = collapsed ? 'Expandir' : 'Minimizar';
+  }
+
+  // ---- Pending preview (collapsed mode) ----
+  function togglePending() {
+    const container = document.getElementById('container');
+    const visible = container.classList.toggle('pending-visible');
+    const btn = document.getElementById('pendingToggleBtn');
+    setIcon(btn, visible ? 'eye-off' : 'eye');
+    btn.title = visible ? 'Ocultar pendentes' : 'Mostrar pendentes';
+    if (visible) renderPendingPreview();
+  }
+
+  function renderPendingPreview() {
+    const preview = document.getElementById('pendingPreview');
+    preview.replaceChildren();
+    const PENDING = ['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged'];
+    const pending = lastResults.filter(r => PENDING.includes(r.status));
+    if (pending.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-pending';
+      empty.textContent = 'Nenhum pendente';
+      preview.appendChild(empty);
+      return;
+    }
+    pending.forEach(r => {
+      const item = document.createElement('div');
+      item.className = 'repo-item';
+
+      const dot = document.createElement('div');
+      dot.className = 'repo-dot ' + (r.status || 'clean');
+      item.appendChild(dot);
+
+      const info = document.createElement('div');
+      info.className = 'repo-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'repo-name';
+      nameEl.textContent = r.name || '';
+      const detailEl = document.createElement('div');
+      detailEl.className = 'repo-detail';
+      detailEl.textContent = (r.branch ? r.branch + ' · ' : '') + (r.detail || '');
+      info.appendChild(nameEl);
+      info.appendChild(detailEl);
+      item.appendChild(info);
+
+      preview.appendChild(item);
+    });
+  }
+
+  // ---- Mode switch ----
+  async function switchMode() {
+    await ipcRenderer.invoke('set-widget-mode', 'notch');
   }
 
   // ---- Close ----
@@ -1227,6 +1310,8 @@
     // Ícones dos botões titlebar
     setIcon(document.getElementById('refreshBtn'), 'refresh-cw');
     setIcon(document.getElementById('configBtn'), 'settings');
+    setIcon(document.getElementById('pendingToggleBtn'), 'eye');
+    setIcon(document.getElementById('modeBtn'), 'app-window');
     if (!config.collapsed) setIcon(document.getElementById('collapseBtn'), 'chevron-up');
     setIcon(document.getElementById('closeBtn'), 'x');
     // Corner buttons

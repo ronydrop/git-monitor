@@ -1569,8 +1569,9 @@ ipcMain.handle('get-shortcuts', () => ({
 }));
 
 ipcMain.handle('set-widget-mode', (_, mode) => {
-  pendingWidgetMode = mode === 'notch' ? 'notch' : 'floating';
-  return pendingWidgetMode;
+  const next = mode === 'notch' ? 'notch' : 'floating';
+  switchWidgetMode(next);
+  return next;
 });
 
 ipcMain.handle('set-auto-start', (_, enabled) => {

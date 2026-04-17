@@ -225,6 +225,7 @@
     padding: 0;
   }
   .hdr-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+  .hdr-btn:disabled { opacity: 0.4; pointer-events: none; }
 
   /* Scrollable list */
   #list {
@@ -346,6 +347,7 @@
           <span class="label" id="labelHdr">Tudo sincronizado</span>
         </div>
         <div class="hdr-actions">
+          <button class="hdr-btn" id="btnPushAll" title="Push All"></button>
           <button class="hdr-btn" id="btnCfg" title="Configurações"></button>
           <button class="hdr-btn" id="btnFloat" title="Abrir widget flutuante"></button>
           <button class="hdr-btn" id="btnMin" title="Minimizar (Ctrl+Shift+H)"></button>
@@ -402,11 +404,13 @@
   const countHdr = document.getElementById('countHdr');
   const labelHdr = document.getElementById('labelHdr');
 
+  const btnPushAll = document.getElementById('btnPushAll');
   const btnCfg = document.getElementById('btnCfg');
   const btnFloat = document.getElementById('btnFloat');
   const btnMin = document.getElementById('btnMin');
 
   // Ícones dos botões
+  setIcon(btnPushAll, 'arrow-up', { size: 14 });
   setIcon(btnCfg, 'settings', { size: 14 });
   setIcon(btnFloat, 'app-window', { size: 14 });
   setIcon(btnMin, 'minus', { size: 14 });
@@ -458,7 +462,7 @@
   }
 
   function isExpanded() {
-    return !minimized && (hovered || pinned);
+    return !minimized && (hovered || pinned || isPendingList());
   }
 
   function updateSummary() {
@@ -521,10 +525,12 @@
     folderBtn.addEventListener('click', onRowAction);
     actions.appendChild(folderBtn);
 
-    if (r.pending) {
-      const isPull = r.status === 'behind' || r.status === 'diverged';
+    const hasChanges = r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead';
+    const needsPull  = r.status === 'behind';
+    if (hasChanges || needsPull) {
+      const isPull = needsPull;
       const actBtn = makeEl('button', {
-        className: 'btn ' + (isPull ? 'pull' : 'push') + (isRunning ? ' running' : ''),
+        className: 'btn icon ' + (isPull ? 'pull' : 'push') + (isRunning ? ' running' : ''),
         title: isPull ? 'Pull' : 'Commit + push',
         dataset: {
           act: isPull ? 'pull' : 'push',
@@ -533,10 +539,9 @@
         }
       });
       if (isRunning) {
-        actBtn.appendChild(icon('refresh-cw', { size: 11, spin: true }));
+        actBtn.appendChild(icon('refresh-cw', { size: 12, spin: true }));
       } else {
-        actBtn.appendChild(icon(isPull ? 'arrow-down' : 'arrow-up', { size: 11 }));
-        actBtn.appendChild(document.createTextNode(isPull ? ' pull' : ' push'));
+        actBtn.appendChild(icon(isPull ? 'arrow-down' : 'arrow-up', { size: 12 }));
       }
       actBtn.addEventListener('click', onRowAction);
       actions.appendChild(actBtn);
@@ -549,6 +554,7 @@
     listEl.replaceChildren(emptyEl);
     if (repos.length === 0) {
       emptyEl.style.display = '';
+      emptyEl.textContent = 'Nenhum repositório configurado.';
       return;
     }
     emptyEl.style.display = 'none';
@@ -556,10 +562,13 @@
   }
 
   function measureExpandedHeight() {
-    // Usa scrollHeight do header + list real (fora do flex container).
-    // Fazemos via clone temporário pra evitar medir enquanto oculto.
-    const listNeeded = listEl.scrollHeight;
-    const total = 38 /* header */ + Math.min(listNeeded + 18 /* padding */, 320);
+    let contentH = 0;
+    for (const child of listEl.children) {
+      if (child.style.display !== 'none') contentH += child.offsetHeight;
+    }
+    const cs = getComputedStyle(listEl);
+    contentH += parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const total = 38 + Math.min(contentH, 320);
     return Math.min(Math.max(total, 60), 390);
   }
 
@@ -595,8 +604,7 @@
     }
     const isMin = minimized && !hovered;
     const offsetY = isMin ? -34 : 0;
-    const hotzone = isMin ? 8 : null;
-    ipcRenderer.send('notch-rect', { w, h, offsetY, hotzone, right: RIGHT_MARGIN });
+    ipcRenderer.send('notch-rect', { w, h, offsetY, hotzone: null, right: RIGHT_MARGIN });
   }
 
   // ------ Interações ------
@@ -638,6 +646,33 @@
   btnFloat.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     await ipcRenderer.invoke('set-widget-mode', 'floating');
+  });
+
+  btnPushAll.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    const pushable = repos.filter(r =>
+      r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead'
+    );
+    if (pushable.length === 0) return;
+    btnPushAll.disabled = true;
+    setIcon(btnPushAll, 'refresh-cw', { size: 14, spin: true });
+    for (const r of pushable) {
+      runningActions.add(r.path);
+      renderList();
+      try {
+        const res = await ipcRenderer.invoke('commit-and-push', r.path);
+        markRowResult(r.path, res && res.ok ? 'done' : 'fail', (res && res.error) || '');
+      } catch (e) {
+        markRowResult(r.path, 'fail', e.message || String(e));
+      }
+      runningActions.delete(r.path);
+    }
+    setIcon(btnPushAll, 'check', { size: 14 });
+    setTimeout(() => {
+      setIcon(btnPushAll, 'arrow-up', { size: 14 });
+      btnPushAll.disabled = false;
+      refresh();
+    }, 3000);
   });
 
   btnMin.addEventListener('click', (ev) => {
@@ -694,7 +729,7 @@
       if (act !== 'push' && act !== 'pull') return;
       btn.classList.remove('running');
       btn.classList.add(kind);
-      btn.replaceChildren(icon(kind === 'done' ? 'check' : 'x', { size: 11 }), document.createTextNode(kind === 'done' ? ' ok' : ' erro'));
+      btn.replaceChildren(icon(kind === 'done' ? 'check' : 'x', { size: 12 }));
       if (detail) btn.title = detail;
     });
   }
