@@ -130,8 +130,6 @@
   }
 
   function updateRect(e) {
-    const cx = Math.min(e.clientX, startX - window.screenX);
-    const cy = Math.min(e.clientY, startY - window.screenY);
     const w = Math.abs(e.screenX - startX);
     const h = Math.abs(e.screenY - startY);
 

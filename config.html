@@ -1349,21 +1349,6 @@
     await applyShortcut(key);
   }
 
-  async function applyShortcuts() {
-    const toggle   = document.getElementById('scToggle').value.trim();
-    const minimize = document.getElementById('scMinimize').value.trim();
-    const res = await ipcRenderer.invoke('save-shortcuts', { toggle, minimize });
-    if (res.toggle)   { scSaved.toggle   = toggle;   updateShortcutButtons('toggle'); }
-    if (res.minimize) { scSaved.minimize = minimize; updateShortcutButtons('minimize'); }
-    const status = document.getElementById('scStatus');
-    status.replaceChildren();
-    status.appendChild(res.toggle ? icon('check', { size: 12 }) : icon('x', { size: 12 }));
-    status.appendChild(document.createTextNode(' Toggle: ' + (res.toggle || 'falhou') + '  \u00B7  '));
-    status.appendChild(res.minimize ? icon('check', { size: 12 }) : icon('x', { size: 12 }));
-    status.appendChild(document.createTextNode(' Min/Max: ' + (res.minimize || 'falhou')));
-    status.style.color = (res.toggle && res.minimize) ? 'var(--green)' : 'var(--yellow)';
-  }
-
   async function loadShortcuts() {
     const sc = await ipcRenderer.invoke('get-shortcuts');
     document.getElementById('scToggle').value   = sc.toggle;

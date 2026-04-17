@@ -6,7 +6,7 @@
 <style>
   :root {
     --bg: #000;
-    --border: #22272e;
+    --border: #2a2a2a;
     --text: #e6edf3;
     --text-dim: #7d8590;
     --green: #3fb950;
@@ -39,16 +39,15 @@
   }
 
   /* Pill: grudado na borda direita superior, colado no topo da tela.
-     Transições: width/height/border-radius com bouncy overshoot (open),
-     transform com easing suave (minimize/restore).
-     Close acontece via classe `.closing` — troca pra curva sem overshoot. */
+     Width/height/border-radius/transform animados via spring JS (rAF).
+     Apenas box-shadow usa CSS transition. */
   #pill {
     position: absolute;
     top: 0;
     right: 0;
-    width: 260px;
+    width: 310px;
     height: 38px;
-    background: #000;
+    background: var(--bg);
     color: var(--text);
     border-top-left-radius: 0;
     border-top-right-radius: 0;
@@ -56,53 +55,57 @@
     border-bottom-right-radius: 18px;
     overflow: hidden;
     pointer-events: auto;
-    will-change: width, height, transform, box-shadow, border-radius;
-    transition:
-      width 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
-      height 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
-      border-bottom-left-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
-      border-bottom-right-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
-      transform 280ms cubic-bezier(0.25, 0, 0, 1),
-      box-shadow 400ms ease;
-  }
-
-  #pill.closing {
-    transition:
-      width 300ms cubic-bezier(0.25, 0, 0, 1),
-      height 300ms cubic-bezier(0.25, 0, 0, 1),
-      border-bottom-left-radius 300ms cubic-bezier(0.25, 0, 0, 1),
-      border-bottom-right-radius 300ms cubic-bezier(0.25, 0, 0, 1),
-      transform 280ms cubic-bezier(0.25, 0, 0, 1),
-      box-shadow 400ms ease;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.9), 0 1px 0 rgba(255,255,255,0.06) inset;
+    will-change: width, height, transform, box-shadow;
+    transition: box-shadow 400ms ease;
   }
 
   #pill.expanded {
-    width: 420px;
-    height: var(--expanded-h, 320px);
-    border-bottom-left-radius: 28px;
-    border-bottom-right-radius: 28px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.75);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.95), 0 1px 0 rgba(255,255,255,0.06) inset;
   }
 
-  #pill.minimized {
-    transform: translateY(-34px);
+  /* Glow states (prioridade: diverged > deploy-running > dirty > deploy-success) */
+  #pill.glow-diverged:not(.expanded) {
+    box-shadow:
+      0 4px 24px rgba(0,0,0,0.9),
+      0 0 14px 3px rgba(248,81,73,0.35),
+      0 0 6px 1px rgba(248,81,73,0.2),
+      0 1px 0 rgba(255,255,255,0.06) inset;
+  }
+  #pill.glow-deploy-running:not(.expanded) {
+    box-shadow:
+      0 4px 24px rgba(0,0,0,0.9),
+      0 0 12px 3px rgba(210,153,34,0.35),
+      0 1px 0 rgba(255,255,255,0.06) inset;
+  }
+  #pill.glow-dirty:not(.expanded) {
+    box-shadow:
+      0 4px 24px rgba(0,0,0,0.9),
+      0 0 12px 3px rgba(217,120,87,0.35),
+      0 0 6px 1px rgba(217,120,87,0.2),
+      0 1px 0 rgba(255,255,255,0.06) inset;
+  }
+  #pill.glow-deploy-success:not(.expanded) {
+    box-shadow:
+      0 4px 24px rgba(0,0,0,0.9),
+      0 0 12px 3px rgba(63,185,80,0.3),
+      0 1px 0 rgba(255,255,255,0.06) inset;
   }
 
-  #pill.alert {
-    box-shadow:
-      0 0 14px 3px rgba(219,109,40,0.35),
-      0 0 6px 1px rgba(219,109,40,0.20);
+  #mini-list {
+    position: absolute;
+    top: 38px;
+    left: 0; right: 0;
+    padding: 2px 10px 8px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
   }
-  #pill.alert.critical {
-    box-shadow:
-      0 0 14px 3px rgba(248,81,73,0.45),
-      0 0 6px 1px rgba(248,81,73,0.25);
+  #pill.alert:not(.expanded) #mini-list {
+    opacity: 1;
+    pointer-events: auto;
   }
-  /* Quando expandido, a sombra de profundidade substitui o glow */
-  #pill.expanded.alert,
-  #pill.expanded.alert.critical {
-    box-shadow: 0 4px 16px rgba(0,0,0,0.75);
-  }
+
 
   /* Pin dot (canto superior direito quando pinned) */
   #pinDot {
@@ -112,12 +115,11 @@
     width: 5px; height: 5px;
     border-radius: 50%;
     background: var(--orange);
-    box-shadow: 0 0 5px var(--orange);
     opacity: 0;
     transition: opacity 200ms ease;
     pointer-events: none;
   }
-  #pill.pinned:not(.expanded) #pinDot { opacity: 0; } /* esconde no compact */
+  #pill.pinned:not(.expanded) #pinDot { opacity: 0.7; }
   #pill.pinned.expanded #pinDot { opacity: 1; }
 
   /* Baseline compact (sempre renderizado, fade in/out via opacity) */
@@ -131,14 +133,15 @@
     height: 38px;
     opacity: 1;
     transition: opacity 120ms ease;
+    cursor: pointer;
   }
-  #pill.expanded #compact { opacity: 0; pointer-events: none; }
+  #compact.dragging { cursor: grabbing; }
+  #pill.expanded #compact { opacity: 0; pointer-events: none; cursor: default; }
 
   .dot {
     width: 8px; height: 8px;
     border-radius: 50%;
     background: var(--green);
-    box-shadow: 0 0 8px currentColor;
     flex-shrink: 0;
   }
   .dot.clean     { color: var(--green);  background: var(--green);  box-shadow: none; }
@@ -191,13 +194,14 @@
   }
 
   #hdr {
-    height: 38px;
+    height: 42px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 0 12px;
+    padding: 0 14px;
     background: #000;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
     position: sticky;
     top: 0;
     z-index: 2;
@@ -206,11 +210,15 @@
   .hdr-left .count { font-weight: 800; font-size: 14px; color: var(--orange); }
   .hdr-left .count.clean { color: var(--text-dim); font-weight: 600; }
   .hdr-left .label {
-    font-size: 11px;
-    color: var(--text-dim);
+    font-size: 11.5px;
+    color: rgba(255,255,255,0.45);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    letter-spacing: 0.2px;
   }
   .hdr-actions { display: flex; align-items: center; gap: 4px; }
+  #pill.expanded #hdr { cursor: grab; }
+  #pill.expanded #hdr.dragging { cursor: grabbing; }
+  #pill.expanded #hdr .hdr-btn { cursor: pointer; }
 
   .hdr-btn {
     background: transparent;
@@ -226,6 +234,7 @@
   }
   .hdr-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
   .hdr-btn:disabled { opacity: 0.4; pointer-events: none; }
+  .hdr-btn.labeled { width: auto; padding: 0 8px; gap: 4px; font-size: 10px; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.3px; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; }
 
   /* Scrollable list */
   #list {
@@ -234,16 +243,15 @@
     overflow-x: hidden;
     padding: 6px 10px 12px;
   }
-  #list::-webkit-scrollbar { width: 6px; }
-  #list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
-  #list::-webkit-scrollbar-track { background: transparent; }
+  #list::-webkit-scrollbar { width: 0; }
+  #list { scrollbar-width: none; }
 
   .row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border-radius: 8px;
+    gap: 10px;
+    padding: 10px 8px;
+    border-radius: 12px;
     transition: background 150ms ease;
     min-height: 32px;
   }
@@ -338,16 +346,18 @@
       </svg>
     </div>
 
+    <!-- Mini-list colapsada: só pendentes -->
+    <div id="mini-list"></div>
+
     <!-- Expanded panel -->
     <div id="expanded">
       <div id="hdr">
         <div class="hdr-left">
-          <span class="dot clean" id="dotHdr"></span>
           <span class="count clean" id="countHdr">0</span>
           <span class="label" id="labelHdr">Tudo sincronizado</span>
         </div>
         <div class="hdr-actions">
-          <button class="hdr-btn" id="btnPushAll" title="Push All"></button>
+          <button class="hdr-btn labeled" id="btnPushAll" title="Push All"></button>
           <button class="hdr-btn" id="btnCfg" title="Configurações"></button>
           <button class="hdr-btn" id="btnFloat" title="Abrir widget flutuante"></button>
           <button class="hdr-btn" id="btnMin" title="Minimizar (Ctrl+Shift+H)"></button>
@@ -390,17 +400,21 @@
     target.replaceChildren(icon(name, opts));
   }
 
+  function setIconLabel(target, name, text, opts) {
+    target.replaceChildren(icon(name, opts), document.createTextNode('\u00A0' + text));
+  }
+
   const pill = document.getElementById('pill');
   const compactEl = document.getElementById('compact');
   const expandedEl = document.getElementById('expanded');
   const listEl = document.getElementById('list');
+  const miniListEl = document.getElementById('mini-list');
   const emptyEl = document.getElementById('empty');
 
   const dotCompact = document.getElementById('dotCompact');
   const countText = document.getElementById('countText');
   const labelText = document.getElementById('labelText');
 
-  const dotHdr = document.getElementById('dotHdr');
   const countHdr = document.getElementById('countHdr');
   const labelHdr = document.getElementById('labelHdr');
 
@@ -410,7 +424,7 @@
   const btnMin = document.getElementById('btnMin');
 
   // Ícones dos botões
-  setIcon(btnPushAll, 'arrow-up', { size: 14 });
+  setIconLabel(btnPushAll, 'arrow-up', 'Push All', { size: 14 });
   setIcon(btnCfg, 'settings', { size: 14 });
   setIcon(btnFloat, 'app-window', { size: 14 });
   setIcon(btnMin, 'minus', { size: 14 });
@@ -423,9 +437,57 @@
   let hovered = false;
   let pinned = false;
   let minimized = false;
+  let wasExpanded = false;
   let leaveTimer = null;
   let pollTimer = null;
   const runningActions = new Set();
+  const deployPhases = {};
+  let recentDeploySuccess = false;
+  let deploySuccessTimer = null;
+
+  // Spring animator — fisica simples com stiffness/damping, interrompível
+  function createSpring(initialConfig) {
+    let stiffness = initialConfig.stiffness ?? 300;
+    let damping   = initialConfig.damping ?? 24;
+    const precision = 0.15;
+    let rafId = null;
+    let current = initialConfig.initial ?? 0;
+    let target  = current;
+    let velocity = 0;
+    let lastTime = 0;
+    const onUpdate = initialConfig.onUpdate;
+
+    function step(now) {
+      const dt = Math.min((now - lastTime) / 1000, 1 / 30);
+      lastTime = now;
+      const force = -stiffness * (current - target);
+      const damp  = -damping * velocity;
+      velocity += (force + damp) * dt;
+      current  += velocity * dt;
+      onUpdate(current);
+      if (Math.abs(velocity) < precision && Math.abs(current - target) < precision) {
+        current = target; velocity = 0;
+        onUpdate(current);
+        rafId = null;
+        return;
+      }
+      rafId = requestAnimationFrame(step);
+    }
+
+    return {
+      set(v) { current = v; target = v; velocity = 0; onUpdate(current); },
+      animate(newTarget) {
+        target = newTarget;
+        if (rafId == null) { lastTime = performance.now(); rafId = requestAnimationFrame(step); }
+      },
+      reconfigure(cfg) { stiffness = cfg.stiffness ?? stiffness; damping = cfg.damping ?? damping; },
+      get() { return current; },
+    };
+  }
+
+  const SPRING_OPEN     = { stiffness: 300, damping: 24 };
+  const SPRING_CLOSE    = { stiffness: 280, damping: 30 };
+  const SPRING_MINIMIZE = { stiffness: 320, damping: 30 };
 
   function makeEl(tag, props, children) {
     const el = document.createElement(tag);
@@ -439,6 +501,14 @@
     if (children) children.forEach(c => { if (c) el.appendChild(c); });
     return el;
   }
+
+  const widthSpring = createSpring({ initial: 310, onUpdate: v => pill.style.width = v + 'px' });
+  const heightSpring = createSpring({ initial: 38,  onUpdate: v => pill.style.height = v + 'px' });
+  const radiusSpring = createSpring({ initial: 18,  onUpdate: v => {
+    pill.style.borderBottomLeftRadius = v + 'px';
+    pill.style.borderBottomRightRadius = v + 'px';
+  }});
+  const translateSpring = createSpring({ stiffness: SPRING_MINIMIZE.stiffness, damping: SPRING_MINIMIZE.damping, initial: 0, onUpdate: v => pill.style.transform = `translateY(${v}px)` });
 
   const STATUS_ORDER = {
     diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3,
@@ -474,7 +544,6 @@
 
     const statusClass = 'dot ' + dom;
     dotCompact.className = statusClass;
-    dotHdr.className = statusClass;
 
     if (hasPending) {
       countText.className = '';
@@ -487,7 +556,8 @@
         'dirty-ahead': 'commit+push',
         ahead: 'push pendente',
         behind: 'pull pendente',
-        diverged: 'diverged'
+        diverged: 'diverged',
+        error: 'erro'
       }[dom] || 'pendente';
 
       const first = repos.find(r => r.pending);
@@ -495,7 +565,7 @@
         ? (first.name + ' — ' + verb)
         : (nPending + ' repos — ' + verb);
       labelText.textContent = label;
-      labelHdr.textContent = label;
+      labelHdr.textContent = nPending === 1 ? label : ('repos — ' + verb);
     } else {
       countText.className = 'clean';
       countHdr.className = 'count clean';
@@ -525,6 +595,21 @@
     folderBtn.appendChild(icon('folder', { size: 12 }));
     folderBtn.addEventListener('click', onRowAction);
     actions.appendChild(folderBtn);
+
+    if (r.remoteUrl) {
+      const gitBtn = makeEl('button', { className: 'btn icon', title: 'Abrir no GitHub' });
+      const ghSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      ghSvg.setAttribute('viewBox', '0 0 16 16');
+      ghSvg.setAttribute('width', '12');
+      ghSvg.setAttribute('height', '12');
+      ghSvg.setAttribute('fill', 'currentColor');
+      const ghPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      ghPath.setAttribute('d', 'M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z');
+      ghSvg.appendChild(ghPath);
+      gitBtn.appendChild(ghSvg);
+      gitBtn.addEventListener('click', () => ipcRenderer.invoke('open-git-url', r.remoteUrl));
+      actions.appendChild(gitBtn);
+    }
 
     const hasChanges = r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead';
     const needsPull  = r.status === 'behind';
@@ -560,6 +645,12 @@
     }
     emptyEl.style.display = 'none';
     repos.forEach(r => listEl.appendChild(renderRow(r)));
+    renderMiniList();
+  }
+
+  function renderMiniList() {
+    const pending = repos.filter(r => r.pending);
+    miniListEl.replaceChildren(...pending.map(r => renderRow(r)));
   }
 
   function measureExpandedHeight() {
@@ -573,38 +664,67 @@
     return Math.min(Math.max(total, 60), 390);
   }
 
-  function updateShape() {
-    const exp = isExpanded();
-    pill.classList.toggle('expanded', exp);
-    pill.classList.toggle('minimized', minimized && !hovered);
-    pill.classList.toggle('alert', isPendingList());
-    pill.classList.toggle('critical', hasDiverged());
-    pill.classList.toggle('pinned', pinned);
-
-    if (exp) {
-      // Mede depois que o DOM renderizou
-      requestAnimationFrame(() => {
-        const h = measureExpandedHeight();
-        pill.style.setProperty('--expanded-h', h + 'px');
-        notifyRect();
-      });
-    } else {
-      notifyRect();
-    }
+  function applyGlowClass() {
+    ['glow-diverged','glow-deploy-running','glow-dirty','glow-deploy-success']
+      .forEach(c => pill.classList.remove(c));
+    if (!repos.length) return;
+    const hasDivg  = repos.some(r => r.status === 'diverged');
+    const depRun   = Object.values(deployPhases).some(p => p === 'running' || p === 'waiting');
+    const hasDirty = repos.some(r => ['dirty','dirty-ahead','ahead'].includes(r.status));
+    if (hasDivg)              pill.classList.add('glow-diverged');
+    else if (depRun)          pill.classList.add('glow-deploy-running');
+    else if (hasDirty)        pill.classList.add('glow-dirty');
+    else if (recentDeploySuccess) pill.classList.add('glow-deploy-success');
   }
 
-  function notifyRect() {
+  function updateShape() {
     const exp = isExpanded();
-    const w = exp ? 420 : 260;
-    let h = 38;
-    if (exp) {
-      const raw = parseFloat(
-        getComputedStyle(pill).getPropertyValue('--expanded-h')
-      );
-      h = !isNaN(raw) && raw > 0 ? raw : 320;
-    }
+    const alert = isPendingList();
     const isMin = minimized && !hovered;
-    const offsetY = isMin ? -34 : 0;
+
+    pill.classList.toggle('expanded', exp);
+    pill.classList.toggle('alert', alert && !exp);
+    pill.classList.toggle('pinned', pinned);
+    applyGlowClass();
+    compactEl.title = pinned ? 'Fixado — clique para soltar | arraste para mover' : 'Clique para fixar | arraste para mover';
+
+    const targetW      = exp ? 420 : (alert ? 320 : 310);
+    const targetRadius = exp ? 28  : (alert ? 14  : 18);
+    const targetTranslate = isMin ? -34 : 0;
+    const cfg = exp ? SPRING_OPEN : SPRING_CLOSE;
+    widthSpring.reconfigure(cfg);
+    heightSpring.reconfigure(cfg);
+    radiusSpring.reconfigure(cfg);
+
+    if (exp) {
+      if (!wasExpanded) listEl.scrollTop = 0;
+      requestAnimationFrame(() => {
+        const h = measureExpandedHeight();
+        widthSpring.animate(targetW);
+        heightSpring.animate(h);
+        radiusSpring.animate(targetRadius);
+        notifyRect(targetW, h, targetTranslate);
+      });
+    } else if (alert) {
+      requestAnimationFrame(() => {
+        const miniH = 38 + (miniListEl.scrollHeight || 0);
+        widthSpring.animate(targetW);
+        heightSpring.animate(miniH);
+        radiusSpring.animate(targetRadius);
+        notifyRect(targetW, miniH, targetTranslate);
+      });
+    } else {
+      widthSpring.animate(targetW);
+      heightSpring.animate(38);
+      radiusSpring.animate(targetRadius);
+      notifyRect(targetW, 38, targetTranslate);
+    }
+
+    translateSpring.animate(targetTranslate);
+    wasExpanded = exp;
+  }
+
+  function notifyRect(w, h, offsetY) {
     ipcRenderer.send('notch-rect', { w, h, offsetY, hotzone: null, right: RIGHT_MARGIN });
   }
 
@@ -612,7 +732,6 @@
 
   pill.addEventListener('mouseenter', () => {
     if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
-    pill.classList.remove('closing');
     hovered = true;
     updateShape();
   });
@@ -622,21 +741,71 @@
     leaveTimer = setTimeout(() => {
       leaveTimer = null;
       hovered = false;
-      pill.classList.add('closing');
-      setTimeout(() => pill.classList.remove('closing'), 320);
       updateShape();
     }, CLOSE_DELAY_MS);
   });
 
   pill.addEventListener('click', (ev) => {
-    // Ignora clicks em botões internos (eles têm stopPropagation nos seus handlers)
-    if (ev.target.closest('.hdr-btn, .btn')) return;
+    if (ev.target.closest('.hdr-btn, .btn, #hdr')) return;
     if (minimized) {
       minimized = false;
-    } else {
+    } else if (!isExpanded()) {
       pinned = !pinned;
     }
     updateShape();
+  });
+
+  // Drag horizontal no compact bar
+  compactEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || isExpanded()) return;
+    let dragged = false;
+
+    const onMove = () => {
+      if (!dragged) ipcRenderer.send('notch-drag-start');
+      dragged = true;
+      compactEl.classList.add('dragging');
+    };
+    const onUp = () => {
+      compactEl.classList.remove('dragging');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if (dragged) {
+        ipcRenderer.send('notch-drag-end');
+        compactEl.addEventListener('click', ev => ev.stopPropagation(), { once: true, capture: true });
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+
+  // Drag horizontal no header expandido
+  const hdrEl = document.getElementById('hdr');
+  hdrEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !isExpanded() || e.target.closest('.hdr-btn')) return;
+    let dragged = false;
+
+    const onMove = () => {
+      if (!dragged) ipcRenderer.send('notch-drag-start');
+      dragged = true;
+      hdrEl.classList.add('dragging');
+    };
+    const onUp = () => {
+      hdrEl.classList.remove('dragging');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if (dragged) {
+        ipcRenderer.send('notch-drag-end');
+        pill.addEventListener('click', ev => ev.stopPropagation(), { once: true, capture: true });
+      } else {
+        // click sem arrastar no header → fecha
+        pinned = false;
+        hovered = false;
+        if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+        updateShape();
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   });
 
   btnCfg.addEventListener('click', (ev) => {
@@ -655,24 +824,37 @@
       r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead'
     );
     if (pushable.length === 0) return;
+
+    // Pausa polling para evitar race conditions durante o push all
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+
     btnPushAll.disabled = true;
-    setIcon(btnPushAll, 'refresh-cw', { size: 14, spin: true });
-    for (const r of pushable) {
-      runningActions.add(r.path);
-      renderList();
-      try {
-        const res = await ipcRenderer.invoke('commit-and-push', r.path);
-        markRowResult(r.path, res && res.ok ? 'done' : 'fail', (res && res.error) || '');
-      } catch (e) {
-        markRowResult(r.path, 'fail', e.message || String(e));
-      }
-      runningActions.delete(r.path);
-    }
-    setIcon(btnPushAll, 'check', { size: 14 });
+    let done = 0;
+    setIconLabel(btnPushAll, 'refresh-cw', `0/${pushable.length}`, { size: 14, spin: true });
+
+    pushable.forEach(r => { runningActions.add(r.path); });
+    renderList();
+
+    await Promise.all(pushable.map((r, i) =>
+      new Promise(resolve => setTimeout(async () => {
+        try {
+          const res = await ipcRenderer.invoke('commit-and-push', r.path);
+          markRowResult(r.path, res && res.ok ? 'done' : 'fail', (res && res.error) || '');
+        } catch (e) {
+          markRowResult(r.path, 'fail', e.message || String(e));
+        }
+        runningActions.delete(r.path);
+        done++;
+        setIconLabel(btnPushAll, 'refresh-cw', `${done}/${pushable.length}`, { size: 14, spin: true });
+        resolve();
+      }, i * 120))
+    ));
+
+    setIconLabel(btnPushAll, 'check', 'Feito!', { size: 14 });
     setTimeout(() => {
-      setIcon(btnPushAll, 'arrow-up', { size: 14 });
+      setIconLabel(btnPushAll, 'arrow-up', 'Push All', { size: 14 });
       btnPushAll.disabled = false;
-      refresh();
+      startPolling();
     }, 3000);
   });
 
@@ -719,6 +901,12 @@
       }
       runningActions.delete(p);
       markRowResult(p, ok ? 'done' : 'fail', errMsg);
+      const rname = btn.dataset.name || p;
+      if (!ok && errMsg) ipcRenderer.send('show-toast', { text: rname + ': ' + errMsg.substring(0, 160), type: 'err', duration: 6000 });
+      else if (ok) {
+        ipcRenderer.send('show-toast', { text: rname + ': ' + (act === 'pull' ? 'Pull concluído!' : 'Push concluído!'), type: 'ok', duration: 3000 });
+        if (act === 'push') ipcRenderer.send('watch-deploy-start', { repoPath: p, repoName: rname });
+      }
       setTimeout(() => refresh(), 900);
     }
   }
@@ -764,6 +952,25 @@
 
   ipcRenderer.on('config-saved', () => startPolling());
 
+  ipcRenderer.on('deploy-update', (_, data) => {
+    const { repoPath, phase, done } = data;
+    if (done || phase === 'none') {
+      if (phase === 'success') {
+        recentDeploySuccess = true;
+        if (deploySuccessTimer) clearTimeout(deploySuccessTimer);
+        deploySuccessTimer = setTimeout(() => {
+          recentDeploySuccess = false;
+          deploySuccessTimer = null;
+          applyGlowClass();
+        }, 4000);
+      }
+      delete deployPhases[repoPath];
+    } else {
+      deployPhases[repoPath] = phase;
+    }
+    applyGlowClass();
+  });
+
   async function paintFromCache() {
     try {
       const cache = await ipcRenderer.invoke('get-cached-repos');
@@ -779,9 +986,25 @@
     return false;
   }
 
+  async function paintFromConfig() {
+    try {
+      const cfg = (await ipcRenderer.invoke('get-config')) || {};
+      const active = (cfg.repos || []).filter(r => r.enabled !== false);
+      if (active.length === 0) return false;
+      repos = active.map(r => ({ name: r.name, path: r.path, status: 'busy', detail: 'Verificando…', pending: false }));
+      renderList();
+      updateSummary();
+      updateShape();
+      return true;
+    } catch (_) { return false; }
+  }
+
   // Inicial: notifica rect baseline pro passthrough do main
   updateShape();
-  paintFromCache().then(hasCached => startPolling(hasCached));
+  paintFromCache().then(async hasCached => {
+    if (!hasCached) await paintFromConfig();
+    startPolling();
+  });
 </script>
 </body>
 </html>

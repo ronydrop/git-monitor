@@ -3,6 +3,7 @@ const path = require('path');
 const { exec, execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
+const https = require('https');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
@@ -58,7 +59,7 @@ function acquireRepoLock(repoPath, timeoutMs = 60000) {
   const prev = lock.queue;
   lock.queue = new Promise(resolve => { release = resolve; });
   const timeoutP = new Promise(resolve => setTimeout(() => {
-    console.warn(`[GitMonitor] Lock timeout (${timeoutMs}ms) em ${repoPath} — forçando release`);
+    console.warn(`[GitMonitor] Lock timeout (${timeoutMs}ms) em ${repoPath} - forcando release`);
     resolve();
   }, timeoutMs));
   return Promise.race([prev, timeoutP]).then(() => release);
@@ -231,7 +232,7 @@ function clampWindowPos(x, y, w = 300, h = 420) {
   return { x: primary.width - w - 10, y: 10 };
 }
 
-const PENDING_STATES = ['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged'];
+const PENDING_STATES = ['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged', 'error'];
 
 let lastRepoResults = null;
 
@@ -324,12 +325,7 @@ function createFloatingWindow() {
     }, stepMs);
   }
 
-  // Limpa tudo ao fechar a janela
-  mainWindow.on('closed', () => {
-    if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
-  });
-
-  setInterval(() => {
+  const ghostTimer = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
     const cursor = screen.getCursorScreenPoint();
@@ -376,19 +372,24 @@ function createFloatingWindow() {
       fadeOpacity(0.08, config.opacity || 1.0, 180);
     }
   }, 150);
+
+  mainWindow.on('closed', () => {
+    if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
+    clearInterval(ghostTimer);
+  });
 }
 
 // Último rect reportado pelo renderer via IPC notch-rect.
-// Fallback = baseline 260x38 top-right da janela.
-let notchRect = { w: 260, h: 38, offsetY: 0, hotzone: null, right: 12 };
+// Fallback = baseline 310x38 top-right da janela.
+let notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, right: 12 };
 
 function createNotchWindow() {
   const display = screen.getPrimaryDisplay();
   const width = 440;
-  // Folga pra glow (14px) + overshoot do spring bouncy + expansão máxima (~360).
+  // Folga pra overshoot do spring bouncy + expansão máxima (~360).
   const height = 420;
-  const margin = 12;
-  const x = display.bounds.x + display.bounds.width - width - margin;
+  const offsetX = config.notchOffsetX ?? 40;
+  const x = display.bounds.x + display.bounds.width - width - offsetX;
   const y = display.bounds.y;
 
   mainWindow = new BrowserWindow({
@@ -420,7 +421,7 @@ function createNotchWindow() {
   mainWindow.loadFile('notch.html');
 
   // Reset do rect pra baseline — o renderer vai notificar via notch-rect.
-  notchRect = { w: 260, h: 38, offsetY: 0, hotzone: null, right: 12 };
+  notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, right: 12 };
 
   // Passthrough com bbox dinâmico do pill real (não da window inteira).
   // O renderer envia `notch-rect` sempre que o state muda.
@@ -443,7 +444,7 @@ function createNotchWindow() {
       const detectBot = r.hotzone != null ? b.y + r.hotzone : pillTop + r.h;
       const inside = c.x >= pillLeft && c.x < pillRight
                   && c.y >= detectTop && c.y < detectBot;
-      mainWindow.setIgnoreMouseEvents(!inside, { forward: true });
+      if (!_notchDragging) mainWindow.setIgnoreMouseEvents(!inside, { forward: true });
     } catch (_) {}
   }, 100);
 
@@ -451,7 +452,7 @@ function createNotchWindow() {
   const repositionNotch = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const d = screen.getPrimaryDisplay();
-    const nx = d.bounds.x + d.bounds.width - width - margin;
+    const nx = d.bounds.x + d.bounds.width - width - (config.notchOffsetX ?? 40);
     const ny = d.bounds.y;
     try { mainWindow.setBounds({ x: nx, y: ny, width, height }); } catch (_) {}
   };
@@ -478,6 +479,15 @@ let pendingWidgetMode = null;
 function switchWidgetMode(mode) {
   const next = mode === 'notch' ? 'notch' : 'floating';
   if (config.widgetMode === next && mainWindow && !mainWindow.isDestroyed()) return;
+
+  if (next === 'notch' && config.ghostZone) {
+    config._savedGhostZone = config.ghostZone;
+    config.ghostZone = null;
+  } else if (next === 'floating' && config._savedGhostZone) {
+    config.ghostZone = config._savedGhostZone;
+    delete config._savedGhostZone;
+  }
+
   config.widgetMode = next;
   saveConfig(config);
   switchingWidgetMode = true;
@@ -738,6 +748,66 @@ ipcMain.handle('clear-ghost-zone', () => {
   config.ghostZone = null;
   saveConfig(config);
   mainWindow.webContents.send('ghost-zone-updated', null);
+});
+
+// ---- Toast window ----
+let toastWindow = null;
+let toastTimer  = null;
+
+function showToastWindow(text, type, duration) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  duration = duration || 3500;
+
+  const TOAST_H = 50;
+  const GAP     = 6;
+  let tx, ty, tw;
+
+  if (config.widgetMode === 'notch') {
+    const d      = screen.getPrimaryDisplay();
+    const offset = config.notchOffsetX ?? 40;
+    tw = notchRect.w;
+    tx = Math.round(d.bounds.x + d.bounds.width - offset - tw);
+    ty = Math.round(d.bounds.y + notchRect.h + GAP);
+  } else {
+    const [wx, wy] = mainWindow.getPosition();
+    const [ww, wh] = mainWindow.getSize();
+    tw = ww;
+    tx = wx;
+    ty = wy + wh + GAP;
+  }
+
+  clearTimeout(toastTimer);
+
+  if (toastWindow && !toastWindow.isDestroyed()) {
+    toastWindow.setBounds({ x: tx, y: ty, width: tw, height: TOAST_H });
+    toastWindow.webContents.send('toast-data', { text, type });
+  } else {
+    toastWindow = new BrowserWindow({
+      width: tw, height: TOAST_H, x: tx, y: ty,
+      frame: false, transparent: true, backgroundColor: '#00000000',
+      alwaysOnTop: true, skipTaskbar: true, focusable: false,
+      resizable: false, movable: false, hasShadow: false,
+      webPreferences: { nodeIntegration: true, contextIsolation: false }
+    });
+    try { toastWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+    try { toastWindow.setVisibleOnAllWorkspaces(true); } catch (_) {}
+    toastWindow.setIgnoreMouseEvents(true);
+    toastWindow.loadFile('toast.html');
+    toastWindow.webContents.on('did-finish-load', () => {
+      if (toastWindow && !toastWindow.isDestroyed())
+        toastWindow.webContents.send('toast-data', { text, type });
+    });
+    toastWindow.on('closed', () => { toastWindow = null; });
+  }
+
+  toastTimer = setTimeout(() => {
+    if (toastWindow && !toastWindow.isDestroyed()) toastWindow.destroy();
+    toastWindow = null;
+  }, duration);
+}
+
+ipcMain.on('show-toast', (_, { text, type, duration }) => {
+  showToastWindow(text, type || 'err', duration);
 });
 
 function openConfigWindow() {
@@ -1145,7 +1215,9 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
     const statusOutput = (await gitExec('git status --porcelain', { cwd: repoPath, timeout: 5000 })).trim();
     const hasUncommitted = statusOutput.length > 0;
 
-    if (hasUncommitted && !config.anthropicKey && !config.openaiKey) {
+    const hasAnthropicAuth = config.anthropicKey || config.anthropicAuthMode === 'oauth';
+    const hasOpenAIAuth = config.openaiKey || config.openaiAuthMode === 'oauth';
+    if (hasUncommitted && !hasAnthropicAuth && !hasOpenAIAuth) {
       return { ok: false, error: 'Nenhuma API key de IA configurada (Anthropic ou OpenAI).' };
     }
 
@@ -1178,7 +1250,13 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
     // Pull rebase para sincronizar com o remote, depois push
     try {
       await gitExec('git pull --rebase', { cwd: repoPath, timeout: 30000 });
-    } catch (e) { }
+    } catch (e) {
+      const msg = e.message || '';
+      if (/CONFLICT|conflict|rebase/i.test(msg)) {
+        await gitExec('git rebase --abort', { cwd: repoPath, timeout: 10000 }).catch(() => {});
+        throw new Error('Conflito no pull --rebase. Resolva manualmente antes de fazer push.');
+      }
+    }
     await gitExec('git push', { cwd: repoPath, timeout: 30000 });
 
     return { ok: true, title, body };
@@ -1369,7 +1447,6 @@ function parseGithubOwnerRepo(remoteUrl) {
 }
 
 function githubApiGet(apiPath) {
-  const https = require('https');
   return new Promise((resolve) => {
     const req = https.get({
       hostname: 'api.github.com',
@@ -1394,60 +1471,6 @@ function githubApiGet(apiPath) {
     req.setTimeout(10000, () => { req.destroy(); resolve({ statusCode: 0, data: {} }); });
   });
 }
-
-ipcMain.handle('check-deploy-status', async (_, repoPath) => {
-  if (!config.githubToken) return { status: 'no-token' };
-
-  try {
-    const sha = (await execAsync('git rev-parse HEAD', { cwd: repoPath, timeout: 5000 })).trim();
-    let remoteUrl = '';
-    try {
-      remoteUrl = (await execAsync('git config --get remote.origin.url', { cwd: repoPath, timeout: 3000 })).trim();
-    } catch (e) { return { status: 'error', detail: 'Sem remote configurado' }; }
-
-    const gh = parseGithubOwnerRepo(remoteUrl);
-    if (!gh) return { status: 'error', detail: 'Não é um repo GitHub' };
-
-    // Tenta check-runs (GitHub Actions)
-    const checkRes = await githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/check-runs`);
-
-    if (checkRes.statusCode === 200 && checkRes.data.check_runs && checkRes.data.check_runs.length > 0) {
-      const runs = checkRes.data.check_runs;
-      const allCompleted = runs.every(r => r.status === 'completed');
-      if (!allCompleted) {
-        return { status: 'pending', detail: `${runs.filter(r => r.status !== 'completed').length} em andamento` };
-      }
-      const anyFailed = runs.some(r => r.conclusion === 'failure' || r.conclusion === 'cancelled' || r.conclusion === 'timed_out');
-      if (anyFailed) {
-        const failed = runs.filter(r => r.conclusion === 'failure' || r.conclusion === 'cancelled' || r.conclusion === 'timed_out');
-        return { status: 'failure', detail: failed.map(r => r.name).join(', ') };
-      }
-      return { status: 'success' };
-    }
-
-    // Fallback: commit status API (Vercel, Render, deploys externos)
-    const statusRes = await githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/status`);
-
-    if (statusRes.statusCode === 200 && statusRes.data.total_count > 0) {
-      const state = statusRes.data.state;
-      if (state === 'success') return { status: 'success' };
-      if (state === 'failure' || state === 'error') {
-        const failed = (statusRes.data.statuses || []).filter(s => s.state !== 'success');
-        return { status: 'failure', detail: failed.map(s => s.context).join(', ') };
-      }
-      if (state === 'pending') return { status: 'pending' };
-    }
-
-    // API retornou erro HTTP — token sem acesso ao repo
-    if (checkRes.statusCode !== 200 || statusRes.statusCode !== 200) {
-      return { status: 'error', detail: `Token sem acesso ao repo (HTTP ${checkRes.statusCode || statusRes.statusCode})` };
-    }
-
-    return { status: 'none' };
-  } catch (e) {
-    return { status: 'error', detail: e.message ? e.message.substring(0, 100) : String(e) };
-  }
-});
 
 // ============================================================
 // App
@@ -1655,6 +1678,54 @@ ipcMain.on('notch-rect', (_, rect) => {
     hotzone: rect.hotzone != null ? Number(rect.hotzone) : null,
     right: Number(rect.right) || 12
   };
+});
+
+let _notchSaveTimer = null;
+let _notchDragging = false;
+let _notchDragPoll = null;
+let _notchDragTimeout = null;
+
+function endNotchDrag() {
+  _notchDragging = false;
+  if (_notchDragPoll) { clearInterval(_notchDragPoll); _notchDragPoll = null; }
+  if (_notchDragTimeout) { clearTimeout(_notchDragTimeout); _notchDragTimeout = null; }
+}
+
+ipcMain.on('notch-drag-start', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  _notchDragging = true;
+  mainWindow.setIgnoreMouseEvents(false);
+
+  const startCursor = screen.getCursorScreenPoint();
+  const baseOffset  = config.notchOffsetX ?? 40;
+
+  if (_notchDragPoll) clearInterval(_notchDragPoll);
+  if (_notchDragTimeout) clearTimeout(_notchDragTimeout);
+
+  // Safety: auto-reset se drag-end nunca chegar (mouse solto fora da janela)
+  _notchDragTimeout = setTimeout(() => {
+    endNotchDrag();
+    saveConfig(config);
+  }, 8000);
+
+  _notchDragPoll = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || !_notchDragging) {
+      clearInterval(_notchDragPoll); _notchDragPoll = null; return;
+    }
+    const d  = screen.getPrimaryDisplay();
+    const cx = screen.getCursorScreenPoint().x;
+    const delta = cx - startCursor.x;
+    const newOffset = Math.max(0, Math.min(Math.max(0, d.bounds.width - 440), baseOffset - delta));
+    if (config.notchOffsetX === newOffset) return;
+    config.notchOffsetX = newOffset;
+    try { mainWindow.setPosition(Math.round(d.bounds.x + d.bounds.width - 440 - newOffset), d.bounds.y); } catch (_) {}
+  }, 16);
+});
+
+ipcMain.on('notch-drag-end', () => {
+  endNotchDrag();
+  clearTimeout(_notchSaveTimer);
+  _notchSaveTimer = setTimeout(() => saveConfig(config), 500);
 });
 
 ipcMain.handle('notch-toggle-minimize', () => {

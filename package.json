@@ -29,6 +29,7 @@
       "index.html",
       "config.html",
       "notch.html",
+      "toast.html",
       "zone-select.html",
       "package.json",
       "node_modules/**/*"
