@@ -5,7 +5,8 @@
 <title>Git Monitor — Notch</title>
 <style>
   :root {
-    --bg: #000;
+    --bg: #000000;
+    --notch-bg: #000000;
     --border: #2a2a2a;
     --text: #e6edf3;
     --text-dim: #7d8590;
@@ -47,7 +48,7 @@
     right: 0;
     width: 310px;
     height: 38px;
-    background: var(--bg);
+    background: var(--notch-bg);
     color: var(--text);
     border-top-left-radius: 0;
     border-top-right-radius: 0;
@@ -172,10 +173,11 @@
     letter-spacing: 0.2px;
   }
 
-  #gitIcon {
+  #ghIcon {
     width: 16px; height: 16px;
     opacity: 0.75;
     flex-shrink: 0;
+    fill: #e6edf3;
   }
 
   /* Expanded panel */
@@ -200,7 +202,7 @@
     align-items: center;
     gap: 10px;
     padding: 0 14px;
-    background: #000;
+    background: var(--notch-bg);
     border-bottom: 1px solid rgba(255,255,255,0.07);
     position: sticky;
     top: 0;
@@ -256,12 +258,25 @@
     min-height: 32px;
   }
   .row:hover { background: rgba(255,255,255,0.06); }
+  .name-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-width: 140px;
+    overflow: hidden;
+  }
   .row .name {
     font-size: 12px;
     font-weight: 500;
     color: var(--text);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    max-width: 140px;
+  }
+  .row .path {
+    font-size: 9.5px;
+    color: var(--text-dim);
+    opacity: 0.6;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
   }
   .row .detail {
     font-size: 10.5px;
@@ -338,12 +353,11 @@
 
     <!-- Baseline compact -->
     <div id="compact">
-      <span class="dot clean" id="dotCompact"></span>
+      <svg id="ghIcon" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
       <span id="countText" class="clean">0</span>
       <span id="labelText">Tudo sincronizado</span>
-      <svg id="gitIcon" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="#e6edf3">
-        <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.223 1.223 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.587 5.918v4.362a1.226 1.226 0 1 1-1.008-.036V5.844a1.226 1.226 0 0 1-.666-1.608L5.1 2.42.301 7.22a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.954-6.954a1.031 1.031 0 0 0 0-1.422"/>
-      </svg>
     </div>
 
     <!-- Mini-list colapsada: só pendentes -->
@@ -370,6 +384,7 @@
   </div>
 </div>
 
+<script src="themes.js"></script>
 <script>
   const { ipcRenderer } = require('electron');
 
@@ -411,7 +426,6 @@
   const miniListEl = document.getElementById('mini-list');
   const emptyEl = document.getElementById('empty');
 
-  const dotCompact = document.getElementById('dotCompact');
   const countText = document.getElementById('countText');
   const labelText = document.getElementById('labelText');
 
@@ -542,9 +556,6 @@
     const hasPending = nPending > 0;
     const dom = hasPending ? dominantStatus(repos.filter(r => r.pending)) : 'clean';
 
-    const statusClass = 'dot ' + dom;
-    dotCompact.className = statusClass;
-
     if (hasPending) {
       countText.className = '';
       countHdr.className = 'count';
@@ -582,7 +593,9 @@
     const isRunning = runningActions.has(r.path);
 
     const dot = makeEl('span', { className: 'dot ' + cls });
-    const name = makeEl('span', { className: 'name', textContent: r.name || '(sem nome)', title: r.path || '' });
+    const nameGroup = makeEl('div', { className: 'name-group' });
+    nameGroup.appendChild(makeEl('span', { className: 'name', textContent: r.name || '(sem nome)' }));
+    if (r.path) nameGroup.appendChild(makeEl('span', { className: 'path', textContent: r.path }));
     const detail = makeEl('span', { className: 'detail', textContent: r.detail || (r.status === 'clean' ? 'limpo' : '') });
 
     const actions = makeEl('div', { className: 'actions' });
@@ -633,7 +646,7 @@
       actions.appendChild(actBtn);
     }
 
-    return makeEl('div', { className: 'row' }, [dot, name, detail, actions]);
+    return makeEl('div', { className: 'row' }, [dot, nameGroup, detail, actions]);
   }
 
   function renderList() {
@@ -950,7 +963,11 @@
     }
   }
 
-  ipcRenderer.on('config-saved', () => startPolling());
+  ipcRenderer.on('config-saved', async () => {
+    const cfg = (await ipcRenderer.invoke('get-config')) || {};
+    applyTheme(cfg.theme || 'obsidian');
+    startPolling();
+  });
 
   ipcRenderer.on('deploy-update', (_, data) => {
     const { repoPath, phase, done } = data;
@@ -1001,6 +1018,7 @@
 
   // Inicial: notifica rect baseline pro passthrough do main
   updateShape();
+  ipcRenderer.invoke('get-config').then(cfg => applyTheme((cfg || {}).theme || 'obsidian'));
   paintFromCache().then(async hasCached => {
     if (!hasCached) await paintFromConfig();
     startPolling();

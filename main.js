@@ -179,7 +179,8 @@ function getDefaultConfig() {
     shortcutToggle: 'Control+Shift+G',
     shortcutMinimize: 'Control+Shift+M',
     widgetMode: 'floating',
-    autoStart: true
+    autoStart: true,
+    theme: 'obsidian'
   };
 }
 
@@ -198,6 +199,7 @@ function loadConfig() {
   // migração: novos campos de authMode
   if (!cfg.anthropicAuthMode) cfg.anthropicAuthMode = 'oauth';
   if (!cfg.openaiAuthMode)    cfg.openaiAuthMode    = 'apiKey';
+  if (!cfg.theme)             cfg.theme             = 'obsidian';
   return cfg;
 }
 
@@ -248,6 +250,16 @@ function mapReposForNotch(results) {
   return mapped;
 }
 
+const THEME_BG = {
+  obsidian: '#000000',
+  slate:    '#1c2128',
+  daylight: '#f6f8fa',
+  nord:     '#2e3440',
+  dracula:  '#282a36',
+  matrix:   '#000000',
+};
+function themeBg(name) { return THEME_BG[name] || '#000000'; }
+
 function createFloatingWindow() {
   const { width: screenW } = screen.getPrimaryDisplay().workAreaSize;
 
@@ -262,7 +274,7 @@ function createFloatingWindow() {
     y: winY,
     frame: false,
     transparent: false,
-    backgroundColor: '#0d1117',
+    backgroundColor: themeBg(config.theme),
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
@@ -822,7 +834,7 @@ function openConfigWindow() {
     x: Math.round((sw - 640) / 2),
     y: Math.round((sh - 720) / 2),
     frame: false,
-    backgroundColor: '#0d1117',
+    backgroundColor: themeBg(config.theme),
     alwaysOnTop: true,
     resizable: false,
     minimizable: false,
@@ -841,14 +853,14 @@ function openConfigWindow() {
 ipcMain.handle('open-config-window', () => openConfigWindow());
 
 function notifyConfigSaved() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const wc = mainWindow.webContents;
-  if (wc.isLoading()) {
-    wc.once('did-finish-load', () => {
-      if (mainWindow && !mainWindow.isDestroyed()) wc.send('config-saved');
-    });
-  } else {
-    wc.send('config-saved');
+  const targets = [mainWindow, configWindow].filter(w => w && !w.isDestroyed());
+  for (const win of targets) {
+    const wc = win.webContents;
+    if (wc.isLoading()) {
+      wc.once('did-finish-load', () => { if (!win.isDestroyed()) wc.send('config-saved'); });
+    } else {
+      wc.send('config-saved');
+    }
   }
 }
 
@@ -1627,6 +1639,16 @@ ipcMain.handle('get-shortcuts', () => ({
   toggle: config.shortcutToggle || 'Control+Shift+G',
   minimize: config.shortcutMinimize || 'Control+Shift+M'
 }));
+
+const VALID_THEMES = ['obsidian', 'slate', 'daylight', 'nord', 'dracula', 'matrix'];
+ipcMain.handle('save-theme', (_, name) => {
+  if (VALID_THEMES.includes(name)) {
+    config.theme = name;
+    saveConfig(config);
+    notifyConfigSaved();
+  }
+  return config.theme;
+});
 
 ipcMain.handle('set-widget-mode', (_, mode) => {
   const next = mode === 'notch' ? 'notch' : 'floating';

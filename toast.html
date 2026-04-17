@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <style>
+  :root {
+    --red: #f85149;
+    --green: #3fb950;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
     width: 100%; height: 100%;
@@ -24,16 +28,18 @@
     transition: opacity 200ms ease, transform 200ms ease;
     word-break: break-word;
   }
-  #toast.err { background: rgba(248,81,73,0.18); border: 1px solid rgba(248,81,73,0.55); color: #f85149; }
-  #toast.ok  { background: rgba(63,185,80,0.15); border: 1px solid rgba(63,185,80,0.50); color: #3fb950; }
+  #toast.err { background: rgba(248,81,73,0.18); border: 1px solid rgba(248,81,73,0.55); color: var(--red); }
+  #toast.ok  { background: rgba(63,185,80,0.15); border: 1px solid rgba(63,185,80,0.50); color: var(--green); }
   #toast.show { opacity: 1; transform: translateY(0); }
   svg { flex-shrink: 0; }
 </style>
 </head>
 <body>
 <div id="toast"></div>
+<script src="themes.js"></script>
 <script>
   const { ipcRenderer } = require('electron');
+  ipcRenderer.invoke('get-config').then(cfg => applyTheme((cfg || {}).theme || 'obsidian'));
   const _p = new DOMParser();
   const el = document.getElementById('toast');
 

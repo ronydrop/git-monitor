@@ -9,12 +9,16 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   :root {
-    --bg: #0d1117;
-    --bg-card: #161b22;
-    --bg-hover: #1c2333;
-    --border: #30363d;
+    --bg: #000000;
+    --bg-card: #0a0a0a;
+    --bg-hover: #141414;
+    --border: #2a2a2a;
     --text: #e6edf3;
     --text-dim: #7d8590;
+    --text-inverse: #000000;
+    --border-strong: #3d444d;
+    --accent: #58a6ff;
+    --notch-bg: #000000;
     --green: #3fb950;
     --green-bg: rgba(63, 185, 80, 0.1);
     --yellow: #d29922;
@@ -24,6 +28,7 @@
     --blue: #58a6ff;
     --blue-bg: rgba(88, 166, 255, 0.1);
     --orange: #db6d28;
+    --purple: #a371f7;
   }
 
   body {
@@ -237,7 +242,7 @@
     position: relative;
   }
 
-  .repo-card:hover { border-color: #3d444d; }
+  .repo-card:hover { border-color: var(--border-strong); }
   .repo-card.drag-over { border-color: var(--blue); background: rgba(88,166,255,0.05); }
   .repo-card.dragging { opacity: 0.4; }
 
@@ -312,7 +317,7 @@
   .toggle-slider {
     position: absolute;
     inset: 0;
-    background: #30363d;
+    background: var(--border);
     border-radius: 9px;
     cursor: pointer;
     transition: background 0.2s;
@@ -329,7 +334,7 @@
     transition: all 0.2s;
   }
   .toggle-switch input:checked + .toggle-slider { background: var(--green); }
-  .toggle-switch input:checked + .toggle-slider::before { transform: translateX(14px); background: #fff; }
+  .toggle-switch input:checked + .toggle-slider::before { transform: translateX(14px); background: var(--bg-card); }
 
   .repo-card.disabled { opacity: 0.45; }
   .repo-card.disabled .name-input,
@@ -375,7 +380,7 @@
     transition: all 0.15s;
     flex-shrink: 0;
   }
-  .btn-browse:hover { background: var(--bg-hover); color: var(--text); border-color: #3d444d; }
+  .btn-browse:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-strong); }
 
   .btn-test {
     height: 28px;
@@ -394,7 +399,7 @@
     flex-shrink: 0;
     color: var(--text-dim);
   }
-  .btn-test:hover { background: var(--bg-hover); color: var(--text); border-color: #3d444d; }
+  .btn-test:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-strong); }
   .btn-test.testing { color: var(--yellow); border-color: var(--yellow); }
   .btn-test.ok { color: var(--green); border-color: var(--green); background: var(--green-bg); }
   .btn-test.fail { color: var(--red); border-color: var(--red); background: var(--red-bg); }
@@ -712,6 +717,47 @@
   }
   .btn-cancel:hover { background: var(--bg-hover); color: var(--text); }
 
+  /* ---- Theme selector ---- */
+  #themeGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .theme-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 4px;
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 11px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .theme-btn:hover { border-color: var(--border-strong); color: var(--text); }
+  .theme-btn.selected { border-color: var(--accent); color: var(--text); }
+  .theme-swatch {
+    width: 36px;
+    height: 24px;
+    border-radius: 5px;
+    border: 2px solid;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding: 3px;
+  }
+  .theme-accent {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .theme-label { font-size: 10px; }
+
   /* ---- Toast ---- */
   .toast {
     position: fixed;
@@ -919,6 +965,11 @@
       </div>
     </div>
 
+    <div class="section-label">Tema</div>
+    <div class="config-card">
+      <div id="themeGrid"></div>
+    </div>
+
     <div class="section-label">Sobre</div>
     <div class="config-card">
       <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -945,6 +996,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="themes.js"></script>
 <script>
   const { ipcRenderer } = require('electron');
 
@@ -1022,6 +1074,8 @@
     document.getElementById('autoStart').checked = configSafe.autoStart !== false;
 
     const rawConfig = (await ipcRenderer.invoke('get-config')) || {};
+    applyTheme(rawConfig.theme || 'obsidian');
+    renderThemeSelector(rawConfig.theme || 'obsidian');
     document.getElementById('activeRepos').textContent   = '';
     document.getElementById('inactiveRepos').textContent = '';
     (rawConfig.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false));
@@ -1637,6 +1691,56 @@
     clearTimeout(toast._t);
     toast._t = setTimeout(() => { toast.className = 'toast'; }, 2200);
   }
+
+  const THEME_META = [
+    { id: 'obsidian', label: 'Obsidian', bg: '#000000', card: '#0a0a0a', accent: '#58a6ff' },
+    { id: 'slate',    label: 'Slate',    bg: '#1c2128', card: '#22272e', accent: '#58a6ff' },
+    { id: 'daylight', label: 'Daylight', bg: '#f6f8fa', card: '#ffffff', accent: '#0969da' },
+    { id: 'nord',     label: 'Nord',     bg: '#2e3440', card: '#3b4252', accent: '#88c0d0' },
+    { id: 'dracula',  label: 'Dracula',  bg: '#282a36', card: '#44475a', accent: '#bd93f9' },
+    { id: 'matrix',   label: 'Matrix',   bg: '#000000', card: '#050805', accent: '#00ff66' },
+  ];
+
+  function renderThemeSelector(active) {
+    const container = document.getElementById('themeGrid');
+    if (!container) return;
+    container.textContent = '';
+    THEME_META.forEach(t => {
+      const btn = document.createElement('button');
+      btn.className = 'theme-btn' + (t.id === active ? ' selected' : '');
+      btn.dataset.theme = t.id;
+      btn.title = t.label;
+
+      const swatch = document.createElement('span');
+      swatch.className = 'theme-swatch';
+      swatch.style.background = t.bg;
+      swatch.style.borderColor = t.card;
+
+      const accentDot = document.createElement('span');
+      accentDot.className = 'theme-accent';
+      accentDot.style.background = t.accent;
+      swatch.appendChild(accentDot);
+
+      const lbl = document.createElement('span');
+      lbl.className = 'theme-label';
+      lbl.textContent = t.label;
+
+      btn.appendChild(swatch);
+      btn.appendChild(lbl);
+      btn.addEventListener('click', async () => {
+        await ipcRenderer.invoke('save-theme', t.id);
+        document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  ipcRenderer.on('config-saved', async () => {
+    const cfg = (await ipcRenderer.invoke('get-config')) || {};
+    applyTheme(cfg.theme || 'obsidian');
+    renderThemeSelector(cfg.theme || 'obsidian');
+  });
 
   init();
 
