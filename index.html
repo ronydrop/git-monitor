@@ -1202,7 +1202,7 @@
 
   // ---- Init ----
   async function init() {
-    config = await ipcRenderer.invoke('get-config');
+    config = (await ipcRenderer.invoke('get-config')) || {};
     document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
 
     // Restaura opacidade
@@ -1245,7 +1245,7 @@
 
   // Recarrega quando config é salvo na janela de configuração
   ipcRenderer.on('config-saved', async () => {
-    config = await ipcRenderer.invoke('get-config');
+    config = (await ipcRenderer.invoke('get-config')) || {};
     document.getElementById('intervalSelect').value = config.intervalSeconds || 30;
     startInterval(config.intervalSeconds || 30);
     checkRepos();

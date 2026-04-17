@@ -1021,7 +1021,7 @@
     updateModeHint();
     document.getElementById('autoStart').checked = configSafe.autoStart !== false;
 
-    const rawConfig = await ipcRenderer.invoke('get-config');
+    const rawConfig = (await ipcRenderer.invoke('get-config')) || {};
     document.getElementById('activeRepos').textContent   = '';
     document.getElementById('inactiveRepos').textContent = '';
     (rawConfig.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false));

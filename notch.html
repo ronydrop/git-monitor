@@ -712,11 +712,16 @@
   }
 
   async function startPolling() {
-    const cfg = await ipcRenderer.invoke('get-config');
-    const seconds = Math.max(10, cfg.intervalSeconds || 30);
-    refresh();
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(refresh, seconds * 1000);
+    try {
+      const cfg = (await ipcRenderer.invoke('get-config')) || {};
+      const seconds = Math.max(10, cfg.intervalSeconds || 30);
+      refresh();
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(refresh, seconds * 1000);
+    } catch (e) {
+      console.warn('[notch] startPolling falhou:', e);
+      setTimeout(startPolling, 2000);
+    }
   }
 
   ipcRenderer.on('config-saved', () => startPolling());
