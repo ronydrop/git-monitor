@@ -616,6 +616,9 @@
     animation: spin 0.6s linear infinite;
   }
 
+  .icon-spin { animation: spin 1s linear infinite; transform-origin: center; transform-box: fill-box; }
+  button svg, .hdr-btn svg { display: inline-block; vertical-align: middle; }
+
   /* ---- Collapsed ---- */
   .container.collapsed .repo-list,
   .container.collapsed .status-bar,
@@ -653,10 +656,10 @@
       <h1>Git Monitor</h1>
     </div>
     <div class="titlebar-actions">
-      <button class="btn-refresh" id="refreshBtn" onclick="refreshNow()" title="Atualizar"><span>↻</span></button>
-      <button onclick="openConfig()" title="Configurar">⚙</button>
-      <button id="collapseBtn" onclick="toggleCollapse()" title="Minimizar">─</button>
-      <button class="btn-close" onclick="closeApp()" title="Fechar">✕</button>
+      <button class="btn-refresh" id="refreshBtn" onclick="refreshNow()" title="Atualizar"></button>
+      <button id="configBtn" onclick="openConfig()" title="Configurar"></button>
+      <button id="collapseBtn" onclick="toggleCollapse()" title="Minimizar"></button>
+      <button class="btn-close" id="closeBtn" onclick="closeApp()" title="Fechar"></button>
     </div>
   </div>
 
@@ -668,29 +671,29 @@
 
   <!-- Controls bar -->
   <div class="controls-bar">
-    <button class="btn-lock" id="lockBtn" onclick="toggleLock()" title="Travar posição">🔒</button>
+    <button class="btn-lock" id="lockBtn" onclick="toggleLock()" title="Travar posição"></button>
     <div class="opacity-ctrl">
       <input type="range" class="opacity-slider" id="opacitySlider" min="15" max="100" value="100" oninput="changeOpacity(this.value)" title="Opacidade" />
       <span class="opacity-val" id="opacityVal">100%</span>
     </div>
     <div class="ctrl-sep"></div>
     <div class="corner-btns">
-      <button class="btn-corner" onclick="snapCorner('tl')" title="Canto superior esquerdo">↖</button>
-      <button class="btn-corner" onclick="snapCorner('tr')" title="Canto superior direito">↗</button>
-      <button class="btn-corner" onclick="snapCorner('bl')" title="Canto inferior esquerdo">↙</button>
-      <button class="btn-corner" onclick="snapCorner('br')" title="Canto inferior direito">↘</button>
+      <button class="btn-corner" id="cornerTL" onclick="snapCorner('tl')" title="Canto superior esquerdo"></button>
+      <button class="btn-corner" id="cornerTR" onclick="snapCorner('tr')" title="Canto superior direito"></button>
+      <button class="btn-corner" id="cornerBL" onclick="snapCorner('bl')" title="Canto inferior esquerdo"></button>
+      <button class="btn-corner" id="cornerBR" onclick="snapCorner('br')" title="Canto inferior direito"></button>
     </div>
     <div class="ctrl-sep"></div>
-    <button class="btn-zone" id="zoneBtn" onclick="toggleZone()" title="Definir zona de detecção ghost">👻 Zona</button>
+    <button class="btn-zone" id="zoneBtn" onclick="toggleZone()" title="Definir zona de detecção ghost"></button>
   </div>
 
   <!-- Status bar -->
   <div class="status-bar">
     <span id="lastCheck">Verificando...</span>
     <div style="display:flex; align-items:center; gap:6px;">
-      <button class="btn-push-all" id="pushAllBtn" onclick="pushAll()" title="Commit + Push todos os repos modificados"><span>⬆</span> Push All</button>
+      <button class="btn-push-all" id="pushAllBtn" onclick="pushAll()" title="Commit + Push todos os repos modificados"></button>
       <div class="interval-ctrl">
-        <span>⏱</span>
+        <span id="timerIcon"></span>
         <select id="intervalSelect" onchange="changeInterval(this.value)">
           <option value="10">10s</option>
           <option value="30" selected>30s</option>
@@ -723,6 +726,54 @@
 <script>
   const { ipcRenderer } = require('electron');
 
+  const ICONS = {
+    'refresh-cw':   '<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>',
+    'settings':     '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    'minus':        '<path d="M5 12h14"/>',
+    'x':            '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    'check':        '<path d="M20 6 9 17l-5-5"/>',
+    'alert':        '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    'lock':         '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    'unlock':       '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+    'ghost':        '<path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/>',
+    'arrow-up':     '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+    'arrow-down':   '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+    'arrow-ul':     '<path d="M17 17 7 7"/><path d="M7 17V7h10"/>',
+    'arrow-ur':     '<path d="M7 17 17 7"/><path d="M7 7h10v10"/>',
+    'arrow-dl':     '<path d="M17 7 7 17"/><path d="M17 17H7V7"/>',
+    'arrow-dr':     '<path d="m7 7 10 10"/><path d="M17 7v10H7"/>',
+    'folder':       '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+    'folder-open':  '<path d="M6 14 4 20h16l-2-6"/><path d="M2 14V6a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v5"/>',
+    'terminal':     '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+    'chevron-up':   '<path d="m18 15-6-6-6 6"/>',
+    'chevron-down': '<path d="m6 9 6 6 6-6"/>',
+    'chevron-right':'<path d="m9 18 6-6-6-6"/>',
+    'timer':        '<path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/>',
+    'hourglass':    '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
+    'zap':          '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+    'eye':          '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+    'app-window':   '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>',
+    'grip':         '<circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>',
+  };
+
+  const _svgParser = new DOMParser();
+
+  function icon(name, opts) {
+    opts = opts || {};
+    const size = opts.size || 16;
+    const cls = opts.spin ? ' class="icon-spin"' : '';
+    const xml = '<svg xmlns="http://www.w3.org/2000/svg"' + cls + ' width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
+    return _svgParser.parseFromString(xml, 'image/svg+xml').documentElement;
+  }
+
+  function setIcon(target, name, opts) {
+    target.replaceChildren(icon(name, opts));
+  }
+
+  function setIconLabel(target, name, text, opts) {
+    target.replaceChildren(icon(name, opts), document.createTextNode('\u00A0' + text));
+  }
+
   let intervalId = null;
   let config = {};
   let lastResults = [];
@@ -741,50 +792,130 @@
   // ---- Render repos ----
   function renderRepos(results) {
     const list = document.getElementById('repoList');
+    list.replaceChildren();
 
     if (!results || results.length === 0) {
-      list.innerHTML = `
-        <div class="empty-state">
-          <div class="icon">📂</div>
-          <p>Nenhum repositório configurado.<br>Clique em ⚙ para adicionar.</p>
-          <button class="btn-config" onclick="openConfig()">Configurar Repos</button>
-        </div>`;
+      const emptyDiv = document.createElement('div');
+      emptyDiv.className = 'empty-state';
+      const iconDiv = document.createElement('div');
+      iconDiv.className = 'icon';
+      iconDiv.appendChild(icon('folder-open', { size: 28 }));
+      const p = document.createElement('p');
+      p.appendChild(document.createTextNode('Nenhum repositório configurado.\u00A0Clique em\u00A0'));
+      p.appendChild(icon('settings', { size: 12 }));
+      p.appendChild(document.createTextNode('\u00A0para adicionar.'));
+      const btn = document.createElement('button');
+      btn.className = 'btn-config';
+      btn.textContent = 'Configurar Repos';
+      btn.onclick = openConfig;
+      emptyDiv.appendChild(iconDiv);
+      emptyDiv.appendChild(p);
+      emptyDiv.appendChild(btn);
+      list.appendChild(emptyDiv);
       return;
     }
 
-    list.innerHTML = results.map(r => {
-      const esc = s => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    results.forEach(r => {
       const hasChanges = r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead';
       const needsPull  = r.status === 'behind';
-      const commitBtn = hasChanges
-        ? `<button class="btn-commit" title="Commit + Push com IA" onclick="doCommit(this, '${esc(r.path)}', '${esc(r.name)}')"><span>⬆</span></button>`
-        : needsPull
-          ? `<button class="btn-pull" title="Git Pull" onclick="doPull(this, '${esc(r.path)}', '${esc(r.name)}')"><span>⬇</span></button>`
-          : '';
-      const gitBtn = r.remoteUrl
-        ? `<button class="btn-repo-action" title="Abrir no GitHub" onclick="openGitUrl('${esc(r.remoteUrl)}')" style="padding:0;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></button>`
-        : '';
-      const checkbox = hasChanges
-        ? `<input type="checkbox" class="repo-check" data-path="${esc(r.path)}" data-name="${esc(r.name)}" checked title="Incluir no Push All">`
-        : '';
-      return `
-      <div class="repo-item" data-repo-path="${esc(r.path)}" title="${r.path}\n${r.detail}">
-        ${checkbox}
-        <div class="repo-dot ${r.status}"></div>
-        <div class="repo-info">
-          <div class="repo-name">${r.name}</div>
-          <div class="repo-detail">${r.branch ? `${r.branch} · ` : ''}${r.detail}</div>
-          <div class="deploy-label" id="deploy-label-${btoa(r.path).replace(/=/g,'')}"></div>
-        </div>
-        <span class="repo-badge badge-${r.status}">${BADGE_LABELS[r.status] || '?'}</span>
-        <div class="repo-actions">
-          ${gitBtn}
-          <button class="btn-repo-action" title="Abrir terminal" onclick="openTerminal('${esc(r.path)}', '${esc(r.name)}')">⌨</button>
-          ${commitBtn}
-        </div>
-        <div class="deploy-bar" id="deploy-bar-${btoa(r.path).replace(/=/g,'')}" style="display:none"></div>
-      </div>`;
-    }).join('');
+      const esc = s => (s || '').replace(/'/g, "\\'");
+
+      const item = document.createElement('div');
+      item.className = 'repo-item';
+      item.dataset.repoPath = r.path || '';
+      item.title = (r.path || '') + '\n' + (r.detail || '');
+
+      if (hasChanges) {
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'repo-check';
+        cb.dataset.path = r.path || '';
+        cb.dataset.name = r.name || '';
+        cb.checked = true;
+        cb.title = 'Incluir no Push All';
+        item.appendChild(cb);
+      }
+
+      const dot = document.createElement('div');
+      dot.className = 'repo-dot ' + (r.status || 'clean');
+      item.appendChild(dot);
+
+      const info = document.createElement('div');
+      info.className = 'repo-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'repo-name';
+      nameEl.textContent = r.name || '';
+      const detailEl = document.createElement('div');
+      detailEl.className = 'repo-detail';
+      detailEl.textContent = (r.branch ? r.branch + ' \u00B7 ' : '') + (r.detail || '');
+      const deployId = btoa(r.path || '').replace(/=/g, '');
+      const deployLabel = document.createElement('div');
+      deployLabel.className = 'deploy-label';
+      deployLabel.id = 'deploy-label-' + deployId;
+      info.appendChild(nameEl);
+      info.appendChild(detailEl);
+      info.appendChild(deployLabel);
+      item.appendChild(info);
+
+      const badge = document.createElement('span');
+      badge.className = 'repo-badge badge-' + (r.status || 'clean');
+      badge.textContent = BADGE_LABELS[r.status] || '?';
+      item.appendChild(badge);
+
+      const actions = document.createElement('div');
+      actions.className = 'repo-actions';
+
+      if (r.remoteUrl) {
+        const gitBtn = document.createElement('button');
+        gitBtn.className = 'btn-repo-action';
+        gitBtn.title = 'Abrir no GitHub';
+        gitBtn.style.cssText = 'padding:0;display:flex;align-items:center;justify-content:center;';
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        svg.setAttribute('width', '12');
+        svg.setAttribute('height', '12');
+        svg.setAttribute('fill', 'currentColor');
+        const p2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        p2.setAttribute('d', 'M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z');
+        svg.appendChild(p2);
+        gitBtn.appendChild(svg);
+        gitBtn.onclick = () => openGitUrl(r.remoteUrl);
+        actions.appendChild(gitBtn);
+      }
+
+      const termBtn = document.createElement('button');
+      termBtn.className = 'btn-repo-action';
+      termBtn.title = 'Abrir terminal';
+      termBtn.appendChild(icon('terminal', { size: 12 }));
+      termBtn.onclick = () => openTerminal(r.path, r.name);
+      actions.appendChild(termBtn);
+
+      if (hasChanges) {
+        const commitBtn = document.createElement('button');
+        commitBtn.className = 'btn-commit';
+        commitBtn.title = 'Commit + Push com IA';
+        commitBtn.appendChild(icon('arrow-up', { size: 13 }));
+        commitBtn.onclick = function() { doCommit(this, r.path, r.name); };
+        actions.appendChild(commitBtn);
+      } else if (needsPull) {
+        const pullBtn = document.createElement('button');
+        pullBtn.className = 'btn-pull';
+        pullBtn.title = 'Git Pull';
+        pullBtn.appendChild(icon('arrow-down', { size: 13 }));
+        pullBtn.onclick = function() { doPull(this, r.path, r.name); };
+        actions.appendChild(pullBtn);
+      }
+
+      item.appendChild(actions);
+
+      const deployBar = document.createElement('div');
+      deployBar.className = 'deploy-bar';
+      deployBar.id = 'deploy-bar-' + deployId;
+      deployBar.style.display = 'none';
+      item.appendChild(deployBar);
+
+      list.appendChild(item);
+    });
   }
 
   // ---- Check repos ----
@@ -819,7 +950,7 @@
     const collapsed = await ipcRenderer.invoke('minimize-app');
     document.getElementById('container').classList.toggle('collapsed', collapsed);
     const btn = document.getElementById('collapseBtn');
-    btn.textContent = collapsed ? '▢' : '─';
+    setIcon(btn, collapsed ? 'chevron-down' : 'chevron-up');
     btn.title = collapsed ? 'Expandir' : 'Minimizar';
   }
 
@@ -845,32 +976,32 @@
 
     const btn = document.getElementById('pushAllBtn');
     btn.className = 'btn-push-all running';
-    btn.innerHTML = '<span>↻</span> 0/' + modified.length;
+    setIconLabel(btn, 'refresh-cw', '0/' + modified.length, { spin: true });
 
     let doneCount = 0;
-    const results = [];
+    const results2 = [];
     for (const r of modified) {
       const res = await ipcRenderer.invoke('commit-and-push', r.path);
-      results.push(res);
+      results2.push(res);
       doneCount++;
-      btn.innerHTML = `<span>↻</span> ${doneCount}/${modified.length}`;
+      setIconLabel(btn, 'refresh-cw', doneCount + '/' + modified.length, { spin: true });
     }
 
-    const ok = results.filter(r => r.ok);
-    const fail = results.filter(r => !r.ok);
+    const ok = results2.filter(r => r.ok);
+    const fail = results2.filter(r => !r.ok);
 
     btn.className = 'btn-push-all done';
-    btn.innerHTML = `<span>✓</span> ${ok.length}/${modified.length}`;
+    setIconLabel(btn, 'check', ok.length + '/' + modified.length);
 
     if (fail.length > 0) {
-      showCommitToast('err', `✕ ${fail.length} falharam: ${fail.map(r => r.error).join('; ').substring(0, 120)}`);
+      showCommitToast('err', fail.length + ' falharam: ' + fail.map(r => r.error).join('; ').substring(0, 120));
     } else {
-      showCommitToast('ok', `✓ ${ok.length} repos commitados e pushed!`);
+      showCommitToast('ok', ok.length + ' repos commitados e pushed!');
     }
 
     setTimeout(() => {
       btn.className = 'btn-push-all';
-      btn.innerHTML = '<span>⬆</span> Push All';
+      setIconLabel(btn, 'arrow-up', 'Push All');
       checkRepos();
     }, 4000);
   }
@@ -885,16 +1016,13 @@
     ipcRenderer.invoke('open-git-url', url);
   }
 
-  function setBtnGlyph(btn, glyph) {
-    btn.replaceChildren();
-    const s = document.createElement('span');
-    s.textContent = glyph;
-    btn.appendChild(s);
+  function setBtnIcon(btn, name, opts) {
+    btn.replaceChildren(icon(name, opts));
   }
 
   async function doPull(btn, repoPath, repoName) {
     btn.className = 'btn-pull loading';
-    setBtnGlyph(btn, '↻');
+    setBtnIcon(btn, 'refresh-cw', { spin: true });
 
     let result;
     try {
@@ -910,18 +1038,18 @@
 
     if (result && result.ok) {
       btn.className = 'btn-pull done';
-      setBtnGlyph(btn, '✓');
+      setBtnIcon(btn, 'check');
       btn.removeAttribute('title');
-      showCommitToast('ok', `✓ ${repoName}: Pull concluído!`);
+      showCommitToast('ok', repoName + ': Pull concluído!');
       setTimeout(() => checkRepos(), 2000);
     } else {
       btn.className = 'btn-pull fail';
-      setBtnGlyph(btn, '✕');
+      setBtnIcon(btn, 'x');
       btn.setAttribute('title', (result && result.error) || 'Erro desconhecido');
-      showCommitToast('err', `✕ ${repoName}: ${(result && result.error) || 'erro'}`);
+      showCommitToast('err', repoName + ': ' + ((result && result.error) || 'erro'));
       setTimeout(() => {
         btn.className = 'btn-pull';
-        setBtnGlyph(btn, '⬇');
+        setBtnIcon(btn, 'arrow-down');
         btn.removeAttribute('title');
       }, 4000);
     }
@@ -934,20 +1062,20 @@
   // ---- Commit with AI ----
   async function doCommit(btn, repoPath, repoName) {
     btn.className = 'btn-commit loading';
-    btn.innerHTML = '<span>↻</span>';
+    setBtnIcon(btn, 'refresh-cw', { spin: true });
 
     const result = await ipcRenderer.invoke('commit-and-push', repoPath);
 
     if (result.ok) {
-      showCommitToast('ok', `✓ ${repoName}\n${result.title}`);
+      showCommitToast('ok', repoName + '\n' + (result.title || ''));
       btn.className = 'btn-commit deploying';
-      btn.innerHTML = '<span>↻</span>';
+      setBtnIcon(btn, 'refresh-cw', { spin: true });
       startDeployWatch(btn, repoPath, repoName);
     } else {
       btn.className = 'btn-commit fail';
-      btn.innerHTML = '<span>✕</span>';
-      showCommitToast('err', `✕ ${repoName}: ${result.error}`);
-      setTimeout(() => { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; }, 4000);
+      setBtnIcon(btn, 'x');
+      showCommitToast('err', repoName + ': ' + (result.error || ''));
+      setTimeout(() => { btn.className = 'btn-commit'; setBtnIcon(btn, 'arrow-up'); }, 4000);
     }
   }
 
@@ -985,44 +1113,44 @@
     };
 
     if (phase === 'waiting') {
-      showBar('waiting', '⏳ Aguardando CI iniciar...');
-      if (btn) { btn.className = 'btn-commit deploying'; btn.innerHTML = '<span>↻</span>'; }
+      showBar('waiting', 'Aguardando CI iniciar...');
+      if (btn) { btn.className = 'btn-commit deploying'; setBtnIcon(btn, 'refresh-cw', { spin: true }); }
 
     } else if (phase === 'running') {
-      const prog = total ? ` (${done}/${total})` : '';
-      showBar('running', `⚡ ${job || 'Rodando'}${prog}`);
-      if (btn) { btn.className = 'btn-commit deploying'; btn.innerHTML = '<span>↻</span>'; }
+      const prog = total ? ' (' + done + '/' + total + ')' : '';
+      showBar('running', (job || 'Rodando') + prog);
+      if (btn) { btn.className = 'btn-commit deploying'; setBtnIcon(btn, 'refresh-cw', { spin: true }); }
 
     } else if (phase === 'success') {
-      showBar('success', '✓ Deploy concluído!');
-      if (btn) { btn.className = 'btn-commit deployed'; btn.innerHTML = '<span>✓</span>'; }
-      showCommitToast('ok', `✓ ${repoName || ''}: Deploy concluído!`);
+      showBar('success', 'Deploy concluído!');
+      if (btn) { btn.className = 'btn-commit deployed'; setBtnIcon(btn, 'check'); }
+      showCommitToast('ok', (repoName || '') + ': Deploy concluído!');
       hideBar();
       delete activeDeployBtns[repoPath];
       setTimeout(() => checkRepos(), 3000);
 
     } else if (phase === 'failure') {
-      showBar('failure', `✕ Deploy falhou: ${detail || ''}`);
-      if (btn) { btn.className = 'btn-commit deploy-fail'; btn.innerHTML = '<span>✕</span>'; }
-      showCommitToast('err', `✕ ${repoName || ''}: Deploy falhou — ${detail || ''}`);
+      showBar('failure', 'Deploy falhou: ' + (detail || ''));
+      if (btn) { btn.className = 'btn-commit deploy-fail'; setBtnIcon(btn, 'x'); }
+      showCommitToast('err', (repoName || '') + ': Deploy falhou — ' + (detail || ''));
       hideBar();
       delete activeDeployBtns[repoPath];
-      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; } }, 6000);
+      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setBtnIcon(btn, 'arrow-up'); } }, 6000);
 
     } else if (phase === 'no-token' || phase === 'no-github' || phase === 'none') {
-      if (btn) { btn.className = 'btn-commit deployed'; btn.innerHTML = '<span>✓</span>'; }
+      if (btn) { btn.className = 'btn-commit deployed'; setBtnIcon(btn, 'check'); }
       delete activeDeployBtns[repoPath];
       setTimeout(() => checkRepos(), 3000);
 
     } else if (phase === 'error') {
-      if (btn) { btn.className = 'btn-commit'; btn.innerHTML = '<span>⚠</span>'; }
-      showCommitToast('err', `⚠ ${repoName || ''}: ${detail || 'Erro'}`);
+      if (btn) { btn.className = 'btn-commit'; setBtnIcon(btn, 'alert'); }
+      showCommitToast('err', (repoName || '') + ': ' + (detail || 'Erro'));
       delete activeDeployBtns[repoPath];
-      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; btn.innerHTML = '<span>⬆</span>'; } }, 5000);
+      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setBtnIcon(btn, 'arrow-up'); } }, 5000);
 
     } else if (phase === 'timeout') {
-      if (btn) { btn.className = 'btn-commit deployed'; btn.innerHTML = '<span>✓</span>'; }
-      showCommitToast('err', `⏱ ${repoName || ''}: Timeout aguardando deploy`);
+      if (btn) { btn.className = 'btn-commit deployed'; setBtnIcon(btn, 'check'); }
+      showCommitToast('err', (repoName || '') + ': Timeout aguardando deploy');
       delete activeDeployBtns[repoPath];
       setTimeout(() => checkRepos(), 3000);
     }
@@ -1031,11 +1159,13 @@
   let commitToastTimer = null;
   function showCommitToast(type, msg) {
     const el = document.getElementById('commitToast');
-    const icon = type === 'ok' ? '✓' : '⚠';
-    // Limita tamanho e remove caracteres desnecessários
-    const clean = msg.replace(/^\s*[✓✕⚠×]\s*/, '').trim().substring(0, 180);
-    el.innerHTML = `<span style="font-weight:700;margin-right:5px;">${icon}</span>${clean}`;
-    el.className = `commit-toast show ${type}`;
+    const clean = (msg || '').trim().substring(0, 180);
+    const icn = icon(type === 'ok' ? 'check' : 'alert', { size: 13 });
+    const sp = document.createElement('span');
+    sp.style.cssText = 'font-weight:700;margin-right:5px;display:inline-flex;align-items:center;';
+    sp.appendChild(icn);
+    el.replaceChildren(sp, document.createTextNode(clean));
+    el.className = 'commit-toast show ' + type;
     clearTimeout(commitToastTimer);
     const duration = type === 'err' ? 6000 : 3500;
     commitToastTimer = setTimeout(() => { el.className = 'commit-toast'; }, duration);
@@ -1056,7 +1186,7 @@
     titlebar.style.webkitAppRegion = locked ? 'no-drag' : 'drag';
     btn.classList.toggle('locked', locked);
     btn.title = locked ? 'Desbloquear posição' : 'Travar posição';
-    btn.textContent = locked ? '🔐' : '🔒';
+    setIcon(btn, locked ? 'lock' : 'unlock');
   }
 
   // ---- Opacity ----
@@ -1090,9 +1220,25 @@
     if (config.collapsed) {
       document.getElementById('container').classList.add('collapsed');
       const btn = document.getElementById('collapseBtn');
-      btn.textContent = '▢';
+      setIcon(btn, 'chevron-down');
       btn.title = 'Expandir';
     }
+
+    // Ícones dos botões titlebar
+    setIcon(document.getElementById('refreshBtn'), 'refresh-cw');
+    setIcon(document.getElementById('configBtn'), 'settings');
+    if (!config.collapsed) setIcon(document.getElementById('collapseBtn'), 'chevron-up');
+    setIcon(document.getElementById('closeBtn'), 'x');
+    // Corner buttons
+    setIcon(document.getElementById('cornerTL'), 'arrow-ul', { size: 12 });
+    setIcon(document.getElementById('cornerTR'), 'arrow-ur', { size: 12 });
+    setIcon(document.getElementById('cornerBL'), 'arrow-dl', { size: 12 });
+    setIcon(document.getElementById('cornerBR'), 'arrow-dr', { size: 12 });
+    // Push All button
+    setIconLabel(document.getElementById('pushAllBtn'), 'arrow-up', 'Push All');
+    // Timer icon
+    setIcon(document.getElementById('timerIcon'), 'timer', { size: 13 });
+
     startInterval(config.intervalSeconds || 30);
     checkRepos();
   }
@@ -1122,11 +1268,11 @@
     hasZone = !!zone;
     if (hasZone) {
       btn.classList.add('active');
-      btn.textContent = '👻 Ativa';
+      setIconLabel(btn, 'ghost', 'Ativa');
       btn.title = 'Clique para desativar zona ghost';
     } else {
       btn.classList.remove('active');
-      btn.textContent = '👻 Zona';
+      setIconLabel(btn, 'ghost', 'Zona');
       btn.title = 'Definir zona de detecção ghost';
     }
   }
@@ -1152,9 +1298,9 @@
       banner.classList.add('show');
 
     } else if (status.type === 'ready') {
-      msg.textContent = `v${status.version || ''} pronta — reinicie para aplicar`;
-      btn.textContent = '↻ Reiniciar agora';
+      msg.textContent = 'v' + (status.version || '') + ' pronta — reinicie para aplicar';
       btn.style.display = '';
+      setIconLabel(btn, 'refresh-cw', 'Reiniciar agora');
       banner.classList.add('show');
 
     } else if (status.type === 'error') {

@@ -460,6 +460,7 @@ function createWindowForMode() {
 }
 
 let switchingWidgetMode = false;
+let pendingWidgetMode = null;
 function switchWidgetMode(mode) {
   const next = mode === 'notch' ? 'notch' : 'floating';
   if (config.widgetMode === next && mainWindow && !mainWindow.isDestroyed()) return;
@@ -741,9 +742,21 @@ function openConfigWindow() {
 ipcMain.handle('open-config-window', () => openConfigWindow());
 
 ipcMain.handle('close-config-window', () => {
-  if (configWindow && !configWindow.isDestroyed()) configWindow.close();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('config-saved');
+  const pending = pendingWidgetMode;
+  pendingWidgetMode = null;
+  if (configWindow && !configWindow.isDestroyed()) {
+    configWindow.once('closed', () => {
+      if (pending !== null) switchWidgetMode(pending);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('config-saved');
+      }
+    });
+    configWindow.close();
+  } else {
+    if (pending !== null) switchWidgetMode(pending);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('config-saved');
+    }
   }
 });
 
@@ -1556,9 +1569,8 @@ ipcMain.handle('get-shortcuts', () => ({
 }));
 
 ipcMain.handle('set-widget-mode', (_, mode) => {
-  // Adia troca pro próximo tick pro IPC responder antes da janela atual ser destruída
-  setImmediate(() => switchWidgetMode(mode));
-  return mode === 'notch' ? 'notch' : 'floating';
+  pendingWidgetMode = mode === 'notch' ? 'notch' : 'floating';
+  return pendingWidgetMode;
 });
 
 ipcMain.handle('set-auto-start', (_, enabled) => {

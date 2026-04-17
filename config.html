@@ -732,6 +732,9 @@
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   .toast.success { border-color: var(--green); color: var(--green); }
   .toast.error { border-color: var(--red); color: var(--red); }
+  .icon-spin { animation: spin 1s linear infinite; transform-origin: center; transform-box: fill-box; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  button svg, .btn-eye svg { display: inline-block; vertical-align: middle; }
 </style>
 </head>
 <body>
@@ -743,7 +746,7 @@
     </svg>
     <h1>Configurações</h1>
   </div>
-  <button class="btn-close-titlebar" onclick="cancelAndClose()" title="Fechar">&#x2715;</button>
+  <button class="btn-close-titlebar" id="cfgCloseBtn" onclick="cancelAndClose()" title="Fechar"></button>
 </div>
 
 <div class="tab-bar">
@@ -767,7 +770,7 @@
         <span>+</span> Adicionar repositório
       </button>
       <div id="inactiveDivider" class="group-divider inactive-toggle" style="display:none;" onclick="toggleInactiveSection()">
-        <span id="inactiveLabel">&#x25B6; Inativos</span>
+        <span id="inactToggleIcon"></span><span id="inactiveCount"> Inativos</span>
       </div>
       <div id="inactiveRepos" style="display:none;"></div>
     </div>
@@ -804,7 +807,7 @@
       </div>
       <div id="authDetailAnthropic" class="auth-detail"></div>
       <div class="redetect-row">
-        <button class="btn-redetect" onclick="detectCliCreds()">&#x21BB; Re-detectar CLIs</button>
+        <button class="btn-redetect" id="btnRedetect" onclick="detectCliCreds()"></button>
       </div>
     </div>
 
@@ -833,7 +836,7 @@
       <div class="key-field">
         <span class="key-label">Token GitHub — monitorar status CI/CD após push</span>
         <div id="githubTokenArea"></div>
-        <a href="#" class="key-link" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/tokens')">&#x2197; github.com/settings/tokens (escopo: repo)</a>
+        <a href="#" class="key-link" id="githubLink" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/tokens')">github.com/settings/tokens (escopo: repo)</a>
       </div>
     </div>
 
@@ -898,7 +901,7 @@
     <div class="config-card">
       <div class="config-row" style="cursor:pointer;" onclick="var cb=document.getElementById('autoStart'); cb.checked=!cb.checked;">
         <div style="display:flex; align-items:center; gap:10px;">
-          <div style="width:32px; height:32px; border-radius:8px; background:var(--bg); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;">&#x26A1;</div>
+          <div id="autoStartIcon" style="width:32px; height:32px; border-radius:8px; background:var(--bg); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; flex-shrink:0;"></div>
           <div>
             <div style="font-size: 13px; color: var(--text); font-weight: 500;">Iniciar com o Windows</div>
             <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">
@@ -912,7 +915,7 @@
         </label>
       </div>
       <div id="autoStartHint" style="font-size: 10px; color: var(--text-dim); opacity:0.65; display:flex; align-items:center; gap:5px;">
-        <span style="font-size:9px;">&#x26A0;</span> Só funciona no app instalado — não em dev mode
+        <span id="autoStartWarnIcon" style="display:inline-flex;align-items:center;"></span> Só funciona no app instalado — não em dev mode
       </div>
     </div>
 
@@ -935,8 +938,8 @@
 </div>
 
 <div class="footer">
-  <button class="btn-save" onclick="save()">&#x2713; Salvar configurações</button>
-  <button class="btn-cancel" id="btnCheckUpdate" onclick="checkUpdate()" style="color: var(--blue); border-color: var(--border);" title="Verificar atualizações">&#x21BB; Verificar atualizações</button>
+  <button class="btn-save" id="btnSave" onclick="save()"></button>
+  <button class="btn-cancel" id="btnCheckUpdate" onclick="checkUpdate()" style="color: var(--blue); border-color: var(--border);" title="Verificar atualizações"></button>
   <button class="btn-cancel" onclick="cancelAndClose()">Cancelar</button>
 </div>
 
@@ -944,6 +947,54 @@
 
 <script>
   const { ipcRenderer } = require('electron');
+
+  const ICONS = {
+    'refresh-cw':   '<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>',
+    'settings':     '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    'minus':        '<path d="M5 12h14"/>',
+    'x':            '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    'check':        '<path d="M20 6 9 17l-5-5"/>',
+    'alert':        '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    'lock':         '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    'unlock':       '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+    'ghost':        '<path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/>',
+    'arrow-up':     '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+    'arrow-down':   '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+    'arrow-ul':     '<path d="M17 17 7 7"/><path d="M7 17V7h10"/>',
+    'arrow-ur':     '<path d="M7 17 17 7"/><path d="M7 7h10v10"/>',
+    'arrow-dl':     '<path d="M17 7 7 17"/><path d="M17 17H7V7"/>',
+    'arrow-dr':     '<path d="m7 7 10 10"/><path d="M17 7v10H7"/>',
+    'folder':       '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+    'folder-open':  '<path d="M6 14 4 20h16l-2-6"/><path d="M2 14V6a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v5"/>',
+    'terminal':     '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+    'chevron-up':   '<path d="m18 15-6-6-6 6"/>',
+    'chevron-down': '<path d="m6 9 6 6 6-6"/>',
+    'chevron-right':'<path d="m9 18 6-6-6-6"/>',
+    'timer':        '<path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/>',
+    'hourglass':    '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
+    'zap':          '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+    'eye':          '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+    'app-window':   '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>',
+    'grip':         '<circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>',
+  };
+
+  const _svgParser = new DOMParser();
+
+  function icon(name, opts) {
+    opts = opts || {};
+    const size = opts.size || 16;
+    const cls = opts.spin ? ' class="icon-spin"' : '';
+    const xml = '<svg xmlns="http://www.w3.org/2000/svg"' + cls + ' width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
+    return _svgParser.parseFromString(xml, 'image/svg+xml').documentElement;
+  }
+
+  function setIcon(target, name, opts) {
+    target.replaceChildren(icon(name, opts));
+  }
+
+  function setIconLabel(target, name, text, opts) {
+    target.replaceChildren(icon(name, opts), document.createTextNode('\u00A0' + text));
+  }
 
   let dragSrc = null;
 
@@ -977,6 +1028,22 @@
     if (!rawConfig.repos || rawConfig.repos.length === 0) addRepo();
     updateInactiveDivider();
     loadShortcuts();
+
+    // Ícones estáticos
+    setIcon(document.getElementById('cfgCloseBtn'), 'x');
+    setIconLabel(document.getElementById('btnRedetect'), 'refresh-cw', 'Re-detectar CLIs');
+    setIconLabel(document.getElementById('btnSave'), 'check', 'Salvar configurações');
+    setIconLabel(document.getElementById('btnCheckUpdate'), 'refresh-cw', 'Verificar atualizações');
+    // Auto-start icon
+    const asiEl = document.getElementById('autoStartIcon');
+    if (asiEl) setIcon(asiEl, 'zap', { size: 15 });
+    const warnEl = document.getElementById('autoStartWarnIcon');
+    if (warnEl) setIcon(warnEl, 'alert', { size: 11 });
+    // GitHub link arrow
+    const ghLink = document.getElementById('githubLink');
+    if (ghLink) ghLink.appendChild(icon('arrow-ur', { size: 10 }));
+    // Inactive section initial icon
+    setIcon(document.getElementById('inactToggleIcon'), 'chevron-right', { size: 12 });
 
     await initAiTab();
   }
@@ -1057,29 +1124,36 @@
       ? document.getElementById('claudeCliStatus')
       : document.getElementById('codexCliStatus');
     if (!el) return;
+    el.replaceChildren();
     if (which === 'claude') {
       if (status.available) {
         const days = status.expiresAt
           ? Math.max(0, Math.floor((Number(status.expiresAt) - Date.now()) / 86400000))
           : null;
-        el.textContent = '\u2713 detectado' + (days !== null ? ' \u00B7 expira em ' + days + 'd' : '');
+        el.appendChild(icon('check', { size: 11 }));
+        el.appendChild(document.createTextNode(' detectado' + (days !== null ? ' \u00B7 expira em ' + days + 'd' : '')));
         el.className = 'cli-badge cli-ok';
       } else if (status.expired) {
-        el.textContent = '\u26A0 expirado';
+        el.appendChild(icon('alert', { size: 11 }));
+        el.appendChild(document.createTextNode(' expirado'));
         el.className = 'cli-badge cli-warn';
       } else {
-        el.textContent = '\u2715 n\u00E3o encontrado';
+        el.appendChild(icon('x', { size: 11 }));
+        el.appendChild(document.createTextNode(' n\u00E3o encontrado'));
         el.className = 'cli-badge cli-err';
       }
     } else {
       if (status.available) {
-        el.textContent = '\u2713 detectado';
+        el.appendChild(icon('check', { size: 11 }));
+        el.appendChild(document.createTextNode(' detectado'));
         el.className = 'cli-badge cli-ok';
       } else if (status.mode && status.mode !== 'ApiKey') {
-        el.textContent = '\u26A0 modo ' + status.mode;
+        el.appendChild(icon('alert', { size: 11 }));
+        el.appendChild(document.createTextNode(' modo ' + status.mode));
         el.className = 'cli-badge cli-warn';
       } else {
-        el.textContent = '\u2715 n\u00E3o encontrado';
+        el.appendChild(icon('x', { size: 11 }));
+        el.appendChild(document.createTextNode(' n\u00E3o encontrado'));
         el.className = 'cli-badge cli-err';
       }
     }
@@ -1103,15 +1177,19 @@
       if (!cli.available) {
         const warn = document.createElement('div');
         warn.className = 'auth-warn';
+        const warnIcn = icon('alert', { size: 13 });
+        let msg;
         if (agent === 'anthropic') {
-          warn.textContent = cli.expired
-            ? '\u26A0 Token Claude CLI expirado \u2014 rode `claude login` no terminal'
-            : '\u26A0 Claude CLI n\u00E3o encontrado \u2014 rode `claude login` no terminal';
+          msg = cli.expired
+            ? ' Token Claude CLI expirado \u2014 rode `claude login` no terminal'
+            : ' Claude CLI n\u00E3o encontrado \u2014 rode `claude login` no terminal';
         } else {
-          warn.textContent = cli.mode && cli.mode !== 'ApiKey'
-            ? '\u26A0 Codex CLI em modo ' + cli.mode + ' \u2014 use Token manual ou reconfigure o Codex'
-            : '\u26A0 Codex CLI n\u00E3o encontrado \u2014 rode a configura\u00E7\u00E3o do Codex ou use Token manual';
+          msg = (cli.mode && cli.mode !== 'ApiKey')
+            ? ' Codex CLI em modo ' + cli.mode + ' \u2014 use Token manual ou reconfigure o Codex'
+            : ' Codex CLI n\u00E3o encontrado \u2014 rode a configura\u00E7\u00E3o do Codex ou use Token manual';
         }
+        warn.appendChild(warnIcn);
+        warn.appendChild(document.createTextNode(msg));
         el.appendChild(warn);
       }
     } else {
@@ -1164,7 +1242,7 @@
     const ph       = isAnthropic ? 'sk-ant-...' : 'sk-...';
     const saveCmd  = isAnthropic ? 'save-anthropic-key' : 'save-openai-key';
     const linkUrl  = isAnthropic ? 'https://console.anthropic.com/settings/keys' : 'https://platform.openai.com/api-keys';
-    const linkText = isAnthropic ? '\u2197 console.anthropic.com' : '\u2197 platform.openai.com';
+    const linkText = isAnthropic ? 'console.anthropic.com' : 'platform.openai.com';
 
     const inp = document.createElement('input');
     inp.type      = 'password';
@@ -1179,6 +1257,7 @@
 
     const link = document.createElement('a');
     link.href = '#'; link.className = 'key-link'; link.textContent = linkText;
+    link.appendChild(icon('arrow-ur', { size: 10 }));
     link.onclick = () => ipcRenderer.invoke('open-git-url', linkUrl);
     container.appendChild(link);
   }
@@ -1256,10 +1335,10 @@
     if (res[key]) {
       scSaved[key] = val;
       updateShortcutButtons(key);
-      status.textContent = '\u2713 ' + (key === 'toggle' ? 'Toggle' : 'Min/Max') + ': ' + res[key];
+      status.replaceChildren(icon('check', { size: 12 }), document.createTextNode(' ' + (key === 'toggle' ? 'Toggle' : 'Min/Max') + ': ' + res[key]));
       status.style.color = 'var(--green)';
     } else {
-      status.textContent = '\u2715 ' + (key === 'toggle' ? 'Toggle' : 'Min/Max') + ' falhou (conflito?)';
+      status.replaceChildren(icon('x', { size: 12 }), document.createTextNode(' ' + (key === 'toggle' ? 'Toggle' : 'Min/Max') + ' falhou (conflito?)'));
       status.style.color = 'var(--yellow)';
     }
   }
@@ -1277,10 +1356,11 @@
     if (res.toggle)   { scSaved.toggle   = toggle;   updateShortcutButtons('toggle'); }
     if (res.minimize) { scSaved.minimize = minimize; updateShortcutButtons('minimize'); }
     const status = document.getElementById('scStatus');
-    const parts = [];
-    parts.push(res.toggle   ? '\u2713 Toggle: '  + res.toggle   : '\u2715 Toggle falhou (conflito?)');
-    parts.push(res.minimize ? '\u2713 Min/Max: ' + res.minimize : '\u2715 Min/Max falhou (conflito?)');
-    status.textContent = parts.join('  \u00B7  ');
+    status.replaceChildren();
+    status.appendChild(res.toggle ? icon('check', { size: 12 }) : icon('x', { size: 12 }));
+    status.appendChild(document.createTextNode(' Toggle: ' + (res.toggle || 'falhou') + '  \u00B7  '));
+    status.appendChild(res.minimize ? icon('check', { size: 12 }) : icon('x', { size: 12 }));
+    status.appendChild(document.createTextNode(' Min/Max: ' + (res.minimize || 'falhou')));
     status.style.color = (res.toggle && res.minimize) ? 'var(--green)' : 'var(--yellow)';
   }
 
@@ -1329,7 +1409,8 @@
     const list = enabled ? activeGroup : inactiveGroup;
 
     // header row
-    const dragHandle = makeEl('span', { className: 'drag-handle', title: 'Arrastar para reordenar', textContent: '\u2837' });
+    const dragHandle = makeEl('span', { className: 'drag-handle', title: 'Arrastar para reordenar' });
+    dragHandle.appendChild(icon('grip', { size: 12 }));
 
     const numSpan = makeEl('span', { className: 'repo-num', textContent: String(list.children.length + 1) });
 
@@ -1343,7 +1424,8 @@
     });
     nameInput.value = name;
 
-    const btnRemove = makeEl('button', { className: 'btn-remove', title: 'Remover', textContent: '\xD7' });
+    const btnRemove = makeEl('button', { className: 'btn-remove', title: 'Remover' });
+    btnRemove.appendChild(icon('x', { size: 13 }));
 
     const header = makeEl('div', { className: 'repo-card-header' }, [dragHandle, numSpan, toggleLabel, nameInput, btnRemove]);
 
@@ -1353,11 +1435,13 @@
     });
     pathInput.value = repoPath;
 
-    const browseIcon = makeEl('span', { textContent: '\uD83D\uDCC1 Procurar' });
-    const btnBrowse = makeEl('button', { className: 'btn-browse', title: 'Escolher pasta' }, [browseIcon]);
+    const btnBrowse = makeEl('button', { className: 'btn-browse', title: 'Escolher pasta' });
+    btnBrowse.appendChild(icon('folder', { size: 13 }));
+    btnBrowse.appendChild(document.createTextNode('\u00A0Procurar'));
 
-    const testIcon = makeEl('span', { textContent: '\u26A1 Testar' });
-    const btnTest = makeEl('button', { className: 'btn-test', title: 'Testar caminho' }, [testIcon]);
+    const btnTest = makeEl('button', { className: 'btn-test', title: 'Testar caminho' });
+    btnTest.appendChild(icon('zap', { size: 13 }));
+    btnTest.appendChild(document.createTextNode('\u00A0Testar'));
 
     const pathRow = makeEl('div', { className: 'path-row' }, [pathInput, btnBrowse, btnTest]);
 
@@ -1433,9 +1517,11 @@
     const div   = document.getElementById('inactiveDivider');
     const cards = ig ? ig.querySelectorAll('.repo-card') : [];
     div.style.display = cards.length > 0 ? '' : 'none';
-    const label = document.getElementById('inactiveLabel');
     const open  = ig && ig.style.display !== 'none';
-    if (label) label.innerHTML = (open ? '&#x25BC;' : '&#x25B6;') + ' Inativos (' + cards.length + ')';
+    const iconEl2 = document.getElementById('inactToggleIcon');
+    if (iconEl2) setIcon(iconEl2, open ? 'chevron-down' : 'chevron-right', { size: 12 });
+    const countEl = document.getElementById('inactiveCount');
+    if (countEl) countEl.textContent = ' Inativos (' + cards.length + ')';
   }
 
   function toggleInactiveSection() {
@@ -1470,22 +1556,22 @@
     const pathInput = btn.closest('.path-row').querySelector('.path-input');
     const repoPath  = pathInput.value.trim();
     if (!repoPath) { showToast('Digite um caminho primeiro', 'error'); return; }
-    btn.textContent = '\u23F3 Testando...';
+    setIconLabel(btn, 'hourglass', 'Testando...', { spin: true });
     btn.className   = 'btn-test testing';
     btn.disabled    = true;
     const ok = await ipcRenderer.invoke('test-repo', repoPath);
     btn.disabled = false;
     if (ok) {
-      btn.textContent = '\u2713 V\u00E1lido';
+      setIconLabel(btn, 'check', 'V\u00E1lido');
       btn.className   = 'btn-test ok';
     } else {
-      btn.textContent = '\u2715 Inv\u00E1lido';
+      setIconLabel(btn, 'x', 'Inv\u00E1lido');
       btn.className   = 'btn-test fail';
     }
   }
 
   function resetTestBtn(btn) {
-    btn.textContent = '\u26A1 Testar';
+    btn.replaceChildren(icon('zap', { size: 13 }), document.createTextNode('\u00A0Testar'));
     btn.className   = 'btn-test';
   }
 
@@ -1534,22 +1620,28 @@
 
   async function checkUpdate() {
     const btn = document.getElementById('btnCheckUpdate');
-    btn.textContent = '\u23F3 Verificando...';
+    setIconLabel(btn, 'hourglass', 'Verificando...', { spin: true });
     btn.disabled = true;
     ipcRenderer.invoke('check-for-updates');
     const onResult = (_, status) => {
       ipcRenderer.removeListener('update-check-result', onResult);
-      if      (status.type === 'latest')    { btn.textContent = '\u2713 J\u00E1 est\u00E1 atualizado';     btn.style.color = 'var(--green)'; }
-      else if (status.type === 'available') { btn.textContent = '\u2B07 v' + status.version + ' dispon\u00EDvel!'; btn.style.color = 'var(--blue)';  }
-      else if (status.type === 'ready')     { btn.textContent = '\u2713 Pronto para instalar';             btn.style.color = 'var(--green)'; }
-      else if (status.type === 'dev')       { btn.textContent = '\u26A0 Indispon\u00EDvel em dev mode';    btn.style.color = 'var(--yellow)';}
-      else if (status.type === 'error')     { btn.textContent = '\u2715 Erro: sem release publicado';      btn.style.color = 'var(--red)';   }
-      setTimeout(() => { btn.textContent = '\u21BB Verificar atualiza\u00E7\u00F5es'; btn.style.color = ''; btn.disabled = false; }, 4000);
+      if (status.type === 'latest') {
+        setIconLabel(btn, 'check', 'J\u00E1 est\u00E1 atualizado'); btn.style.color = 'var(--green)';
+      } else if (status.type === 'available') {
+        setIconLabel(btn, 'arrow-down', 'v' + status.version + ' dispon\u00EDvel!'); btn.style.color = 'var(--blue)';
+      } else if (status.type === 'ready') {
+        setIconLabel(btn, 'check', 'Pronto para instalar'); btn.style.color = 'var(--green)';
+      } else if (status.type === 'dev') {
+        setIconLabel(btn, 'alert', 'Indispon\u00EDvel em dev mode'); btn.style.color = 'var(--yellow)';
+      } else if (status.type === 'error') {
+        setIconLabel(btn, 'x', 'Erro: sem release publicado'); btn.style.color = 'var(--red)';
+      }
+      setTimeout(() => { setIconLabel(btn, 'refresh-cw', 'Verificar atualiza\u00E7\u00F5es'); btn.style.color = ''; btn.disabled = false; }, 4000);
     };
     ipcRenderer.on('update-check-result', onResult);
     setTimeout(() => {
       ipcRenderer.removeListener('update-check-result', onResult);
-      if (btn.disabled) { btn.textContent = '\u21BB Verificar atualiza\u00E7\u00F5es'; btn.style.color = ''; btn.disabled = false; }
+      if (btn.disabled) { setIconLabel(btn, 'refresh-cw', 'Verificar atualiza\u00E7\u00F5es'); btn.style.color = ''; btn.disabled = false; }
     }, 15000);
   }
 
