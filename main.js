@@ -741,22 +741,30 @@ function openConfigWindow() {
 
 ipcMain.handle('open-config-window', () => openConfigWindow());
 
+function notifyConfigSaved() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const wc = mainWindow.webContents;
+  if (wc.isLoading()) {
+    wc.once('did-finish-load', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) wc.send('config-saved');
+    });
+  } else {
+    wc.send('config-saved');
+  }
+}
+
 ipcMain.handle('close-config-window', () => {
   const pending = pendingWidgetMode;
   pendingWidgetMode = null;
   if (configWindow && !configWindow.isDestroyed()) {
     configWindow.once('closed', () => {
       if (pending !== null) switchWidgetMode(pending);
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('config-saved');
-      }
+      notifyConfigSaved();
     });
     configWindow.close();
   } else {
     if (pending !== null) switchWidgetMode(pending);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('config-saved');
-    }
+    notifyConfigSaved();
   }
 });
 
@@ -1570,7 +1578,11 @@ ipcMain.handle('get-shortcuts', () => ({
 
 ipcMain.handle('set-widget-mode', (_, mode) => {
   const next = mode === 'notch' ? 'notch' : 'floating';
-  switchWidgetMode(next);
+  if (configWindow && !configWindow.isDestroyed()) {
+    pendingWidgetMode = next;
+  } else {
+    setImmediate(() => switchWidgetMode(next));
+  }
   return next;
 });
 

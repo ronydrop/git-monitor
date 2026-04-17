@@ -419,6 +419,7 @@
   const RIGHT_MARGIN = 0; // pill colado na borda direita da window
 
   let repos = [];
+  let loaded = false;
   let hovered = false;
   let pinned = false;
   let minimized = false;
@@ -554,7 +555,7 @@
     listEl.replaceChildren(emptyEl);
     if (repos.length === 0) {
       emptyEl.style.display = '';
-      emptyEl.textContent = 'Nenhum repositório configurado.';
+      emptyEl.textContent = loaded ? 'Nenhum repositório configurado.' : 'Carregando…';
       return;
     }
     emptyEl.style.display = 'none';
@@ -743,6 +744,8 @@
       updateShape();
     } catch (e) {
       console.warn('[notch] refresh falhou:', e);
+    } finally {
+      loaded = true;
     }
   }
 
