@@ -1669,7 +1669,10 @@
       } else if (status.type === 'available') {
         setIconLabel(btn, 'arrow-down', 'v' + status.version + ' dispon\u00EDvel!'); btn.style.color = 'var(--blue)';
       } else if (status.type === 'ready') {
-        setIconLabel(btn, 'check', 'Pronto para instalar'); btn.style.color = 'var(--green)';
+        setIconLabel(btn, 'refresh-cw', 'Reiniciar e instalar'); btn.style.color = 'var(--green)';
+        btn.disabled = false;
+        btn.onclick = () => ipcRenderer.invoke('install-update');
+        return;
       } else if (status.type === 'dev') {
         setIconLabel(btn, 'alert', 'Indispon\u00EDvel em dev mode'); btn.style.color = 'var(--yellow)';
       } else if (status.type === 'error') {

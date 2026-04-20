@@ -1529,36 +1529,53 @@ app.whenReady().then(() => {
     else { mainWindow.show(); mainWindow.focus(); }
   });
 
-  tray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: 'Mostrar widget',
-      click: () => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
-        if (config.widgetMode === 'notch') {
-          switchWidgetMode('floating');
-        } else {
-          mainWindow.show();
-          mainWindow.focus();
+  let _pendingUpdateVersion = null;
+
+  function rebuildTrayMenu() {
+    const items = [
+      {
+        label: 'Mostrar widget',
+        click: () => {
+          if (!mainWindow || mainWindow.isDestroyed()) return;
+          if (config.widgetMode === 'notch') {
+            switchWidgetMode('floating');
+          } else {
+            mainWindow.show();
+            mainWindow.focus();
+          }
         }
-      }
-    },
-    {
-      label: 'Alternar modo (flutuante/notch)',
-      click: () => switchWidgetMode(config.widgetMode === 'notch' ? 'floating' : 'notch')
-    },
-    {
-      label: 'Minimizar notch (Ctrl+Shift+H)',
-      click: () => {
-        if (config.widgetMode !== 'notch') return;
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('notch-toggle-minimize');
+      },
+      {
+        label: 'Alternar modo (flutuante/notch)',
+        click: () => switchWidgetMode(config.widgetMode === 'notch' ? 'floating' : 'notch')
+      },
+      {
+        label: 'Minimizar notch (Ctrl+Shift+H)',
+        click: () => {
+          if (config.widgetMode !== 'notch') return;
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('notch-toggle-minimize');
+          }
         }
-      }
-    },
-    { label: 'Verificar atualizações', click: () => autoUpdater.checkForUpdates() },
-    { type: 'separator' },
-    { label: 'Sair', click: () => app.quit() }
-  ]));
+      },
+    ];
+
+    if (_pendingUpdateVersion) {
+      items.push({ type: 'separator' });
+      items.push({
+        label: '⬆ Reiniciar e instalar v' + _pendingUpdateVersion,
+        click: () => autoUpdater.quitAndInstall()
+      });
+    }
+
+    items.push({ label: 'Verificar atualizações', click: () => { if (app.isPackaged) autoUpdater.checkForUpdates(); } });
+    items.push({ type: 'separator' });
+    items.push({ label: 'Sair', click: () => app.quit() });
+
+    tray.setContextMenu(Menu.buildFromTemplate(items));
+  }
+
+  rebuildTrayMenu();
 
   // ---- Auto-updater ----
   if (app.isPackaged) {
@@ -1594,7 +1611,9 @@ app.whenReady().then(() => {
     autoUpdater.on('update-downloaded', (info) => {
       sendUpdate({ type: 'ready', version: info.version });
       _lastToastPct = -1;
-      showToastWindow('v' + info.version + ' baixada — reinicia o app para instalar', 'info', 30000);
+      _pendingUpdateVersion = info.version;
+      rebuildTrayMenu();
+      showToastWindow('v' + info.version + ' pronta — clique na bandeja para instalar', 'info', 30000);
     });
 
     autoUpdater.on('error', (err) => {
