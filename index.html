@@ -416,6 +416,9 @@
   .btn-commit.deployed  { color: var(--green); border-color: var(--green); background: var(--green-bg); pointer-events: none; }
   .btn-commit.deploy-fail { color: var(--red); border-color: var(--red); background: var(--red-bg); pointer-events: none; }
   .btn-commit.fail     { color: var(--red);   border-color: var(--red);   background: var(--red-bg);   }
+  .btn-commit.status-dirty       { color: var(--yellow); border-color: var(--yellow); background: var(--yellow-bg); }
+  .btn-commit.status-dirty-ahead { color: var(--orange); border-color: var(--orange); background: var(--orange-bg); }
+  .btn-commit.status-ahead       { color: var(--blue);   border-color: var(--blue);   background: var(--blue-bg);   }
 
   .btn-pull {
     width: 22px;
@@ -907,7 +910,7 @@
 
       if (hasChanges) {
         const commitBtn = document.createElement('button');
-        commitBtn.className = 'btn-commit';
+        commitBtn.className = 'btn-commit status-' + r.status;
         commitBtn.title = 'Commit + Push com IA';
         commitBtn.appendChild(icon('arrow-up', { size: 13 }));
         commitBtn.onclick = function() { doCommit(this, r.path, r.name); };
