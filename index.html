@@ -37,7 +37,8 @@
     background: transparent;
     color: var(--text);
     font-size: 11px;
-    overflow: hidden;
+    overflow: visible;
+    padding: 0 16px 0 0;
     user-select: none;
   }
 
@@ -46,7 +47,7 @@
     border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.05);
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -390,6 +391,10 @@
     padding: 0;
   }
   .btn-repo-action:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-strong); }
+  .repo-actions.status-dirty       .btn-repo-action { color: var(--yellow); border-color: var(--yellow); }
+  .repo-actions.status-dirty-ahead .btn-repo-action { color: var(--orange); border-color: var(--orange); }
+  .repo-actions.status-ahead       .btn-repo-action { color: var(--blue);   border-color: var(--blue);   }
+  .repo-actions.status-behind      .btn-repo-action { color: var(--blue);   border-color: var(--blue);   }
 
   /* ---- Commit button ---- */
   .btn-commit {
@@ -881,7 +886,7 @@
       item.appendChild(badge);
 
       const actions = document.createElement('div');
-      actions.className = 'repo-actions';
+      actions.className = 'repo-actions status-' + (r.status || 'clean');
 
       if (r.remoteUrl) {
         const gitBtn = document.createElement('button');
@@ -1017,7 +1022,7 @@
 
       if (r.remoteUrl) {
         const actions = document.createElement('div');
-        actions.className = 'repo-actions';
+        actions.className = 'repo-actions status-' + (r.status || 'clean');
         const gitBtn = document.createElement('button');
         gitBtn.className = 'btn-repo-action';
         gitBtn.title = 'Abrir no GitHub';

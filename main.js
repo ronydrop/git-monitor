@@ -263,18 +263,18 @@ function themeBg(name) { return THEME_BG[name] || '#000000'; }
 function createFloatingWindow() {
   const { width: screenW } = screen.getPrimaryDisplay().workAreaSize;
 
-  const rawX = config.windowX !== null ? config.windowX : screenW - 310;
+  const rawX = config.windowX !== null ? config.windowX : screenW - 326;
   const rawY = config.windowY !== null ? config.windowY : 10;
-  const { x: winX, y: winY } = clampWindowPos(rawX, rawY, 300, config.windowHeight || 420);
+  const { x: winX, y: winY } = clampWindowPos(rawX, rawY, 316, config.windowHeight || 420);
 
   mainWindow = new BrowserWindow({
-    width: 300,
+    width: 316,
     height: config.windowHeight || 420,
     x: winX,
     y: winY,
     frame: false,
-    transparent: false,
-    backgroundColor: themeBg(config.theme),
+    transparent: true,
+    backgroundColor: '#00000000',
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
@@ -933,7 +933,7 @@ function toggleCollapseApp() {
   saveConfig(config);
   const [x, y] = mainWindow.getPosition();
   const newH = config.collapsed ? 38 : (config.windowHeight || 420);
-  mainWindow.setBounds({ x, y, width: 300, height: newH }, false);
+  mainWindow.setBounds({ x, y, width: 316, height: newH }, false);
   if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
     mainWindow.webContents.send('collapse-changed', config.collapsed);
   }
@@ -993,7 +993,7 @@ ipcMain.on('resize-start', () => {
     const cursorY = screen.getCursorScreenPoint().y;
     const delta = (cursorY - startCursorY) / scaleFactor;
     const newH = Math.max(150, Math.min(900, Math.round(startHeight + delta)));
-    mainWindow.setBounds({ x: fixedX, y: fixedY, width: 300, height: newH });
+    mainWindow.setBounds({ x: fixedX, y: fixedY, width: 316, height: newH });
   }, 16);
 });
 
@@ -1501,7 +1501,7 @@ app.whenReady().then(() => {
 
   if (config.widgetMode !== 'notch' && config.collapsed) {
     const [x, y] = mainWindow.getPosition();
-    mainWindow.setBounds({ x, y, width: 300, height: 38 }, false);
+    mainWindow.setBounds({ x, y, width: 316, height: 38 }, false);
   }
 
   if (config.widgetMode !== 'notch' && isStartupHidden()) {
