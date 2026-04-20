@@ -315,6 +315,7 @@ function createFloatingWindow() {
     if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
     isGhost = false;
     try { mainWindow.setOpacity(config.opacity || 1.0); } catch (_) {}
+    try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
   });
 
   function fadeOpacity(from, to, durationMs) {
