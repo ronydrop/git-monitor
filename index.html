@@ -915,6 +915,15 @@
       actions.appendChild(termBtn);
 
       if (hasChanges) {
+        const diffBtn = document.createElement('button');
+        diffBtn.className = 'btn-repo-action';
+        diffBtn.title = 'Ver diff';
+        diffBtn.appendChild(icon('eye', { size: 12 }));
+        diffBtn.onclick = () => ipcRenderer.invoke('open-diff-window', r.path, r.name);
+        actions.appendChild(diffBtn);
+      }
+
+      if (hasChanges) {
         const commitBtn = document.createElement('button');
         commitBtn.className = 'btn-commit status-' + r.status;
         commitBtn.title = 'Commit + Push com IA';

@@ -853,7 +853,12 @@ function openConfigWindow() {
     }
   });
   configWindow.loadFile('config.html');
-  configWindow.on('closed', () => { configWindow = null; });
+  configWindow.on('closed', () => {
+    configWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+    }
+  });
 }
 
 ipcMain.handle('open-config-window', () => openConfigWindow());
@@ -877,6 +882,9 @@ ipcMain.handle('close-config-window', () => {
     configWindow.once('closed', () => {
       if (pending !== null) switchWidgetMode(pending);
       notifyConfigSaved();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+      }
     });
     configWindow.close();
   } else {
@@ -1288,6 +1296,49 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
 
 ipcMain.handle('open-folder', (_, folderPath) => {
   shell.openPath(folderPath);
+});
+
+const diffWindows = new Map();
+
+ipcMain.handle('open-diff-window', (_, repoPath, repoName) => {
+  if (diffWindows.has(repoPath)) {
+    const existing = diffWindows.get(repoPath);
+    if (!existing.isDestroyed()) { existing.focus(); return; }
+  }
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+  const w = new BrowserWindow({
+    width: 800,
+    height: 620,
+    x: Math.round((sw - 800) / 2),
+    y: Math.round((sh - 620) / 2),
+    frame: false,
+    backgroundColor: '#000000',
+    alwaysOnTop: true,
+    resizable: true,
+    minimizable: false,
+    maximizable: false,
+    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    icon: getIconPath(),
+    webPreferences: { nodeIntegration: true, contextIsolation: false }
+  });
+  w.loadFile('diff.html', { query: { path: repoPath, name: repoName || repoPath } });
+  diffWindows.set(repoPath, w);
+  w.on('closed', () => {
+    diffWindows.delete(repoPath);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+    }
+  });
+});
+
+ipcMain.handle('get-diff', async (_, repoPath) => {
+  try {
+    const staged   = await gitExec('git diff --cached', { cwd: repoPath, timeout: 8000 });
+    const unstaged = await gitExec('git diff', { cwd: repoPath, timeout: 8000 });
+    return { ok: true, diff: (staged + unstaged).trim() };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 });
 
 // Deploy watchers ativos por repoPath

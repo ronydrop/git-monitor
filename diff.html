@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Git Diff</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #000000;
+    --bg-card: #0a0a0a;
+    --border: #2a2a2a;
+    --text: #e6edf3;
+    --text-dim: #7d8590;
+    --green: #3fb950;
+    --green-bg: rgba(63, 185, 80, 0.08);
+    --red: #f85149;
+    --red-bg: rgba(248, 81, 73, 0.08);
+    --blue: #58a6ff;
+    --purple: #a371f7;
+  }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    -webkit-app-region: drag;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  .titlebar-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .titlebar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    -webkit-app-region: no-drag;
+  }
+
+  .titlebar-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .titlebar-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+
+  .titlebar-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .titlebar-close:hover { background: rgba(248,81,73,0.15); color: var(--red); }
+
+  #diff-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding: 8px 0;
+  }
+
+  #diff-container::-webkit-scrollbar { width: 6px; height: 6px; }
+  #diff-container::-webkit-scrollbar-track { background: transparent; }
+  #diff-container::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
+  #diff-container::-webkit-scrollbar-thumb:hover { background: #3d444d; }
+
+  .diff-line {
+    display: block;
+    padding: 1px 16px;
+    white-space: pre;
+    line-height: 1.55;
+    font-size: 11.5px;
+  }
+
+  .diff-line.add    { background: var(--green-bg); color: var(--green); }
+  .diff-line.remove { background: var(--red-bg); color: var(--red); }
+  .diff-line.hunk   { color: var(--purple); }
+  .diff-line.file   { color: var(--blue); font-weight: 600; padding-top: 10px; }
+  .diff-line.meta   { color: var(--text-dim); }
+
+  .state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 6px;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  .state small { font-size: 10px; opacity: 0.6; }
+</style>
+</head>
+<body>
+<div class="titlebar">
+  <div class="titlebar-title">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+    <span id="title-name">Git Diff</span>
+  </div>
+  <div class="titlebar-actions">
+    <button class="titlebar-btn" id="btn-refresh" title="Atualizar">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+      Atualizar
+    </button>
+    <button class="titlebar-close" id="btn-close" title="Fechar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </button>
+  </div>
+</div>
+<div id="diff-container"></div>
+
+<script>
+  const { ipcRenderer } = require('electron');
+
+  const params   = new URLSearchParams(window.location.search);
+  const repoPath = params.get('path') || '';
+  const repoName = params.get('name') || repoPath;
+
+  document.getElementById('title-name').textContent = 'Diff — ' + repoName;
+  document.getElementById('btn-close').onclick   = () => window.close();
+  document.getElementById('btn-refresh').onclick = () => load();
+
+  function showState(msg, detail) {
+    const container = document.getElementById('diff-container');
+    container.textContent = '';
+    const div = document.createElement('div');
+    div.className = 'state';
+    const span = document.createElement('span');
+    span.textContent = msg;
+    div.appendChild(span);
+    if (detail) {
+      const small = document.createElement('small');
+      small.textContent = detail;
+      div.appendChild(small);
+    }
+    container.appendChild(div);
+  }
+
+  function lineClass(line) {
+    if (line.startsWith('diff --git') || line.startsWith('+++ ') || line.startsWith('--- ')) return 'file';
+    if (line.startsWith('@@')) return 'hunk';
+    if (line.startsWith('+')) return 'add';
+    if (line.startsWith('-')) return 'remove';
+    if (/^(index |new file|deleted file|old mode|new mode|Binary)/.test(line)) return 'meta';
+    return '';
+  }
+
+  async function load() {
+    showState('Carregando…');
+    try {
+      const res = await ipcRenderer.invoke('get-diff', repoPath);
+      if (!res.ok) { showState('Erro ao obter diff', res.error || ''); return; }
+      if (!res.diff) { showState('Nenhuma alteração pendente'); return; }
+      const container = document.getElementById('diff-container');
+      container.textContent = '';
+      const frag = document.createDocumentFragment();
+      for (const line of res.diff.split('\n')) {
+        const span = document.createElement('span');
+        span.className = 'diff-line ' + lineClass(line);
+        span.textContent = line;
+        frag.appendChild(span);
+      }
+      container.appendChild(frag);
+    } catch (e) {
+      showState('Erro', e.message);
+    }
+  }
+
+  load();
+</script>
+</body>
+</html>

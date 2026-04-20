@@ -146,7 +146,7 @@
     flex-shrink: 0;
   }
   .dot.clean     { color: var(--green);  background: var(--green);  box-shadow: none; }
-  .dot.dirty     { color: var(--yellow); background: var(--yellow); }
+  .dot.dirty     { color: var(--orange); background: var(--orange); }
   .dot.dirty-ahead { color: var(--orange); background: var(--orange); }
   .dot.ahead     { color: var(--orange); background: var(--orange); }
   .dot.behind    { color: var(--blue);   background: var(--blue); }
@@ -338,6 +338,20 @@
     color: var(--red);
     border-color: rgba(248,81,73,0.4);
   }
+  .btn.deploying {
+    color: var(--yellow);
+    border-color: rgba(210,153,34,0.4);
+    pointer-events: none;
+  }
+  .btn.deploying .icon-spin { animation: spin 1s linear infinite; }
+  .btn.deployed {
+    color: var(--green);
+    border-color: rgba(63,185,80,0.4);
+  }
+  .btn.deploy-fail {
+    color: var(--red);
+    border-color: rgba(248,81,73,0.4);
+  }
 
   #empty {
     text-align: center;
@@ -401,6 +415,7 @@
     'arrow-down':   '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
     'folder':       '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
     'app-window':   '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>',
+    'eye':          '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
   };
 
   const _svgParser = new DOMParser();
@@ -460,6 +475,10 @@
   const deployPhases = {};
   let recentDeploySuccess = false;
   let deploySuccessTimer = null;
+  const deployingRows = {};
+  let pushAllPending = 0;
+  let pushAllTotal = 0;
+  let pushAllFailures = 0;
 
   // Spring animator — fisica simples com stiffness/damping, interrompível
   function createSpring(initialConfig) {
@@ -602,6 +621,8 @@
 
     const actions = makeEl('div', { className: 'actions' });
 
+    const hasChanges  = r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead';
+
     const folderBtn = makeEl('button', {
       className: 'btn icon',
       title: 'Abrir pasta',
@@ -626,13 +647,24 @@
       actions.appendChild(gitBtn);
     }
 
-    const hasChanges = r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead';
-    const needsPull  = r.status === 'behind';
-    if (hasChanges || needsPull) {
-      const isPull = needsPull;
+    if (hasChanges) {
+      const diffBtn = makeEl('button', {
+        className: 'btn icon',
+        title: 'Ver diff',
+        dataset: { act: 'diff', path: r.path || '', name: r.name || '' }
+      });
+      diffBtn.appendChild(icon('eye', { size: 12 }));
+      diffBtn.addEventListener('click', onRowAction);
+      actions.appendChild(diffBtn);
+    }
+
+    const needsPull   = r.status === 'behind';
+    const isDeploying = !!(deployingRows && deployingRows[r.path]);
+    if (hasChanges || needsPull || isDeploying) {
+      const isPull = needsPull && !isDeploying;
       const actBtn = makeEl('button', {
-        className: 'btn icon ' + (isPull ? 'pull' : 'push') + (isRunning ? ' running' : ''),
-        title: isPull ? 'Pull' : 'Commit + push',
+        className: 'btn icon ' + (isPull ? 'pull' : 'push') + (isRunning ? ' running' : isDeploying ? ' deploying' : ''),
+        title: isPull ? 'Pull' : (isDeploying ? 'Aguardando deploy…' : 'Commit + push'),
         dataset: {
           act: isPull ? 'pull' : 'push',
           path: r.path || '',
@@ -641,10 +673,14 @@
       });
       if (isRunning) {
         actBtn.appendChild(icon('refresh-cw', { size: 12, spin: true }));
+      } else if (isDeploying) {
+        const ic = icon('refresh-cw', { size: 12 });
+        ic.classList.add('icon-spin');
+        actBtn.appendChild(ic);
       } else {
         actBtn.appendChild(icon(isPull ? 'arrow-down' : 'arrow-up', { size: 12 }));
       }
-      actBtn.addEventListener('click', onRowAction);
+      if (!isDeploying) actBtn.addEventListener('click', onRowAction);
       actions.appendChild(actBtn);
     }
 
@@ -850,27 +886,46 @@
     pushable.forEach(r => { runningActions.add(r.path); });
     renderList();
 
+    pushAllPending = 0;
+    pushAllTotal = 0;
+    pushAllFailures = 0;
+
     await Promise.all(pushable.map((r, i) =>
       new Promise(resolve => setTimeout(async () => {
+        let ok = false, errMsg = '';
         try {
           const res = await ipcRenderer.invoke('commit-and-push', r.path);
-          markRowResult(r.path, res && res.ok ? 'done' : 'fail', (res && res.error) || '');
+          ok = !!(res && res.ok);
+          errMsg = (res && res.error) || '';
         } catch (e) {
-          markRowResult(r.path, 'fail', e.message || String(e));
+          errMsg = e.message || String(e);
         }
         runningActions.delete(r.path);
+        if (ok) {
+          markRowDeploying(r.path);
+          deployingRows[r.path] = { repoName: r.name || r.path, fromPushAll: true };
+          ipcRenderer.send('watch-deploy-start', { repoPath: r.path, repoName: r.name || r.path });
+          pushAllPending++;
+          pushAllTotal++;
+        } else {
+          markRowResult(r.path, 'fail', errMsg);
+        }
         done++;
         setIconLabel(btnPushAll, 'refresh-cw', `${done}/${pushable.length}`, { size: 14, spin: true });
         resolve();
       }, i * 120))
     ));
 
-    setIconLabel(btnPushAll, 'check', 'Feito!', { size: 14 });
-    setTimeout(() => {
-      setIconLabel(btnPushAll, 'arrow-up', 'Push All', { size: 14 });
-      btnPushAll.disabled = false;
-      startPolling();
-    }, 3000);
+    if (pushAllTotal === 0) {
+      setIconLabel(btnPushAll, 'x', 'Push falhou', { size: 14 });
+      setTimeout(() => {
+        setIconLabel(btnPushAll, 'arrow-up', 'Push All', { size: 14 });
+        btnPushAll.disabled = false;
+        startPolling();
+      }, 3000);
+    } else {
+      setIconLabel(btnPushAll, 'refresh-cw', `Deploy 0/${pushAllTotal}`, { size: 14, spin: true });
+    }
   });
 
   btnMin.addEventListener('click', (ev) => {
@@ -901,6 +956,10 @@
       ipcRenderer.invoke('open-folder', p);
       return;
     }
+    if (act === 'diff') {
+      ipcRenderer.invoke('open-diff-window', p, btn.dataset.name || '');
+      return;
+    }
     if (act === 'push' || act === 'pull') {
       runningActions.add(p);
       renderList();
@@ -915,12 +974,17 @@
         errMsg = e.message || String(e);
       }
       runningActions.delete(p);
-      markRowResult(p, ok ? 'done' : 'fail', errMsg);
       const rname = btn.dataset.name || p;
-      if (!ok && errMsg) ipcRenderer.send('show-toast', { text: rname + ': ' + errMsg.substring(0, 160), type: 'err', duration: 6000 });
-      else if (ok) {
-        ipcRenderer.send('show-toast', { text: rname + ': ' + (act === 'pull' ? 'Pull concluído!' : 'Push concluído!'), type: 'ok', duration: 3000 });
-        if (act === 'push') ipcRenderer.send('watch-deploy-start', { repoPath: p, repoName: rname });
+      if (!ok) {
+        markRowResult(p, 'fail', errMsg);
+        if (errMsg) rowToast('err', rname + ': ' + errMsg.substring(0, 160), 6000);
+      } else if (act === 'pull') {
+        markRowResult(p, 'done', '');
+        rowToast('ok', rname + ': Pull concluído!');
+      } else {
+        markRowDeploying(p);
+        deployingRows[p] = { repoName: rname, fromPushAll: false };
+        ipcRenderer.send('watch-deploy-start', { repoPath: p, repoName: rname });
       }
       setTimeout(() => refresh(), 900);
     }
@@ -936,6 +1000,36 @@
       btn.replaceChildren(icon(kind === 'done' ? 'check' : 'x', { size: 12 }));
       if (detail) btn.title = detail;
     });
+  }
+
+  function markRowDeploying(repoPath) {
+    listEl.querySelectorAll('button.btn[data-act="push"]').forEach(btn => {
+      if (btn.dataset.path !== repoPath) return;
+      btn.className = 'btn icon deploying';
+      const ic = icon('refresh-cw', { size: 12 });
+      ic.classList.add('icon-spin');
+      btn.replaceChildren(ic);
+    });
+  }
+
+  function updateRowPhase(repoPath, cls, iconName) {
+    listEl.querySelectorAll('button.btn[data-act="push"]').forEach(btn => {
+      if (btn.dataset.path !== repoPath) return;
+      btn.className = cls ? `btn icon ${cls}` : 'btn icon';
+      btn.replaceChildren(icon(iconName, { size: 12 }));
+    });
+  }
+
+  function restoreRowBtn(repoPath) {
+    listEl.querySelectorAll('button.btn[data-act="push"]').forEach(btn => {
+      if (btn.dataset.path !== repoPath) return;
+      btn.className = 'btn icon push';
+      btn.replaceChildren(icon('arrow-up', { size: 12 }));
+    });
+  }
+
+  function rowToast(type, text, duration) {
+    ipcRenderer.send('show-toast', { text: String(text).substring(0, 200), type, duration: duration || (type === 'err' ? 6000 : 3000) });
   }
 
   async function refresh() {
@@ -972,7 +1066,7 @@
   });
 
   ipcRenderer.on('deploy-update', (_, data) => {
-    const { repoPath, phase, done } = data;
+    const { repoPath, phase, done, detail } = data;
     if (done || phase === 'none') {
       if (phase === 'success') {
         recentDeploySuccess = true;
@@ -988,6 +1082,54 @@
       deployPhases[repoPath] = phase;
     }
     applyGlowClass();
+
+    const entry = deployingRows[repoPath];
+    if (!entry) return;
+    const rname = entry.repoName;
+    const terminal = done || phase === 'none';
+
+    if (phase === 'waiting' || phase === 'running') {
+      markRowDeploying(repoPath);
+    } else if (phase === 'success') {
+      updateRowPhase(repoPath, 'deployed', 'check');
+      rowToast('ok', rname + ': Deploy concluído!');
+      setTimeout(() => restoreRowBtn(repoPath), 4000);
+    } else if (phase === 'failure' || phase === 'timeout') {
+      updateRowPhase(repoPath, 'deploy-fail', 'x');
+      rowToast('err', rname + ': ' + (phase === 'timeout' ? 'Timeout aguardando deploy' : 'Deploy falhou' + (detail ? ' — ' + detail : '')), 6000);
+      setTimeout(() => restoreRowBtn(repoPath), 6000);
+    } else if (phase === 'error') {
+      updateRowPhase(repoPath, '', 'alert');
+      rowToast('err', rname + ': ' + (detail || 'Erro no deploy'), 6000);
+      setTimeout(() => restoreRowBtn(repoPath), 5000);
+    } else if (phase === 'no-token' || phase === 'no-github' || phase === 'none') {
+      updateRowPhase(repoPath, '', 'alert');
+      setTimeout(() => restoreRowBtn(repoPath), 4000);
+    }
+
+    if (terminal) {
+      const wasPushAll = entry.fromPushAll;
+      delete deployingRows[repoPath];
+      if (wasPushAll) {
+        if (phase !== 'success') pushAllFailures++;
+        pushAllPending--;
+        const deployedCount = pushAllTotal - pushAllPending;
+        if (pushAllPending > 0) {
+          setIconLabel(btnPushAll, 'refresh-cw', `Deploy ${deployedCount}/${pushAllTotal}`, { size: 14, spin: true });
+        } else {
+          if (pushAllFailures === 0) {
+            setIconLabel(btnPushAll, 'check', 'Feito!', { size: 14 });
+          } else {
+            setIconLabel(btnPushAll, 'x', 'Deploy falhou', { size: 14 });
+          }
+          setTimeout(() => {
+            setIconLabel(btnPushAll, 'arrow-up', 'Push All', { size: 14 });
+            btnPushAll.disabled = false;
+            startPolling();
+          }, pushAllFailures === 0 ? 3000 : 4000);
+        }
+      }
+    }
   });
 
   async function paintFromCache() {
