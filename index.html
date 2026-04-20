@@ -67,6 +67,7 @@
     flex-shrink: 0;
   }
   .update-banner.show { display: flex; }
+  .update-banner.error { background: var(--red-bg); border-color: var(--red); color: var(--red); }
   .update-banner button {
     padding: 2px 8px;
     border: 1px solid var(--blue);
@@ -1231,9 +1232,9 @@
       setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); } }, 6000);
 
     } else if (phase === 'no-token' || phase === 'no-github' || phase === 'none') {
-      if (btn) { btn.className = 'btn-commit deployed'; setIcon(btn, 'check'); }
+      if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'alert'); }
       delete activeDeployBtns[repoPath];
-      setTimeout(() => checkRepos(), 3000);
+      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); } checkRepos(); }, 4000);
 
     } else if (phase === 'error') {
       if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'alert'); }
@@ -1242,10 +1243,10 @@
       setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); } }, 5000);
 
     } else if (phase === 'timeout') {
-      if (btn) { btn.className = 'btn-commit deployed'; setIcon(btn, 'check'); }
+      if (btn) { btn.className = 'btn-commit deploy-fail'; setIcon(btn, 'x'); }
       showCommitToast('err', (repoName || '') + ': Timeout aguardando deploy');
       delete activeDeployBtns[repoPath];
-      setTimeout(() => checkRepos(), 3000);
+      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); } checkRepos(); }, 6000);
     }
   });
 
@@ -1384,23 +1385,30 @@
     const btn    = document.getElementById('updateBtn');
 
     if (status.type === 'available') {
+      banner.classList.remove('error');
       msg.textContent = `v${status.version} disponível — iniciando download...`;
       btn.style.display = 'none';
       banner.classList.add('show');
 
     } else if (status.type === 'downloading') {
+      banner.classList.remove('error');
       msg.textContent = `Baixando v${status.version || ''}... ${status.percent}%`;
       btn.style.display = 'none';
       banner.classList.add('show');
 
     } else if (status.type === 'ready') {
+      banner.classList.remove('error');
       msg.textContent = 'v' + (status.version || '') + ' pronta — reinicie para aplicar';
       btn.style.display = '';
       setIconLabel(btn, 'refresh-cw', 'Reiniciar agora');
       banner.classList.add('show');
 
     } else if (status.type === 'error') {
-      banner.classList.remove('show');
+      banner.classList.add('error');
+      msg.textContent = 'Erro na atualização: ' + (status.msg || 'falha desconhecida');
+      btn.style.display = 'none';
+      banner.classList.add('show');
+      setTimeout(() => { banner.classList.remove('show', 'error'); }, 6000);
     }
   });
 
