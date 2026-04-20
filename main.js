@@ -442,6 +442,7 @@ function createNotchWindow() {
       clearInterval(passthroughPoll);
       return;
     }
+    if (_notchDragging) return;
     try {
       const c = screen.getCursorScreenPoint();
       const b = mainWindow.getBounds();
@@ -456,7 +457,7 @@ function createNotchWindow() {
       const detectBot = r.hotzone != null ? b.y + r.hotzone : pillTop + r.h;
       const inside = c.x >= pillLeft && c.x < pillRight
                   && c.y >= detectTop && c.y < detectBot;
-      if (!_notchDragging) mainWindow.setIgnoreMouseEvents(!inside, { forward: true });
+      mainWindow.setIgnoreMouseEvents(!inside, { forward: true });
     } catch (_) {}
   }, 100);
 
@@ -1706,11 +1707,13 @@ let _notchSaveTimer = null;
 let _notchDragging = false;
 let _notchDragPoll = null;
 let _notchDragTimeout = null;
+let _notchDragDisplayListener = null;
 
 function endNotchDrag() {
   _notchDragging = false;
   if (_notchDragPoll) { clearInterval(_notchDragPoll); _notchDragPoll = null; }
   if (_notchDragTimeout) { clearTimeout(_notchDragTimeout); _notchDragTimeout = null; }
+  if (_notchDragDisplayListener) { screen.off('display-metrics-changed', _notchDragDisplayListener); _notchDragDisplayListener = null; }
 }
 
 ipcMain.on('notch-drag-start', () => {
@@ -1720,6 +1723,11 @@ ipcMain.on('notch-drag-start', () => {
 
   const startCursor = screen.getCursorScreenPoint();
   const baseOffset  = config.notchOffsetX ?? 40;
+  // Cache do display: não chama getPrimaryDisplay() a cada tick (caro)
+  let d = screen.getPrimaryDisplay();
+  if (_notchDragDisplayListener) screen.off('display-metrics-changed', _notchDragDisplayListener);
+  _notchDragDisplayListener = () => { d = screen.getPrimaryDisplay(); };
+  screen.on('display-metrics-changed', _notchDragDisplayListener);
 
   if (_notchDragPoll) clearInterval(_notchDragPoll);
   if (_notchDragTimeout) clearTimeout(_notchDragTimeout);
@@ -1732,9 +1740,8 @@ ipcMain.on('notch-drag-start', () => {
 
   _notchDragPoll = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed() || !_notchDragging) {
-      clearInterval(_notchDragPoll); _notchDragPoll = null; return;
+      endNotchDrag(); return;
     }
-    const d  = screen.getPrimaryDisplay();
     const cx = screen.getCursorScreenPoint().x;
     const delta = cx - startCursor.x;
     const newOffset = Math.max(0, Math.min(Math.max(0, d.bounds.width - 440), baseOffset - delta));
