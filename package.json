@@ -31,6 +31,7 @@
       "notch.html",
       "toast.html",
       "zone-select.html",
+      "themes.js",
       "package.json",
       "node_modules/**/*"
     ],

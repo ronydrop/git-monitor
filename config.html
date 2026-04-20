@@ -1742,7 +1742,10 @@
     renderThemeSelector(cfg.theme || 'obsidian');
   });
 
-  init();
+  init().catch(err => {
+    console.error('[config] init failed:', err);
+    document.title = 'Config init failed: ' + (err && err.message || err);
+  });
 
   document.addEventListener('keydown', (e) => {
     const active = document.activeElement;

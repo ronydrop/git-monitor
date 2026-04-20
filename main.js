@@ -288,6 +288,9 @@ function createFloatingWindow() {
     }
   });
 
+  try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+  try { mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (_) {}
+
   mainWindow.loadFile('index.html');
 
   if (config.locked) mainWindow.setMovable(false);
