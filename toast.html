@@ -28,8 +28,9 @@
     transition: opacity 200ms ease, transform 200ms ease;
     word-break: break-word;
   }
-  #toast.err { background: rgba(248,81,73,0.18); border: 1px solid rgba(248,81,73,0.55); color: var(--red); }
-  #toast.ok  { background: rgba(63,185,80,0.15); border: 1px solid rgba(63,185,80,0.50); color: var(--green); }
+  #toast.err  { background: rgba(248,81,73,0.18); border: 1px solid rgba(248,81,73,0.55); color: var(--red); }
+  #toast.ok   { background: rgba(63,185,80,0.15); border: 1px solid rgba(63,185,80,0.50); color: var(--green); }
+  #toast.info { background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.45); color: #58a6ff; font-weight: 600; font-size: 12px; }
   #toast.show { opacity: 1; transform: translateY(0); }
   svg { flex-shrink: 0; }
 </style>
@@ -44,8 +45,9 @@
   const el = document.getElementById('toast');
 
   const ICONS = {
-    err: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
-    ok:  '<path d="M20 6 9 17l-5-5"/>'
+    err:  '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    ok:   '<path d="M20 6 9 17l-5-5"/>',
+    info: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>'
   };
 
   function mkSvg(type) {
