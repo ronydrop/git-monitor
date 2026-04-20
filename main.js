@@ -397,7 +397,7 @@ function createFloatingWindow() {
 
 // Último rect reportado pelo renderer via IPC notch-rect.
 // Fallback = baseline 310x38 top-right da janela.
-let notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, right: 12 };
+let notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, right: 28 };
 
 function createNotchWindow() {
   const display = screen.getPrimaryDisplay();
@@ -405,7 +405,8 @@ function createNotchWindow() {
   // Folga pra overshoot do spring bouncy + expansão máxima (~360).
   const height = 420;
   const offsetX = config.notchOffsetX ?? 40;
-  const x = display.bounds.x + display.bounds.width - width - offsetX;
+  const SHADOW_R = 28; // espaço p/ sombra direita do pill
+  const x = display.bounds.x + display.bounds.width - width - offsetX + SHADOW_R;
   const y = display.bounds.y;
 
   mainWindow = new BrowserWindow({
@@ -437,7 +438,7 @@ function createNotchWindow() {
   mainWindow.loadFile('notch.html');
 
   // Reset do rect pra baseline — o renderer vai notificar via notch-rect.
-  notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, right: 12 };
+  notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, right: 28 };
 
   // Passthrough com bbox dinâmico do pill real (não da window inteira).
   // O renderer envia `notch-rect` sempre que o state muda.
@@ -469,7 +470,7 @@ function createNotchWindow() {
   const repositionNotch = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const d = screen.getPrimaryDisplay();
-    const nx = d.bounds.x + d.bounds.width - width - (config.notchOffsetX ?? 40);
+    const nx = d.bounds.x + d.bounds.width - width - (config.notchOffsetX ?? 40) + 28;
     const ny = d.bounds.y;
     try { mainWindow.setBounds({ x: nx, y: ny, width, height }); } catch (_) {}
   };
