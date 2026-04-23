@@ -9,17 +9,25 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   :root {
-    --bg: #000000;
-    --bg-card: #0a0a0a;
-    --border: #2a2a2a;
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --bg-file: #1c2128;
+    --border: #30363d;
     --text: #e6edf3;
     --text-dim: #7d8590;
+    --text-ln: #484f58;
     --green: #3fb950;
-    --green-bg: rgba(63, 185, 80, 0.08);
+    --green-bg: rgba(46, 160, 67, 0.15);
+    --green-ln: rgba(46, 160, 67, 0.22);
+    --green-gutter: rgba(46, 160, 67, 0.35);
     --red: #f85149;
-    --red-bg: rgba(248, 81, 73, 0.08);
+    --red-bg: rgba(248, 81, 73, 0.12);
+    --red-ln: rgba(248, 81, 73, 0.18);
+    --red-gutter: rgba(248, 81, 73, 0.3);
+    --hunk-bg: rgba(88, 166, 255, 0.05);
     --blue: #58a6ff;
     --purple: #a371f7;
+    --yellow: #d29922;
   }
 
   body {
@@ -33,6 +41,7 @@
     overflow: hidden;
   }
 
+  /* ── Titlebar ─────────────────────────────── */
   .titlebar {
     display: flex;
     align-items: center;
@@ -91,11 +100,63 @@
 
   .titlebar-close:hover { background: rgba(248,81,73,0.15); color: var(--red); }
 
+  /* ── Summary bar ──────────────────────────── */
+  #summary-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 16px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    user-select: none;
+    font-size: 10px;
+    color: var(--text-dim);
+    gap: 12px;
+  }
+
+  #summary-bar.hidden { display: none; }
+
+  .summary-left  { display: flex; align-items: center; gap: 10px; }
+  .summary-right { display: flex; align-items: center; gap: 4px; -webkit-app-region: no-drag; }
+
+  .summary-stat { display: flex; align-items: center; gap: 4px; }
+  .summary-stat .s-add { color: var(--green); font-weight: 600; }
+  .summary-stat .s-del { color: var(--red);   font-weight: 600; }
+
+  .summary-sep { color: var(--border); }
+
+  /* mini sparkbar */
+  .sparkbar {
+    display: flex;
+    height: 6px;
+    width: 60px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--border);
+  }
+  .sparkbar-add { background: var(--green); }
+  .sparkbar-del { background: var(--red); }
+
+  .toggle-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 10px;
+  }
+
+  .toggle-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+
+  /* ── Scroll container ─────────────────────── */
   #diff-container {
     flex: 1;
     overflow-y: auto;
     overflow-x: auto;
-    padding: 8px 0;
+    padding: 12px 0 24px;
   }
 
   #diff-container::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -103,20 +164,149 @@
   #diff-container::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
   #diff-container::-webkit-scrollbar-thumb:hover { background: #3d444d; }
 
-  .diff-line {
-    display: block;
-    padding: 1px 16px;
-    white-space: pre;
-    line-height: 1.55;
-    font-size: 11.5px;
+  /* ── File block ───────────────────────────── */
+  .file-block {
+    margin: 0 12px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    transition: border-color 100ms;
   }
 
-  .diff-line.add    { background: var(--green-bg); color: var(--green); }
-  .diff-line.remove { background: var(--red-bg); color: var(--red); }
-  .diff-line.hunk   { color: var(--purple); }
-  .diff-line.file   { color: var(--blue); font-weight: 600; padding-top: 10px; }
-  .diff-line.meta   { color: var(--text-dim); }
+  .file-block.collapsed { border-color: #252c35; }
 
+  .file-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    background: var(--bg-file);
+    cursor: pointer;
+    user-select: none;
+    transition: background 100ms;
+  }
+
+  .file-header:hover { background: #222830; }
+
+  .file-block.collapsed .file-header { background: #161b22; }
+
+  /* chevron */
+  .chevron {
+    flex-shrink: 0;
+    color: var(--text-dim);
+    transition: transform 150ms ease;
+  }
+
+  .file-block.collapsed .chevron { transform: rotate(-90deg); }
+
+  .file-header .file-icon { flex-shrink: 0; color: var(--text-dim); }
+
+  .file-name {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-block.collapsed .file-name { color: var(--text-dim); }
+
+  .file-stats { display: flex; gap: 5px; font-size: 10px; align-items: center; }
+  .stat-add   { color: var(--green); }
+  .stat-del   { color: var(--red); }
+
+  .file-badge {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .file-badge.new-file { background: rgba(46,160,67,0.2);  color: var(--green); }
+  .file-badge.deleted  { background: rgba(248,81,73,0.2);  color: var(--red); }
+  .file-badge.binary   { background: rgba(210,153,34,0.2); color: var(--yellow); }
+
+  /* ── Accordion body ───────────────────────── */
+  .file-body {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 160ms ease;
+  }
+
+  .file-body.collapsed {
+    grid-template-rows: 0fr;
+  }
+
+  .file-body-inner { overflow: hidden; }
+
+  /* ── Diff table ───────────────────────────── */
+  .diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+    line-height: 1.55;
+  }
+
+  .diff-table td { padding: 0; white-space: pre; vertical-align: top; }
+
+  .ln {
+    width: 44px;
+    min-width: 44px;
+    padding: 0 8px;
+    text-align: right;
+    color: var(--text-ln);
+    user-select: none;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    font-size: 11px;
+  }
+
+  .gutter {
+    width: 20px;
+    min-width: 20px;
+    text-align: center;
+    user-select: none;
+    padding: 0 2px;
+    font-weight: 700;
+    font-size: 12px;
+  }
+
+  .code { padding: 0 12px; width: 100%; tab-size: 2; }
+
+  tr.line-add .ln     { background: var(--green-ln);     color: var(--green); border-right-color: var(--green-gutter); }
+  tr.line-add .gutter { background: var(--green-gutter); color: var(--green); }
+  tr.line-add .code   { background: var(--green-bg);     color: var(--text); }
+
+  tr.line-remove .ln     { background: var(--red-ln);     color: var(--red); border-right-color: var(--red-gutter); }
+  tr.line-remove .gutter { background: var(--red-gutter); color: var(--red); }
+  tr.line-remove .code   { background: var(--red-bg);     color: var(--text); }
+
+  tr.line-context .gutter { color: transparent; }
+  tr.line-context .code   { color: var(--text); }
+
+  tr.line-hunk td {
+    background: var(--hunk-bg);
+    padding: 2px 12px;
+    font-size: 11px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .hunk-at  { color: var(--purple); }
+  .hunk-ctx { color: var(--text-dim); margin-left: 8px; font-style: italic; }
+
+  .no-hunks {
+    padding: 12px 16px;
+    color: var(--text-dim);
+    font-size: 11px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── State ────────────────────────────────── */
   .state {
     display: flex;
     flex-direction: column;
@@ -132,6 +322,7 @@
 </style>
 </head>
 <body>
+
 <div class="titlebar">
   <div class="titlebar-title">
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
@@ -147,6 +338,26 @@
     </button>
   </div>
 </div>
+
+<div id="summary-bar" class="hidden">
+  <div class="summary-left">
+    <span id="summary-files"></span>
+    <span class="summary-sep">·</span>
+    <span class="summary-stat">
+      <span class="s-add" id="summary-adds"></span>
+      <span class="s-del" id="summary-dels"></span>
+    </span>
+    <div class="sparkbar">
+      <div class="sparkbar-add" id="spark-add"></div>
+      <div class="sparkbar-del" id="spark-del"></div>
+    </div>
+  </div>
+  <div class="summary-right">
+    <button class="toggle-btn" id="btn-expand-all">Expandir todos</button>
+    <button class="toggle-btn" id="btn-collapse-all">Recolher todos</button>
+  </div>
+</div>
+
 <div id="diff-container"></div>
 
 <script>
@@ -160,7 +371,21 @@
   document.getElementById('btn-close').onclick   = () => window.close();
   document.getElementById('btn-refresh').onclick = () => load();
 
+  document.getElementById('btn-expand-all').onclick = () => {
+    document.querySelectorAll('.file-block').forEach(b => setCollapsed(b, false));
+  };
+  document.getElementById('btn-collapse-all').onclick = () => {
+    document.querySelectorAll('.file-block').forEach(b => setCollapsed(b, true));
+  };
+
+  function setCollapsed(block, collapse) {
+    const body = block.querySelector('.file-body');
+    block.classList.toggle('collapsed', collapse);
+    body.classList.toggle('collapsed', collapse);
+  }
+
   function showState(msg, detail) {
+    document.getElementById('summary-bar').classList.add('hidden');
     const container = document.getElementById('diff-container');
     container.textContent = '';
     const div = document.createElement('div');
@@ -176,13 +401,207 @@
     container.appendChild(div);
   }
 
-  function lineClass(line) {
-    if (line.startsWith('diff --git') || line.startsWith('+++ ') || line.startsWith('--- ')) return 'file';
-    if (line.startsWith('@@')) return 'hunk';
-    if (line.startsWith('+')) return 'add';
-    if (line.startsWith('-')) return 'remove';
-    if (/^(index |new file|deleted file|old mode|new mode|Binary)/.test(line)) return 'meta';
-    return '';
+  function parseDiff(raw) {
+    const files = [];
+    let file = null, hunk = null;
+    let oldN = 1, newN = 1;
+
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('diff --git ')) {
+        const m = line.match(/diff --git a\/(.*) b\/(.*)/);
+        file = { name: m ? m[2] : line, flags: new Set(), hunks: [], adds: 0, dels: 0 };
+        files.push(file);
+        hunk = null;
+        continue;
+      }
+      if (!file) continue;
+      if (/^new file/.test(line))     { file.flags.add('new-file'); continue; }
+      if (/^deleted file/.test(line)) { file.flags.add('deleted');  continue; }
+      if (/^Binary/.test(line))       { file.flags.add('binary');   continue; }
+      if (/^(index |old mode|new mode|--- |\+\+\+ )/.test(line)) continue;
+
+      if (line.startsWith('@@')) {
+        const m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/);
+        oldN = m ? parseInt(m[1]) : 1;
+        newN = m ? parseInt(m[2]) : 1;
+        hunk = { header: line, context: m ? m[3].trim() : '', lines: [] };
+        file.hunks.push(hunk);
+        continue;
+      }
+      if (!hunk) continue;
+
+      if (line.startsWith('+')) {
+        hunk.lines.push({ type: 'add',    oldNum: null, newNum: newN++, content: line.slice(1) });
+        file.adds++;
+      } else if (line.startsWith('-')) {
+        hunk.lines.push({ type: 'remove', oldNum: oldN++, newNum: null, content: line.slice(1) });
+        file.dels++;
+      } else {
+        hunk.lines.push({ type: 'context', oldNum: oldN++, newNum: newN++, content: line.startsWith(' ') ? line.slice(1) : line });
+      }
+    }
+    return files;
+  }
+
+  function makeSvgNS(tag, attrs) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const el = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  }
+
+  function makeChevron() {
+    const svg = makeSvgNS('svg', { width:'12', height:'12', viewBox:'0 0 24 24', fill:'none', stroke:'currentColor', 'stroke-width':'2.5', 'stroke-linecap':'round', 'stroke-linejoin':'round' });
+    svg.classList.add('chevron');
+    svg.appendChild(makeSvgNS('polyline', { points:'6 9 12 15 18 9' }));
+    return svg;
+  }
+
+  function makeFileIcon(flags) {
+    const svg = makeSvgNS('svg', { width:'13', height:'13', viewBox:'0 0 24 24', fill:'none', stroke:'currentColor', 'stroke-width':'2', 'stroke-linecap':'round', 'stroke-linejoin':'round' });
+    svg.classList.add('file-icon');
+    svg.appendChild(makeSvgNS('path', { d:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }));
+    svg.appendChild(makeSvgNS('polyline', { points:'14,2 14,8 20,8' }));
+    if (flags.has('new-file')) {
+      svg.appendChild(makeSvgNS('line', { x1:'12', y1:'11', x2:'12', y2:'17' }));
+      svg.appendChild(makeSvgNS('line', { x1:'9',  y1:'14', x2:'15', y2:'14' }));
+    } else if (flags.has('deleted')) {
+      svg.appendChild(makeSvgNS('line', { x1:'9', y1:'14', x2:'15', y2:'14' }));
+    }
+    return svg;
+  }
+
+  function renderFiles(files) {
+    const container = document.getElementById('diff-container');
+    container.textContent = '';
+
+    // summary
+    const totalAdds = files.reduce((s, f) => s + f.adds, 0);
+    const totalDels = files.reduce((s, f) => s + f.dels, 0);
+    const total = totalAdds + totalDels || 1;
+    document.getElementById('summary-files').textContent = files.length + (files.length === 1 ? ' arquivo alterado' : ' arquivos alterados');
+    document.getElementById('summary-adds').textContent = '+' + totalAdds;
+    document.getElementById('summary-dels').textContent = '-' + totalDels;
+    document.getElementById('spark-add').style.width = Math.round(totalAdds / total * 100) + '%';
+    document.getElementById('spark-del').style.width = Math.round(totalDels / total * 100) + '%';
+    document.getElementById('summary-bar').classList.remove('hidden');
+
+    for (const file of files) {
+      const block = document.createElement('div');
+      block.className = 'file-block';
+
+      // ── header (accordion trigger) ────────────
+      const header = document.createElement('div');
+      header.className = 'file-header';
+      header.appendChild(makeChevron());
+      header.appendChild(makeFileIcon(file.flags));
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'file-name';
+      nameSpan.textContent = file.name;
+      header.appendChild(nameSpan);
+
+      for (const flag of file.flags) {
+        const badge = document.createElement('span');
+        badge.className = 'file-badge ' + flag;
+        badge.textContent = flag === 'new-file' ? 'novo' : flag === 'deleted' ? 'deletado' : 'binário';
+        header.appendChild(badge);
+      }
+
+      if (file.adds || file.dels) {
+        const stats = document.createElement('span');
+        stats.className = 'file-stats';
+        const add = document.createElement('span');
+        add.className = 'stat-add';
+        add.textContent = '+' + file.adds;
+        const del = document.createElement('span');
+        del.className = 'stat-del';
+        del.textContent = '-' + file.dels;
+        stats.appendChild(add);
+        stats.appendChild(del);
+        header.appendChild(stats);
+      }
+
+      block.appendChild(header);
+
+      // ── collapsible body ──────────────────────
+      const body = document.createElement('div');
+      body.className = 'file-body';
+      const inner = document.createElement('div');
+      inner.className = 'file-body-inner';
+      body.appendChild(inner);
+
+      header.addEventListener('click', () => {
+        const isCollapsed = block.classList.toggle('collapsed');
+        body.classList.toggle('collapsed', isCollapsed);
+      });
+
+      if (file.flags.has('binary') || !file.hunks.length) {
+        const p = document.createElement('div');
+        p.className = 'no-hunks';
+        p.textContent = file.flags.has('binary') ? 'Arquivo binário — diff não disponível' : 'Sem alterações de conteúdo';
+        inner.appendChild(p);
+        block.appendChild(body);
+        container.appendChild(block);
+        continue;
+      }
+
+      const table = document.createElement('table');
+      table.className = 'diff-table';
+      const tbody = document.createElement('tbody');
+
+      for (const hunk of file.hunks) {
+        const hdr = document.createElement('tr');
+        hdr.className = 'line-hunk';
+        const hdrTd = document.createElement('td');
+        hdrTd.setAttribute('colspan', '4');
+        const atMatch = hunk.header.match(/(@@ .+? @@)(.*)/);
+        const atSpan = document.createElement('span');
+        atSpan.className = 'hunk-at';
+        atSpan.textContent = atMatch ? atMatch[1] : hunk.header;
+        hdrTd.appendChild(atSpan);
+        if (hunk.context) {
+          const ctxSpan = document.createElement('span');
+          ctxSpan.className = 'hunk-ctx';
+          ctxSpan.textContent = hunk.context;
+          hdrTd.appendChild(ctxSpan);
+        }
+        hdr.appendChild(hdrTd);
+        tbody.appendChild(hdr);
+
+        for (const dl of hunk.lines) {
+          const tr = document.createElement('tr');
+          tr.className = dl.type === 'add' ? 'line-add' : dl.type === 'remove' ? 'line-remove' : 'line-context';
+
+          const oldTd = document.createElement('td');
+          oldTd.className = 'ln';
+          oldTd.textContent = dl.oldNum !== null ? String(dl.oldNum) : '';
+
+          const newTd = document.createElement('td');
+          newTd.className = 'ln';
+          newTd.textContent = dl.newNum !== null ? String(dl.newNum) : '';
+
+          const gutterTd = document.createElement('td');
+          gutterTd.className = 'gutter';
+          gutterTd.textContent = dl.type === 'add' ? '+' : dl.type === 'remove' ? '-' : ' ';
+
+          const codeTd = document.createElement('td');
+          codeTd.className = 'code';
+          codeTd.textContent = dl.content;
+
+          tr.appendChild(oldTd);
+          tr.appendChild(newTd);
+          tr.appendChild(gutterTd);
+          tr.appendChild(codeTd);
+          tbody.appendChild(tr);
+        }
+      }
+
+      table.appendChild(tbody);
+      inner.appendChild(table);
+      block.appendChild(body);
+      container.appendChild(block);
+    }
   }
 
   async function load() {
@@ -191,16 +610,9 @@
       const res = await ipcRenderer.invoke('get-diff', repoPath);
       if (!res.ok) { showState('Erro ao obter diff', res.error || ''); return; }
       if (!res.diff) { showState('Nenhuma alteração pendente'); return; }
-      const container = document.getElementById('diff-container');
-      container.textContent = '';
-      const frag = document.createDocumentFragment();
-      for (const line of res.diff.split('\n')) {
-        const span = document.createElement('span');
-        span.className = 'diff-line ' + lineClass(line);
-        span.textContent = line;
-        frag.appendChild(span);
-      }
-      container.appendChild(frag);
+      const files = parseDiff(res.diff);
+      if (!files.length) { showState('Nenhuma alteração pendente'); return; }
+      renderFiles(files);
     } catch (e) {
       showState('Erro', e.message);
     }
