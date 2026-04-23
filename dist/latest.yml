@@ -1,8 +1,8 @@
-version: 1.2.19
+version: 1.2.24
 files:
-  - url: GitMonitor-Setup-1.2.19.exe
-    sha512: 8dbOn0tkARc7iPHEqbZ7cA3h4t+0RfuYdHO3oHVf4EafvREXlInvSog3lcvUVkvMKxgYOxqj2R1HfNyKUQkc6g==
-    size: 83064688
-path: GitMonitor-Setup-1.2.19.exe
-sha512: 8dbOn0tkARc7iPHEqbZ7cA3h4t+0RfuYdHO3oHVf4EafvREXlInvSog3lcvUVkvMKxgYOxqj2R1HfNyKUQkc6g==
-releaseDate: '2026-04-20T11:14:55.324Z'
+  - url: GitMonitor-Setup-1.2.24.exe
+    sha512: TwYoTiJJFIpwOMQSIqZVkAzjTJaz4ynXLihXLu31VWO+Pt89gIAHKmDbOZVt4iUS5u9B3T3INKx7h2b+siJyfQ==
+    size: 75542727
+path: GitMonitor-Setup-1.2.24.exe
+sha512: TwYoTiJJFIpwOMQSIqZVkAzjTJaz4ynXLihXLu31VWO+Pt89gIAHKmDbOZVt4iUS5u9B3T3INKx7h2b+siJyfQ==
+releaseDate: '2026-04-23T06:57:08.010Z'
