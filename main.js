@@ -1669,7 +1669,8 @@ app.whenReady().then(() => {
       _lastToastPct = -1;
       _pendingUpdateVersion = info.version;
       rebuildTrayMenu();
-      showToastWindow('v' + info.version + ' pronta — clique na bandeja para instalar', 'info', 30000);
+      showToastWindow('v' + info.version + ' instalada — reiniciando em 3s...', 'info', 4000);
+      setTimeout(() => autoUpdater.quitAndInstall(true, true), 3000);
     });
 
     autoUpdater.on('error', (err) => {
