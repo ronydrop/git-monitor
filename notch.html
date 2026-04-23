@@ -426,7 +426,7 @@
     opts = opts || {};
     const size = opts.size || 16;
     const cls = opts.spin ? ' class="icon-spin"' : '';
-    const xml = '<svg xmlns="http://www.w3.org/2000/svg"' + cls + ' width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
+    const xml = '<svg xmlns="http://www.w3.org/2000/svg"' + cls + ' width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="pointer-events:none">' + ICONS[name] + '</svg>';
     return _svgParser.parseFromString(xml, 'image/svg+xml').documentElement;
   }
 
