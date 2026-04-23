@@ -312,7 +312,9 @@
   .btn.icon {
     width: 24px; padding: 0;
     font-size: 12px;
+    position: relative;
   }
+  .btn.icon::after { content: ''; position: absolute; inset: 0; }
   .btn.push {
     color: var(--orange);
     border-color: rgba(219,109,40,0.4);
