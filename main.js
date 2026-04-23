@@ -1440,6 +1440,22 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
           return { phase: 'failure', detail };
         }
 
+        if (combinedState === 'pending') {
+          const job = runningStatus
+            ? (runningStatus.context || 'Deploy em andamento')
+            : 'Deploy em andamento';
+          return {
+            phase: 'running',
+            job,
+            total: runs.length + statusTotal,
+            done: (runs.length - pendingRuns.length) + (statusTotal - pendingStatuses.length)
+          };
+        }
+
+        if (combinedState !== null && combinedState !== 'success') {
+          return { phase: 'waiting' };
+        }
+
         return { phase: 'success' };
       } catch (e) {
         return { phase: 'error', detail: e.message };
