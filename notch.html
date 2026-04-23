@@ -45,7 +45,7 @@
   #pill {
     position: absolute;
     top: 0;
-    right: 28px;
+    left: 50%;
     width: 310px;
     height: 38px;
     background: var(--notch-bg);
@@ -58,8 +58,9 @@
     pointer-events: auto;
     box-shadow: 0 4px 24px rgba(0,0,0,0.9), 0 1px 0 rgba(255,255,255,0.06) inset;
     will-change: width, height, transform, box-shadow;
-    transition: box-shadow 400ms ease;
+    transition: box-shadow 400ms ease, opacity 200ms ease;
   }
+  #pill.ghost { opacity: 0.12; }
 
   #pill.expanded {
     box-shadow: 0 12px 40px rgba(0,0,0,0.95), 0 1px 0 rgba(255,255,255,0.06) inset;
@@ -461,7 +462,7 @@
   setIcon(btnMin, 'minus', { size: 14 });
 
   const CLOSE_DELAY_MS = 300;
-  const RIGHT_MARGIN = 28; // margem p/ sombra não ser cortada pela janela
+  const WINDOW_WIDTH = 440;
 
   let repos = [];
   let loaded = false;
@@ -543,7 +544,7 @@
     pill.style.borderBottomLeftRadius = v + 'px';
     pill.style.borderBottomRightRadius = v + 'px';
   }});
-  const translateSpring = createSpring({ stiffness: SPRING_MINIMIZE.stiffness, damping: SPRING_MINIMIZE.damping, initial: 0, onUpdate: v => pill.style.transform = `translateY(${v}px)` });
+  const translateSpring = createSpring({ stiffness: SPRING_MINIMIZE.stiffness, damping: SPRING_MINIMIZE.damping, initial: 0, onUpdate: v => pill.style.transform = `translateX(-50%) translateY(${v}px)` });
 
   const STATUS_ORDER = {
     diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3,
@@ -776,7 +777,7 @@
   }
 
   function notifyRect(w, h, offsetY) {
-    ipcRenderer.send('notch-rect', { w, h, offsetY, hotzone: null, right: RIGHT_MARGIN });
+    ipcRenderer.send('notch-rect', { w, h, offsetY, hotzone: null, left: Math.round((WINDOW_WIDTH - w) / 2) });
   }
 
   // ------ Interações ------
@@ -794,6 +795,20 @@
       hovered = false;
       updateShape();
     }, CLOSE_DELAY_MS);
+    if (ghostActive) {
+      ghostActive = false;
+      pill.classList.remove('ghost');
+      ipcRenderer.send('notch-ghost', false);
+    }
+  });
+
+  let ghostActive = false;
+  pill.addEventListener('mousemove', (ev) => {
+    const want = ev.ctrlKey;
+    if (want === ghostActive) return;
+    ghostActive = want;
+    pill.classList.toggle('ghost', ghostActive);
+    ipcRenderer.send('notch-ghost', ghostActive);
   });
 
   pill.addEventListener('click', (ev) => {
@@ -801,7 +816,7 @@
     if (minimized) {
       minimized = false;
     } else if (!isExpanded()) {
-      pinned = !pinned;
+      if (ev.target.closest('#compact')) pinned = !pinned;
     }
     updateShape();
   });

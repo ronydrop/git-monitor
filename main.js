@@ -438,7 +438,7 @@ function createNotchWindow() {
   mainWindow.loadFile('notch.html');
 
   // Reset do rect pra baseline — o renderer vai notificar via notch-rect.
-  notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, right: 28 };
+  notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, left: 65 };
 
   // Passthrough com bbox dinâmico do pill real (não da window inteira).
   // O renderer envia `notch-rect` sempre que o state muda.
@@ -448,12 +448,13 @@ function createNotchWindow() {
       return;
     }
     if (_notchDragging) return;
+    if (_notchGhost) { mainWindow.setIgnoreMouseEvents(true, { forward: true }); return; }
     try {
       const c = screen.getCursorScreenPoint();
       const b = mainWindow.getBounds();
       const r = notchRect;
-      const pillRight = b.x + b.width - r.right;
-      const pillLeft  = pillRight - r.w;
+      const pillLeft  = b.x + r.left;
+      const pillRight = pillLeft + r.w;
       const pillTop   = b.y + (r.offsetY || 0);
       const effectiveH = r.hotzone != null ? r.hotzone : r.h;
       // Quando minimized com hotzone, o pill real está fora da tela (-34) mas
@@ -1363,6 +1364,7 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
     }
 
     attempts++;
+    let _diag = null;
     const res = await (async () => {
       try {
         const sha = (await execAsync('git rev-parse HEAD', { cwd: repoPath, timeout: 5000 })).trim();
@@ -1401,6 +1403,8 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
         const pendingStatuses = statuses.filter(s => s.state === 'pending');
         const failedStatuses  = statuses.filter(s => s.state === 'failure' || s.state === 'error');
         const runningStatus   = pendingStatuses[0];
+
+        _diag = { repoPath, sha, attempts, checkStatus: checkRes.statusCode, statusStatus: statusRes.statusCode, runsTotal: runs.length, runsPending: pendingRuns.length, runsFailed: failedRuns.length, runsConclusions: runs.map(r => [r.name, r.status, r.conclusion]), statusTotal, combinedState, statusesDetail: statuses.map(s => [s.context, s.state]) };
 
         const hasData = runs.length > 0 || statusTotal > 0;
         if (!hasData) return { phase: 'waiting' };
@@ -1442,6 +1446,7 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
       }
     })();
 
+    if (_diag) console.log('[deploy-watch]', JSON.stringify({ ..._diag, emittedPhase: res.phase }));
     send(res);
 
     if (res.phase === 'waiting' || res.phase === 'running') {
@@ -1786,11 +1791,12 @@ ipcMain.on('notch-rect', (_, rect) => {
     h: Math.max(8, Number(rect.h) || 38),
     offsetY: Number(rect.offsetY) || 0,
     hotzone: rect.hotzone != null ? Number(rect.hotzone) : null,
-    right: Number(rect.right) || 12
+    left: Number(rect.left) ?? 65
   };
 });
 
 let _notchSaveTimer = null;
+let _notchGhost = false;
 let _notchDragging = false;
 let _notchDragPoll = null;
 let _notchDragTimeout = null;
@@ -1802,6 +1808,13 @@ function endNotchDrag() {
   if (_notchDragTimeout) { clearTimeout(_notchDragTimeout); _notchDragTimeout = null; }
   if (_notchDragDisplayListener) { screen.off('display-metrics-changed', _notchDragDisplayListener); _notchDragDisplayListener = null; }
 }
+
+ipcMain.on('notch-ghost', (_, on) => {
+  _notchGhost = !!on;
+  if (!on && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setIgnoreMouseEvents(false);
+  }
+});
 
 ipcMain.on('notch-drag-start', () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
