@@ -955,12 +955,15 @@
   async function checkRepos() {
     const btn = document.getElementById('refreshBtn');
     btn.classList.add('spinning');
-    const results = await ipcRenderer.invoke('check-repos');
-    lastResults = results || [];
-    renderRepos(results);
-    if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
-    document.getElementById('lastCheck').textContent = `Último: ${new Date().toLocaleTimeString('pt-BR')}`;
-    setTimeout(() => btn.classList.remove('spinning'), 600);
+    try {
+      const results = await ipcRenderer.invoke('check-repos');
+      lastResults = results || [];
+      renderRepos(results);
+      if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
+      document.getElementById('lastCheck').textContent = `Último: ${new Date().toLocaleTimeString('pt-BR')}`;
+    } finally {
+      setTimeout(() => btn.classList.remove('spinning'), 600);
+    }
   }
 
   function refreshNow() {

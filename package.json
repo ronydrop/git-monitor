@@ -1,6 +1,6 @@
 {
   "name": "git-monitor",
-  "version": "1.2.31",
+  "version": "1.2.32",
   "description": "Mini widget desktop para monitorar repositórios Git em tempo real",
   "main": "main.js",
   "author": {
@@ -47,9 +47,7 @@
         "portable",
         "nsis"
       ],
-      "icon": "icon.ico",
-      "signAndEditExecutable": false,
-      "signingHashAlgorithms": null
+      "icon": "icon.ico"
     },
     "portable": {
       "artifactName": "GitMonitor-portable.exe"

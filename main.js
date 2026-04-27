@@ -103,13 +103,24 @@ function parseWslPath(p) {
 }
 
 // Wrapper para comandos git com retry em caso de index.lock
+const GIT_NO_PROMPT_ENV = {
+  GIT_TERMINAL_PROMPT: '0',
+  GCM_INTERACTIVE: 'never',
+  GIT_ASKPASS: 'echo',
+  SSH_ASKPASS: 'echo',
+};
+
 async function gitExec(cmd, opts) {
+  const noPromptOpts = opts
+    ? { ...opts, env: { ...process.env, ...GIT_NO_PROMPT_ENV, ...(opts.env || {}) } }
+    : { env: { ...process.env, ...GIT_NO_PROMPT_ENV } };
+
   const wsl = opts && opts.cwd ? parseWslPath(opts.cwd) : null;
   if (wsl) {
     // Extrai os args do git (tudo após "git ") e adiciona -C <unixPath>
     const gitArgs = cmd.replace(/^git\s+/, '');
     const wslCmd = `wsl.exe -d ${wsl.distro} -- git -C "${wsl.unixPath}" ${gitArgs}`;
-    const wslOpts = { ...opts, cwd: undefined, windowsHide: true };
+    const wslOpts = { ...noPromptOpts, cwd: undefined, windowsHide: true };
     for (let i = 0; i < 2; i++) {
       try {
         return await execAsync(wslCmd, wslOpts);
@@ -127,7 +138,7 @@ async function gitExec(cmd, opts) {
 
   for (let i = 0; i < 2; i++) {
     try {
-      return await execAsync(cmd, opts);
+      return await execAsync(cmd, noPromptOpts);
     } catch (err) {
       const isLockError = err.message && err.message.includes('index.lock');
       if (isLockError && i === 0) {

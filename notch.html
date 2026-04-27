@@ -991,8 +991,10 @@
       } catch (e) {
         ok = false;
         errMsg = e.message || String(e);
+      } finally {
+        runningActions.delete(p);
+        renderList();
       }
-      runningActions.delete(p);
       const rname = btn.dataset.name || p;
       if (!ok) {
         markRowResult(p, 'fail', errMsg);
