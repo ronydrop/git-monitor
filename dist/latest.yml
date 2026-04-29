@@ -1,8 +1,8 @@
-version: 1.2.32
+version: 1.2.33
 files:
-  - url: GitMonitor-Setup-1.2.32.exe
-    sha512: GXlVUEqvwRsnPSi2RwEbZx1PQ8ZZ6IPjLT5otCdUFeyj6uAy9gByyNIOwPU8abyLfW451GJoI0oXdifm2lbk+g==
-    size: 75596237
-path: GitMonitor-Setup-1.2.32.exe
-sha512: GXlVUEqvwRsnPSi2RwEbZx1PQ8ZZ6IPjLT5otCdUFeyj6uAy9gByyNIOwPU8abyLfW451GJoI0oXdifm2lbk+g==
-releaseDate: '2026-04-29T11:18:55.389Z'
+  - url: GitMonitor-Setup-1.2.33.exe
+    sha512: M5IMj4h07QtDHagId313BLq+f0VXSkA7LBoaLWSEdfG0oxf4Qaz3jEuSEn/l6kge2gZyTK60HL3E6CxZXelaIw==
+    size: 75596772
+path: GitMonitor-Setup-1.2.33.exe
+sha512: M5IMj4h07QtDHagId313BLq+f0VXSkA7LBoaLWSEdfG0oxf4Qaz3jEuSEn/l6kge2gZyTK60HL3E6CxZXelaIw==
+releaseDate: '2026-04-29T12:55:18.007Z'
