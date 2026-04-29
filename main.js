@@ -1418,7 +1418,10 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
         _diag = { repoPath, sha, attempts, checkStatus: checkRes.statusCode, statusStatus: statusRes.statusCode, runsTotal: runs.length, runsPending: pendingRuns.length, runsFailed: failedRuns.length, runsConclusions: runs.map(r => [r.name, r.status, r.conclusion]), statusTotal, combinedState, statusesDetail: statuses.map(s => [s.context, s.state]) };
 
         const hasData = runs.length > 0 || statusTotal > 0;
-        if (!hasData) return { phase: 'waiting' };
+        if (!hasData) {
+          if (attempts >= 5) return { phase: 'no-ci' };
+          return { phase: 'waiting' };
+        }
 
         // Pending: check-runs em andamento OU combined state pendente
         const anyPending = pendingRuns.length > 0 || combinedState === 'pending';

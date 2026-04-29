@@ -271,6 +271,7 @@
   .repo-dot.behind { background: var(--blue); }
   .repo-dot.error { background: var(--red); animation: none; }
   .repo-dot.busy { background: var(--yellow); opacity: 0.5; animation: none; }
+  .repo-dot.deploying { background: var(--blue); animation: pulse 2s infinite; }
 
   .repo-info { flex: 1; min-width: 0; }
 
@@ -842,6 +843,7 @@
     results.forEach(r => {
       const hasChanges = r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead';
       const needsPull  = r.status === 'behind';
+      const isDeploying = !!activeDeployBtns[r.path];
       const esc = s => (s || '').replace(/'/g, "\\'");
 
       const item = document.createElement('div');
@@ -861,7 +863,7 @@
       }
 
       const dot = document.createElement('div');
-      dot.className = 'repo-dot ' + (r.status || 'clean');
+      dot.className = 'repo-dot ' + (isDeploying && !hasChanges ? 'deploying' : (r.status || 'clean'));
       item.appendChild(dot);
 
       const info = document.createElement('div');
@@ -937,6 +939,14 @@
         pullBtn.appendChild(icon('arrow-down', { size: 13 }));
         pullBtn.onclick = function() { doPull(this, r.path, r.name); };
         actions.appendChild(pullBtn);
+      } else if (isDeploying) {
+        const deployingBtn = document.createElement('button');
+        deployingBtn.className = 'btn-commit deploying';
+        deployingBtn.title = 'Aguardando CI...';
+        deployingBtn.appendChild(icon('refresh-cw', { size: 13, spin: true }));
+        deployingBtn.disabled = true;
+        actions.appendChild(deployingBtn);
+        activeDeployBtns[r.path].btn = deployingBtn;
       }
 
       item.appendChild(actions);
@@ -1272,6 +1282,10 @@
       delete activeDeployBtns[repoPath];
       if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
       setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); } checkRepos(); }, 6000);
+    } else if (phase === 'no-ci') {
+      delete activeDeployBtns[repoPath];
+      if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
+      setTimeout(() => checkRepos(), 500);
     }
   });
 
