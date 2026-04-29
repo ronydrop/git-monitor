@@ -561,14 +561,32 @@
     )[0].status;
   }
 
+  function effectivePending() {
+    const pending = repos.filter(r => r.pending);
+    const seen = new Set(pending.map(r => r.path));
+    for (const p of runningActions) {
+      if (!seen.has(p)) {
+        const r = repos.find(rr => rr.path === p);
+        pending.push({ name: r ? r.name : p, path: p, status: 'busy', detail: 'Enviando…', pending: true });
+        seen.add(p);
+      }
+    }
+    for (const [p, entry] of Object.entries(deployingRows)) {
+      if (!seen.has(p)) {
+        pending.push({ name: entry.repoName || p, path: p, status: 'busy', detail: 'Aguardando CI…', pending: true });
+        seen.add(p);
+      }
+    }
+    return pending;
+  }
   function isPendingList() {
-    return repos.some(r => r.pending);
+    return effectivePending().length > 0;
   }
   function hasDiverged() {
     return repos.some(r => r.status === 'diverged');
   }
   function pendingCount() {
-    return repos.filter(r => r.pending).length;
+    return effectivePending().length;
   }
 
   function isExpanded() {
@@ -578,9 +596,10 @@
 
   function updateSummary() {
     const total = repos.length;
-    const nPending = pendingCount();
+    const ep = effectivePending();
+    const nPending = ep.length;
     const hasPending = nPending > 0;
-    const dom = hasPending ? dominantStatus(repos.filter(r => r.pending)) : 'clean';
+    const dom = hasPending ? dominantStatus(ep) : 'clean';
 
     if (hasPending) {
       countText.className = '';
@@ -594,10 +613,11 @@
         ahead: 'push pendente',
         behind: 'pull pendente',
         diverged: 'diverged',
-        error: 'erro'
+        error: 'erro',
+        busy: 'enviando…'
       }[dom] || 'pendente';
 
-      const first = repos.find(r => r.pending);
+      const first = ep[0];
       const label = nPending === 1
         ? (first.name + ' — ' + verb)
         : (nPending + ' repos — ' + verb);
@@ -705,8 +725,7 @@
   }
 
   function renderMiniList() {
-    const pending = repos.filter(r => r.pending);
-    miniListEl.replaceChildren(...pending.map(r => renderRow(r)));
+    miniListEl.replaceChildren(...effectivePending().map(r => renderRow(r)));
   }
 
   function measureExpandedHeight() {
@@ -981,7 +1000,7 @@
     }
     if (act === 'push' || act === 'pull') {
       runningActions.add(p);
-      renderList();
+      renderList(); updateSummary(); updateShape();
       let ok = false, errMsg = '';
       try {
         const channel = act === 'push' ? 'commit-and-push' : 'git-pull';
@@ -993,7 +1012,7 @@
         errMsg = e.message || String(e);
       } finally {
         runningActions.delete(p);
-        renderList();
+        renderList(); updateSummary(); updateShape();
       }
       const rname = btn.dataset.name || p;
       if (!ok) {
@@ -1107,7 +1126,6 @@
     const entry = deployingRows[repoPath];
     if (!entry) return;
     const rname = entry.repoName;
-    const terminal = done || phase === 'none';
 
     if (phase === 'waiting' || phase === 'running') {
       markRowDeploying(repoPath);
@@ -1126,11 +1144,15 @@
     } else if (phase === 'no-token' || phase === 'no-github' || phase === 'none') {
       updateRowPhase(repoPath, '', 'alert');
       setTimeout(() => restoreRowBtn(repoPath), 4000);
+    } else if (phase === 'no-ci') {
+      restoreRowBtn(repoPath);
     }
 
+    const terminal = done || ['none', 'no-ci', 'success', 'failure', 'timeout', 'error', 'no-token', 'no-github'].includes(phase);
     if (terminal) {
       const wasPushAll = entry.fromPushAll;
       delete deployingRows[repoPath];
+      renderMiniList(); updateSummary(); updateShape();
       if (wasPushAll) {
         if (phase !== 'success') pushAllFailures++;
         pushAllPending--;
