@@ -1283,6 +1283,9 @@
       if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
       setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); } checkRepos(); }, 6000);
     } else if (phase === 'no-ci') {
+      if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); }
+      if (bar)   { bar.style.display = 'none'; bar.className = 'deploy-bar'; }
+      if (label) { label.textContent = ''; label.className = 'deploy-label'; }
       delete activeDeployBtns[repoPath];
       if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
       setTimeout(() => checkRepos(), 500);
