@@ -1817,12 +1817,21 @@ ipcMain.handle('notch-all-repos', async () => {
 
 ipcMain.on('notch-rect', (_, rect) => {
   if (!rect) return;
+  const N = (v, fb) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fb;
+  };
+  let hotzone = null;
+  if (rect.hotzone != null) {
+    const hz = Number(rect.hotzone);
+    if (Number.isFinite(hz)) hotzone = hz;
+  }
   notchRect = {
-    w: Math.max(40, Number(rect.w) || 260),
-    h: Math.max(8, Number(rect.h) || 38),
-    offsetY: Number(rect.offsetY) || 0,
-    hotzone: rect.hotzone != null ? Number(rect.hotzone) : null,
-    left: Number(rect.left) ?? 65
+    w: Math.max(40, N(rect.w, 260)),
+    h: Math.max(8, N(rect.h, 38)),
+    offsetY: N(rect.offsetY, 0),
+    hotzone,
+    left: N(rect.left, 65)
   };
 });
 

@@ -465,7 +465,6 @@
   setIcon(btnMin, 'minus', { size: 14 });
 
   const CLOSE_DELAY_MS = 300;
-  const WINDOW_WIDTH = 440;
 
   let repos = [];
   let loaded = false;
@@ -541,13 +540,53 @@
     return el;
   }
 
-  const widthSpring = createSpring({ initial: 310, onUpdate: v => pill.style.width = v + 'px' });
-  const heightSpring = createSpring({ initial: 38,  onUpdate: v => pill.style.height = v + 'px' });
+  let notchRectFlush = null;
+  function schedulePushNotchRectFromDom() {
+    if (notchRectFlush != null) return;
+    notchRectFlush = requestAnimationFrame(() => {
+      notchRectFlush = null;
+      const pr = pill.getBoundingClientRect();
+      ipcRenderer.send('notch-rect', {
+        w: Math.round(pr.width),
+        h: Math.round(pr.height),
+        left: Math.round(pr.left),
+        offsetY: Math.round(pr.top),
+        hotzone: null
+      });
+    });
+  }
+
+  const widthSpring = createSpring({
+    initial: 310,
+    onUpdate: v => {
+      pill.style.width = v + 'px';
+      schedulePushNotchRectFromDom();
+    }
+  });
+  const heightSpring = createSpring({
+    initial: 38,
+    onUpdate: v => {
+      pill.style.height = v + 'px';
+      schedulePushNotchRectFromDom();
+    }
+  });
   const radiusSpring = createSpring({ initial: 18,  onUpdate: v => {
     pill.style.borderBottomLeftRadius = v + 'px';
     pill.style.borderBottomRightRadius = v + 'px';
   }});
-  const translateSpring = createSpring({ stiffness: SPRING_MINIMIZE.stiffness, damping: SPRING_MINIMIZE.damping, initial: 0, onUpdate: v => pill.style.transform = `translateX(-50%) translateY(${v}px)` });
+  const translateSpring = createSpring({
+    stiffness: SPRING_MINIMIZE.stiffness,
+    damping: SPRING_MINIMIZE.damping,
+    initial: 0,
+    onUpdate: v => {
+      pill.style.transform = `translateX(-50%) translateY(${v}px)`;
+      schedulePushNotchRectFromDom();
+    }
+  });
+
+  try {
+    new ResizeObserver(() => schedulePushNotchRectFromDom()).observe(pill);
+  } catch (_) {}
 
   const STATUS_ORDER = {
     diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3,
@@ -735,7 +774,7 @@
     }
     const cs = getComputedStyle(listEl);
     contentH += parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-    const total = 38 + Math.min(contentH, 320);
+    const total = 42 + Math.min(contentH, 320);
     return Math.min(Math.max(total, 60), 390);
   }
 
@@ -778,7 +817,6 @@
         widthSpring.animate(targetW);
         heightSpring.animate(h);
         radiusSpring.animate(targetRadius);
-        notifyRect(targetW, h, targetTranslate);
       });
     } else if (alert) {
       requestAnimationFrame(() => {
@@ -786,21 +824,15 @@
         widthSpring.animate(targetW);
         heightSpring.animate(miniH);
         radiusSpring.animate(targetRadius);
-        notifyRect(targetW, miniH, targetTranslate);
       });
     } else {
       widthSpring.animate(targetW);
       heightSpring.animate(38);
       radiusSpring.animate(targetRadius);
-      notifyRect(targetW, 38, targetTranslate);
     }
 
     translateSpring.animate(targetTranslate);
     wasExpanded = exp;
-  }
-
-  function notifyRect(w, h, offsetY) {
-    ipcRenderer.send('notch-rect', { w, h, offsetY, hotzone: null, left: Math.round((WINDOW_WIDTH - w) / 2) });
   }
 
   // ------ Interações ------
@@ -1203,7 +1235,6 @@
     } catch (_) { return false; }
   }
 
-  // Inicial: notifica rect baseline pro passthrough do main
   updateShape();
   ipcRenderer.invoke('get-config').then(cfg => applyTheme((cfg || {}).theme || 'obsidian'));
   paintFromCache().then(async hasCached => {
