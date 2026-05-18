@@ -100,6 +100,13 @@ function resolveDeployPhase(input = {}) {
     combinedPending || combinedFailed ? 1 : 0
   );
   const total = checkRuns.length + workflowRuns.length + statusSignalCount;
+  const failedNames = [
+    ...failedWorkflowRuns.map(workflowRunName),
+    ...failedCheckRuns.map(checkRunName),
+    ...failedStatuses.map(statusName)
+  ];
+  if (combinedFailed) failedNames.push('commit status');
+  const failedDetail = failedNames.length > 0 ? failedNames.join(', ') : 'deploy falhou';
 
   if (pendingCount > 0) {
     const activeWorkflow =
@@ -126,21 +133,16 @@ function resolveDeployPhase(input = {}) {
       phase: 'running',
       job,
       total,
-      done: Math.max(0, total - pendingCount)
+      done: Math.max(0, total - pendingCount),
+      failed: failedCount > 0,
+      failedDetail: failedCount > 0 ? failedDetail : ''
     };
   }
 
   if (failedCount > 0) {
-    const failedNames = [
-      ...failedWorkflowRuns.map(workflowRunName),
-      ...failedCheckRuns.map(checkRunName),
-      ...failedStatuses.map(statusName)
-    ];
-    if (combinedFailed) failedNames.push('commit status');
-
     return {
       phase: 'failure',
-      detail: failedNames.length > 0 ? failedNames.join(', ') : 'deploy falhou'
+      detail: failedDetail
     };
   }
 

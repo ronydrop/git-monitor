@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const { resolveDeployPhase } = require('./deploy-status');
+const { applyDeployState, clearDeployError, isPendingRepo, markDeployError } = require('./repo-state');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
@@ -192,7 +193,8 @@ function getDefaultConfig() {
     shortcutMinimize: 'Control+Shift+M',
     widgetMode: 'floating',
     autoStart: true,
-    theme: 'obsidian'
+    theme: 'obsidian',
+    deployErrors: {}
   };
 }
 
@@ -212,6 +214,7 @@ function loadConfig() {
   if (!cfg.anthropicAuthMode) cfg.anthropicAuthMode = 'oauth';
   if (!cfg.openaiAuthMode)    cfg.openaiAuthMode    = 'apiKey';
   if (!cfg.theme)             cfg.theme             = 'obsidian';
+  if (!cfg.deployErrors || typeof cfg.deployErrors !== 'object') cfg.deployErrors = {};
   return cfg;
 }
 
@@ -246,19 +249,17 @@ function clampWindowPos(x, y, w = 300, h = 420) {
   return { x: primary.width - w - 10, y: 10 };
 }
 
-const PENDING_STATES = ['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged', 'error'];
-
 let lastRepoResults = null;
 
 function mapReposForNotch(results) {
-  const mapped = results.map(r => ({
+  const mapped = results.map(r => applyDeployState({
     name: r.name, path: r.path, status: r.status, detail: r.detail,
     branch: r.branch, ahead: r.ahead, behind: r.behind,
     changedFiles: r.changedFiles, remoteUrl: r.remoteUrl,
-    pending: PENDING_STATES.includes(r.status)
-  }));
-  const order = { diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3, dirty: 4, busy: 5, error: 6, clean: 7 };
-  mapped.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
+  }, config.deployErrors));
+  const order = { 'deploy-error': -1, diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3, dirty: 4, busy: 5, error: 6, clean: 7 };
+  const sortStatus = r => r.deployError ? 'deploy-error' : r.status;
+  mapped.sort((a, b) => (order[sortStatus(a)] ?? 99) - (order[sortStatus(b)] ?? 99));
   return mapped;
 }
 
@@ -665,7 +666,10 @@ async function checkAllRepos() {
 // ============================================================
 // IPC
 // ============================================================
-ipcMain.handle('check-repos', () => checkAllRepos());
+ipcMain.handle('check-repos', async () => {
+  const results = await checkAllRepos();
+  return results.map(r => applyDeployState(r, config.deployErrors));
+});
 ipcMain.handle('get-config', () => config);
 
 ipcMain.handle('get-cached-repos', () => {
@@ -673,7 +677,9 @@ ipcMain.handle('get-cached-repos', () => {
   const activePaths = new Set(
     config.repos.filter(r => r.enabled !== false).map(r => path.resolve(r.path))
   );
-  const filtered = lastRepoResults.filter(r => activePaths.has(path.resolve(r.path)));
+  const filtered = lastRepoResults
+    .filter(r => activePaths.has(path.resolve(r.path)))
+    .map(r => applyDeployState(r, config.deployErrors));
   return {
     repos: filtered,
     notch: { repos: mapReposForNotch(filtered), total: filtered.length }
@@ -1248,6 +1254,9 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
   const release = await acquireRepoLock(repoPath);
   markWriting(repoPath, true);
   try {
+    config.deployErrors = clearDeployError(config.deployErrors, repoPath);
+    saveConfig(config);
+
     cleanStaleLock(repoPath);
 
     // Checa se há mudanças não commitadas
@@ -1359,6 +1368,8 @@ const deployWatchers = {};
 
 ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
   if (deployWatchers[repoPath]) clearTimeout(deployWatchers[repoPath].timer);
+  config.deployErrors = clearDeployError(config.deployErrors, repoPath);
+  saveConfig(config);
 
   let attempts = 0;
   const maxAttempts = 60;
@@ -1457,12 +1468,23 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
     })();
 
     if (_diag) console.log('[deploy-watch]', JSON.stringify({ ..._diag, emittedPhase: res.phase }));
+    if (res.failed || ['failure', 'timeout', 'error'].includes(res.phase)) {
+      const failedPhase = res.phase === 'timeout' || res.phase === 'error' ? res.phase : 'failure';
+      const failedDetail = res.failedDetail || res.detail || (failedPhase === 'timeout' ? 'Timeout aguardando deploy' : 'Deploy falhou');
+      config.deployErrors = markDeployError(config.deployErrors, repoPath, failedPhase, failedDetail);
+      saveConfig(config);
+    } else if (res.phase === 'success') {
+      config.deployErrors = clearDeployError(config.deployErrors, repoPath);
+      saveConfig(config);
+    }
     send(res);
 
     if (res.phase === 'waiting' || res.phase === 'running') {
       if (attempts < maxAttempts) {
         deployWatchers[repoPath] = { timer: setTimeout(check, 4000) };
       } else {
+        config.deployErrors = markDeployError(config.deployErrors, repoPath, 'timeout', 'Timeout aguardando deploy');
+        saveConfig(config);
         send({ phase: 'timeout' });
         delete deployWatchers[repoPath];
       }
@@ -1774,12 +1796,16 @@ ipcMain.handle('set-auto-start', (_, enabled) => {
 ipcMain.handle('notch-pending-repos', async () => {
   const results = await checkAllRepos();
   const pending = results
-    .filter(r => PENDING_STATES.includes(r.status))
+    .map(r => applyDeployState(r, config.deployErrors))
+    .filter(r => isPendingRepo(r))
     .map(r => ({
       name: r.name,
       path: r.path,
       status: r.status,
       detail: r.detail,
+      deployError: r.deployError,
+      deployPhase: r.deployPhase,
+      deployDetail: r.deployDetail,
       branch: r.branch,
       ahead: r.ahead,
       behind: r.behind,

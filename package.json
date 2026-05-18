@@ -1,6 +1,6 @@
 {
   "name": "git-monitor",
-  "version": "1.2.38",
+  "version": "1.2.39",
   "description": "Mini widget desktop para monitorar repositórios Git em tempo real",
   "main": "main.js",
   "author": {
@@ -28,6 +28,7 @@
     "files": [
       "main.js",
       "deploy-status.js",
+      "repo-state.js",
       "index.html",
       "config.html",
       "diff.html",

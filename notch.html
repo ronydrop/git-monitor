@@ -66,7 +66,14 @@
     box-shadow: 0 12px 40px rgba(0,0,0,0.95), 0 1px 0 rgba(255,255,255,0.06) inset;
   }
 
-  /* Glow states (prioridade: diverged > deploy-running > dirty > deploy-success) */
+  /* Glow states (prioridade: deploy-error > diverged > deploy-running > dirty > deploy-success) */
+  #pill.glow-deploy-error:not(.expanded) {
+    box-shadow:
+      0 4px 24px rgba(0,0,0,0.9),
+      0 0 16px 4px rgba(248,81,73,0.4),
+      0 0 7px 1px rgba(248,81,73,0.22),
+      0 1px 0 rgba(255,255,255,0.06) inset;
+  }
   #pill.glow-diverged:not(.expanded) {
     box-shadow:
       0 4px 24px rgba(0,0,0,0.9),
@@ -154,6 +161,7 @@
   .dot.diverged  { color: var(--red);    background: var(--red); }
   .dot.busy      { color: var(--yellow); background: var(--yellow); opacity: 0.6; }
   .dot.error     { color: var(--red);    background: var(--red);    opacity: 0.7; }
+  .dot.deploy-error { color: var(--red); background: var(--red); box-shadow: 0 0 0 3px rgba(248,81,73,0.16); }
 
   #countText {
     font-size: 14px;
@@ -590,15 +598,45 @@
   } catch (_) {}
 
   const STATUS_ORDER = {
+    'deploy-error': -1,
     diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3,
     dirty: 4, busy: 5, error: 6, clean: 7
   };
 
+  function displayStatus(r) {
+    return r && r.deployError ? 'deploy-error' : (r.status || 'clean');
+  }
+
+  function detailText(r) {
+    const gitDetail = r.detail || (r.status === 'clean' ? 'limpo' : '');
+    if (!r.deployError) return gitDetail;
+    const deployDetail = r.deployDetail ? ': ' + r.deployDetail : '';
+    return 'Deploy falhou' + deployDetail + (gitDetail ? ' · ' + gitDetail : '');
+  }
+
+  function isGitPendingStatus(status) {
+    return ['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged', 'error'].includes(status);
+  }
+
+  function setLocalDeployError(repoPath, entry) {
+    repos = repos.map(r => {
+      if (r.path !== repoPath) return r;
+      return {
+        ...r,
+        deployError: !!entry,
+        deployPhase: entry ? entry.phase : '',
+        deployDetail: entry ? (entry.detail || '') : '',
+        deployFailedAt: entry ? Date.now() : null,
+        pending: !!entry || isGitPendingStatus(r.status)
+      };
+    });
+  }
+
   function dominantStatus(list) {
     if (!list.length) return 'clean';
     return [...list].sort((a, b) =>
-      (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
-    )[0].status;
+      (STATUS_ORDER[displayStatus(a)] ?? 99) - (STATUS_ORDER[displayStatus(b)] ?? 99)
+    ).map(displayStatus)[0];
   }
 
   function effectivePending() {
@@ -654,6 +692,7 @@
         behind: 'pull pendente',
         diverged: 'diverged',
         error: 'erro',
+        'deploy-error': 'erro de deploy',
         busy: 'enviando…'
       }[dom] || 'pendente';
 
@@ -675,14 +714,14 @@
   }
 
   function renderRow(r) {
-    const cls = r.status || 'clean';
+    const cls = displayStatus(r);
     const isRunning = runningActions.has(r.path);
 
     const dot = makeEl('span', { className: 'dot ' + cls });
     const nameGroup = makeEl('div', { className: 'name-group' });
     nameGroup.appendChild(makeEl('span', { className: 'name', textContent: r.name || '(sem nome)' }));
     if (r.path) nameGroup.appendChild(makeEl('span', { className: 'path', textContent: r.path }));
-    const detail = makeEl('span', { className: 'detail', textContent: r.detail || (r.status === 'clean' ? 'limpo' : '') });
+    const detail = makeEl('span', { className: 'detail', textContent: detailText(r) });
 
     const actions = makeEl('div', { className: 'actions' });
 
@@ -780,13 +819,15 @@
   }
 
   function applyGlowClass() {
-    ['glow-diverged','glow-deploy-running','glow-dirty','glow-deploy-success']
+    ['glow-deploy-error','glow-diverged','glow-deploy-running','glow-dirty','glow-deploy-success']
       .forEach(c => pill.classList.remove(c));
     if (!repos.length) return;
+    const depErr   = repos.some(r => r.deployError);
     const hasDivg  = repos.some(r => r.status === 'diverged');
     const depRun   = Object.values(deployPhases).some(p => p === 'running' || p === 'waiting');
     const hasDirty = repos.some(r => ['dirty','dirty-ahead','ahead'].includes(r.status));
-    if (hasDivg)              pill.classList.add('glow-diverged');
+    if (depErr)               pill.classList.add('glow-deploy-error');
+    else if (hasDivg)         pill.classList.add('glow-diverged');
     else if (depRun)          pill.classList.add('glow-deploy-running');
     else if (hasDirty)        pill.classList.add('glow-dirty');
     else if (recentDeploySuccess) pill.classList.add('glow-deploy-success');
@@ -954,7 +995,10 @@
     let done = 0;
     setIconLabel(btnPushAll, 'refresh-cw', `0/${pushable.length}`, { size: 14, spin: true });
 
-    pushable.forEach(r => { runningActions.add(r.path); });
+    pushable.forEach(r => {
+      runningActions.add(r.path);
+      setLocalDeployError(r.path, null);
+    });
     renderList();
 
     pushAllPending = 0;
@@ -1033,6 +1077,7 @@
     }
     if (act === 'push' || act === 'pull') {
       runningActions.add(p);
+      if (act === 'push') setLocalDeployError(p, null);
       renderList(); updateSummary(); updateShape();
       let ok = false, errMsg = '';
       try {
@@ -1139,7 +1184,7 @@
   });
 
   ipcRenderer.on('deploy-update', (_, data) => {
-    const { repoPath, phase, detail } = data;
+    const { repoPath, phase, detail, failed, failedDetail } = data;
     const terminal = isTerminalDeployPhase(phase);
 
     if (terminal) {
@@ -1163,19 +1208,24 @@
     const rname = entry.repoName;
 
     if (phase === 'waiting' || phase === 'running') {
+      if (failed) {
+        setLocalDeployError(repoPath, { phase: 'failure', detail: failedDetail || detail || 'Deploy falhou' });
+        renderList(); updateSummary(); updateShape();
+      }
       markRowDeploying(repoPath);
     } else if (phase === 'success') {
+      setLocalDeployError(repoPath, null);
       updateRowPhase(repoPath, 'deployed', 'check');
       rowToast('ok', rname + ': Deploy concluído!');
       setTimeout(() => restoreRowBtn(repoPath), 4000);
     } else if (phase === 'failure' || phase === 'timeout') {
+      setLocalDeployError(repoPath, { phase, detail: detail || (phase === 'timeout' ? 'Timeout aguardando deploy' : 'Deploy falhou') });
       updateRowPhase(repoPath, 'deploy-fail', 'x');
       rowToast('err', rname + ': ' + (phase === 'timeout' ? 'Timeout aguardando deploy' : 'Deploy falhou' + (detail ? ' — ' + detail : '')), 6000);
-      setTimeout(() => restoreRowBtn(repoPath), 6000);
     } else if (phase === 'error') {
+      setLocalDeployError(repoPath, { phase, detail: detail || 'Erro no deploy' });
       updateRowPhase(repoPath, '', 'alert');
       rowToast('err', rname + ': ' + (detail || 'Erro no deploy'), 6000);
-      setTimeout(() => restoreRowBtn(repoPath), 5000);
     } else if (phase === 'no-token' || phase === 'no-github' || phase === 'none') {
       updateRowPhase(repoPath, '', 'alert');
       setTimeout(() => restoreRowBtn(repoPath), 4000);
@@ -1186,7 +1236,7 @@
     if (terminal) {
       const wasPushAll = entry.fromPushAll;
       delete deployingRows[repoPath];
-      renderMiniList(); updateSummary(); updateShape();
+      renderList(); updateSummary(); updateShape();
       if (wasPushAll) {
         if (phase !== 'success') pushAllFailures++;
         pushAllPending--;

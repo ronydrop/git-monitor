@@ -272,6 +272,7 @@
   .repo-dot.error { background: var(--red); animation: none; }
   .repo-dot.busy { background: var(--yellow); opacity: 0.5; animation: none; }
   .repo-dot.deploying { background: var(--blue); animation: pulse 2s infinite; }
+  .repo-dot.deploy-error { background: var(--red); animation: none; box-shadow: 0 0 0 3px var(--red-bg); }
 
   .repo-info { flex: 1; min-width: 0; }
 
@@ -814,6 +815,35 @@
     'busy': '...'
   };
 
+  function displayStatus(r) {
+    return r && r.deployError ? 'deploy-error' : (r.status || 'clean');
+  }
+
+  function detailText(r) {
+    const gitDetail = (r.branch ? r.branch + ' · ' : '') + (r.detail || '');
+    if (!r.deployError) return gitDetail;
+    const deployDetail = r.deployDetail ? ': ' + r.deployDetail : '';
+    return 'Deploy falhou' + deployDetail + (gitDetail ? ' · ' + gitDetail : '');
+  }
+
+  function isGitPendingStatus(status) {
+    return ['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged', 'error'].includes(status);
+  }
+
+  function setLocalDeployError(repoPath, entry) {
+    lastResults = lastResults.map(r => {
+      if (r.path !== repoPath) return r;
+      return {
+        ...r,
+        deployError: !!entry,
+        deployPhase: entry ? entry.phase : '',
+        deployDetail: entry ? (entry.detail || '') : '',
+        deployFailedAt: entry ? Date.now() : null,
+        pending: !!entry || isGitPendingStatus(r.status)
+      };
+    });
+  }
+
   // ---- Render repos ----
   function renderRepos(results) {
     const list = document.getElementById('repoList');
@@ -863,7 +893,7 @@
       }
 
       const dot = document.createElement('div');
-      dot.className = 'repo-dot ' + (isDeploying && !hasChanges ? 'deploying' : (r.status || 'clean'));
+      dot.className = 'repo-dot ' + (isDeploying && !hasChanges ? 'deploying' : displayStatus(r));
       item.appendChild(dot);
 
       const info = document.createElement('div');
@@ -873,11 +903,15 @@
       nameEl.textContent = r.name || '';
       const detailEl = document.createElement('div');
       detailEl.className = 'repo-detail';
-      detailEl.textContent = (r.branch ? r.branch + ' \u00B7 ' : '') + (r.detail || '');
+      detailEl.textContent = detailText(r);
       const repoDeployId = deployId(r.path);
       const deployLabel = document.createElement('div');
       deployLabel.className = 'deploy-label';
       deployLabel.id = 'deploy-label-' + repoDeployId;
+      if (r.deployError) {
+        deployLabel.className = 'deploy-label failure';
+        deployLabel.textContent = 'Deploy falhou' + (r.deployDetail ? ': ' + r.deployDetail : '');
+      }
       info.appendChild(nameEl);
       info.appendChild(detailEl);
       info.appendChild(deployLabel);
@@ -925,7 +959,15 @@
         actions.appendChild(diffBtn);
       }
 
-      if (hasChanges) {
+      if (isDeploying) {
+        const deployingBtn = document.createElement('button');
+        deployingBtn.className = 'btn-commit deploying';
+        deployingBtn.title = 'Aguardando CI...';
+        deployingBtn.appendChild(icon('refresh-cw', { size: 13, spin: true }));
+        deployingBtn.disabled = true;
+        actions.appendChild(deployingBtn);
+        activeDeployBtns[r.path].btn = deployingBtn;
+      } else if (hasChanges) {
         const commitBtn = document.createElement('button');
         commitBtn.className = 'btn-commit status-' + r.status;
         commitBtn.title = 'Commit + Push com IA';
@@ -939,14 +981,6 @@
         pullBtn.appendChild(icon('arrow-down', { size: 13 }));
         pullBtn.onclick = function() { doPull(this, r.path, r.name); };
         actions.appendChild(pullBtn);
-      } else if (isDeploying) {
-        const deployingBtn = document.createElement('button');
-        deployingBtn.className = 'btn-commit deploying';
-        deployingBtn.title = 'Aguardando CI...';
-        deployingBtn.appendChild(icon('refresh-cw', { size: 13, spin: true }));
-        deployingBtn.disabled = true;
-        actions.appendChild(deployingBtn);
-        activeDeployBtns[r.path].btn = deployingBtn;
       }
 
       item.appendChild(actions);
@@ -954,7 +988,12 @@
       const deployBar = document.createElement('div');
       deployBar.className = 'deploy-bar';
       deployBar.id = 'deploy-bar-' + repoDeployId;
-      deployBar.style.display = 'none';
+      if (r.deployError) {
+        deployBar.className = 'deploy-bar failure';
+        deployBar.style.display = '';
+      } else {
+        deployBar.style.display = 'none';
+      }
       item.appendChild(deployBar);
 
       list.appendChild(item);
@@ -1014,8 +1053,7 @@
   function renderPendingPreview() {
     const preview = document.getElementById('pendingPreview');
     preview.replaceChildren();
-    const PENDING = ['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged'];
-    const pending = lastResults.filter(r => PENDING.includes(r.status));
+    const pending = lastResults.filter(r => r.pending);
     // Adiciona repos aguardando Actions que ainda não estão na lista
     const pendingPaths = new Set(pending.map(r => r.path));
     for (const [repoPath, entry] of Object.entries(activeDeployBtns)) {
@@ -1035,7 +1073,7 @@
       item.className = 'repo-item';
 
       const dot = document.createElement('div');
-      dot.className = 'repo-dot ' + (r.status || 'clean');
+      dot.className = 'repo-dot ' + displayStatus(r);
       item.appendChild(dot);
 
       const info = document.createElement('div');
@@ -1045,7 +1083,7 @@
       nameEl.textContent = r.name || '';
       const detailEl = document.createElement('div');
       detailEl.className = 'repo-detail';
-      detailEl.textContent = (r.branch ? r.branch + ' · ' : '') + (r.detail || '');
+      detailEl.textContent = detailText(r);
       info.appendChild(nameEl);
       info.appendChild(detailEl);
       item.appendChild(info);
@@ -1107,15 +1145,18 @@
     let doneCount = 0;
     const results2 = await Promise.all(modified.map((r, i) =>
       new Promise(resolve => setTimeout(async () => {
+        setLocalDeployError(r.path, null);
         const res = await ipcRenderer.invoke('commit-and-push', r.path);
         doneCount++;
         setIconLabel(btn, 'refresh-cw', doneCount + '/' + modified.length, { spin: true });
-        resolve(res);
+        resolve({ ...(res || { ok: false, error: 'Sem resposta do processo principal' }), path: r.path, name: r.name });
       }, i * 120))
     ));
 
     const ok = results2.filter(r => r.ok);
     const fail = results2.filter(r => !r.ok);
+    ok.forEach(r => startDeployWatch(null, r.path, r.name));
+    if (ok.length > 0) setTimeout(() => checkRepos(), 500);
 
     btn.className = 'btn-push-all done';
     setIconLabel(btn, 'check', ok.length + '/' + modified.length);
@@ -1186,6 +1227,7 @@
   async function doCommit(btn, repoPath, repoName) {
     btn.className = 'btn-commit loading';
     setIcon(btn, 'refresh-cw', { spin: true });
+    setLocalDeployError(repoPath, null);
 
     const result = await ipcRenderer.invoke('commit-and-push', repoPath);
 
@@ -1217,7 +1259,7 @@
 
   // Recebe updates em tempo real do main process
   ipcRenderer.on('deploy-update', (_, data) => {
-    const { repoPath, repoName, phase, job, detail, done, total } = data;
+    const { repoPath, repoName, phase, job, detail, done, total, failed, failedDetail } = data;
     const id = deployId(repoPath);
     const bar   = document.getElementById(`deploy-bar-${id}`);
     const label = document.getElementById(`deploy-label-${id}`);
@@ -1237,15 +1279,24 @@
     };
 
     if (phase === 'waiting') {
+      if (failed) {
+        setLocalDeployError(repoPath, { phase: 'failure', detail: failedDetail || detail || 'Deploy falhou' });
+        renderRepos(lastResults);
+      }
       showBar('waiting', 'Aguardando CI iniciar...');
       if (btn) { btn.className = 'btn-commit deploying'; setIcon(btn, 'refresh-cw', { spin: true }); }
 
     } else if (phase === 'running') {
+      if (failed) {
+        setLocalDeployError(repoPath, { phase: 'failure', detail: failedDetail || detail || 'Deploy falhou' });
+        renderRepos(lastResults);
+      }
       const prog = total ? ' (' + done + '/' + total + ')' : '';
       showBar('running', (job || 'Rodando') + prog);
       if (btn) { btn.className = 'btn-commit deploying'; setIcon(btn, 'refresh-cw', { spin: true }); }
 
     } else if (phase === 'success') {
+      setLocalDeployError(repoPath, null);
       showBar('success', 'Deploy concluído!');
       if (btn) { btn.className = 'btn-commit deployed'; setIcon(btn, 'check'); }
       showCommitToast('ok', (repoName || '') + ': Deploy concluído!');
@@ -1255,13 +1306,13 @@
       setTimeout(() => checkRepos(), 3000);
 
     } else if (phase === 'failure') {
+      setLocalDeployError(repoPath, { phase, detail: detail || 'Deploy falhou' });
       showBar('failure', 'Deploy falhou: ' + (detail || ''));
       if (btn) { btn.className = 'btn-commit deploy-fail'; setIcon(btn, 'x'); }
       showCommitToast('err', (repoName || '') + ': Deploy falhou — ' + (detail || ''));
-      hideBar();
       delete activeDeployBtns[repoPath];
       if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
-      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); } }, 6000);
+      renderRepos(lastResults);
 
     } else if (phase === 'no-token' || phase === 'no-github' || phase === 'none') {
       if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'alert'); }
@@ -1270,18 +1321,20 @@
       setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); } checkRepos(); }, 4000);
 
     } else if (phase === 'error') {
+      setLocalDeployError(repoPath, { phase, detail: detail || 'Erro no deploy' });
       if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'alert'); }
       showCommitToast('err', (repoName || '') + ': ' + (detail || 'Erro'));
       delete activeDeployBtns[repoPath];
       if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
-      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); } }, 5000);
+      renderRepos(lastResults);
 
     } else if (phase === 'timeout') {
+      setLocalDeployError(repoPath, { phase, detail: 'Timeout aguardando deploy' });
       if (btn) { btn.className = 'btn-commit deploy-fail'; setIcon(btn, 'x'); }
       showCommitToast('err', (repoName || '') + ': Timeout aguardando deploy');
       delete activeDeployBtns[repoPath];
       if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
-      setTimeout(() => { if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); } checkRepos(); }, 6000);
+      renderRepos(lastResults);
     } else if (phase === 'no-ci') {
       if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); }
       if (bar)   { bar.style.display = 'none'; bar.className = 'deploy-bar'; }
