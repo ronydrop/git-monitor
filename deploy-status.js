@@ -33,6 +33,58 @@ function latestStatuses(statuses) {
   });
 }
 
+function runTime(run) {
+  return Date.parse(run.updated_at || run.run_started_at || run.created_at || '') || 0;
+}
+
+function runNumber(run) {
+  return Number(run.run_number || run.check_suite?.id || run.id || 0) || 0;
+}
+
+function runAttempt(run) {
+  return Number(run.run_attempt || 0) || 0;
+}
+
+function isNewerRun(candidate, current) {
+  const candidateTime = runTime(candidate);
+  const currentTime = runTime(current);
+  if (candidateTime !== currentTime) return candidateTime > currentTime;
+
+  const candidateNumber = runNumber(candidate);
+  const currentNumber = runNumber(current);
+  if (candidateNumber !== currentNumber) return candidateNumber > currentNumber;
+
+  const candidateAttempt = runAttempt(candidate);
+  const currentAttempt = runAttempt(current);
+  if (candidateAttempt !== currentAttempt) return candidateAttempt > currentAttempt;
+
+  return Number(candidate.id || 0) > Number(current.id || 0);
+}
+
+function latestByKey(items, keyFn) {
+  const latest = new Map();
+  for (const item of asList(items)) {
+    const key = keyFn(item);
+    if (!key) {
+      latest.set(Symbol('item'), item);
+      continue;
+    }
+    const current = latest.get(key);
+    if (!current || isNewerRun(item, current)) latest.set(key, item);
+  }
+  return [...latest.values()];
+}
+
+function latestWorkflowRuns(workflowRuns) {
+  return latestByKey(workflowRuns, run =>
+    run.workflow_id || run.workflow_name || run.path || run.name || ''
+  );
+}
+
+function latestCheckRuns(checkRuns) {
+  return latestByKey(checkRuns, run => run.name || run.external_id || '');
+}
+
 function isPendingRun(run) {
   return !!run && !!run.status && run.status !== 'completed';
 }
@@ -62,8 +114,8 @@ function isTerminalDeployPhase(phase) {
 }
 
 function resolveDeployPhase(input = {}) {
-  const checkRuns = asList(input.checkRuns);
-  const workflowRuns = asList(input.workflowRuns);
+  const checkRuns = latestCheckRuns(input.checkRuns);
+  const workflowRuns = latestWorkflowRuns(input.workflowRuns);
   const statuses = latestStatuses(input.statuses);
   const combinedState = input.combinedState || null;
   const statusTotal = Number.isFinite(input.statusTotal)

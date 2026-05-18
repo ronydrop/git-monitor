@@ -80,6 +80,37 @@ test('retorna sucesso somente quando todos os sinais conhecidos passaram', () =>
   assert.strictEqual(result.phase, 'success');
 });
 
+test('ignora falha antiga quando rerun mais recente do workflow passou', () => {
+  const result = resolveDeployPhase({
+    checkRuns: [],
+    workflowRuns: [
+      {
+        id: 200,
+        name: 'CI Quality Gate',
+        workflow_id: 10,
+        run_number: 922,
+        status: 'completed',
+        conclusion: 'success',
+        created_at: '2026-05-18T13:00:00Z'
+      },
+      {
+        id: 199,
+        name: 'CI Quality Gate',
+        workflow_id: 10,
+        run_number: 921,
+        status: 'completed',
+        conclusion: 'failure',
+        created_at: '2026-05-18T12:50:00Z'
+      }
+    ],
+    statuses: [],
+    combinedState: 'success',
+    statusTotal: 0
+  });
+
+  assert.strictEqual(result.phase, 'success');
+});
+
 test('fase running com progresso numerico nao e terminal', () => {
   assert.strictEqual(isTerminalDeployPhase('running'), false);
   assert.strictEqual(isTerminalDeployPhase('waiting'), false);
@@ -161,6 +192,44 @@ test('novo commit push limpa erro de deploy armazenado', () => {
     detail: '1 arquivo(s) modificado(s)'
   }, cleared);
 
+  assert.strictEqual(repo.pending, true);
+  assert.strictEqual(repo.deployError, false);
+  assert.strictEqual(repo.deployDetail, '');
+});
+
+test('erro de deploy salvo nao aparece quando repo local mudou de commit', () => {
+  const deployErrors = markDeployError(
+    {},
+    'C:/repo/app',
+    'failure',
+    'CI Quality Gate',
+    Date.now(),
+    { sha: 'old-sha' }
+  );
+  const repo = applyDeployState({
+    name: 'App',
+    path: 'C:/repo/app',
+    status: 'clean',
+    detail: 'Sincronizado',
+    headSha: 'new-sha'
+  }, deployErrors);
+
+  assert.strictEqual(repo.pending, false);
+  assert.strictEqual(repo.deployError, false);
+  assert.strictEqual(repo.deployDetail, '');
+});
+
+test('erro de deploy salvo nao domina status quando remoto avancou', () => {
+  const deployErrors = markDeployError({}, 'C:/repo/app', 'failure', 'CI Quality Gate');
+  const repo = applyDeployState({
+    name: 'App',
+    path: 'C:/repo/app',
+    status: 'behind',
+    detail: '1 commit(s) para pull',
+    behind: 1
+  }, deployErrors);
+
+  assert.strictEqual(repo.status, 'behind');
   assert.strictEqual(repo.pending, true);
   assert.strictEqual(repo.deployError, false);
   assert.strictEqual(repo.deployDetail, '');

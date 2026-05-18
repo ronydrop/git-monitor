@@ -16,6 +16,13 @@ function isDeployErrorEntry(entry) {
   return !!(entry && DEPLOY_ERROR_PHASES.has(entry.phase));
 }
 
+function isDeployErrorStaleForRepo(repo, entry) {
+  if (!repo || !entry) return false;
+  if (Number(repo.behind || 0) > 0) return true;
+  if (entry.sha && repo.headSha && entry.sha !== repo.headSha) return true;
+  return false;
+}
+
 function sanitizeDeployErrors(deployErrors) {
   const next = {};
   for (const [key, entry] of Object.entries(deployErrors || {})) {
@@ -26,7 +33,9 @@ function sanitizeDeployErrors(deployErrors) {
 
 function applyDeployState(repo, deployErrors) {
   const rawEntry = deployErrors && deployErrors[repoKey(repo.path)];
-  const entry = isDeployErrorEntry(rawEntry) ? rawEntry : null;
+  const entry = isDeployErrorEntry(rawEntry) && !isDeployErrorStaleForRepo(repo, rawEntry)
+    ? rawEntry
+    : null;
   const next = {
     ...repo,
     deployError: !!entry,
@@ -38,13 +47,15 @@ function applyDeployState(repo, deployErrors) {
   return next;
 }
 
-function markDeployError(deployErrors, repoPath, phase, detail, now = Date.now()) {
+function markDeployError(deployErrors, repoPath, phase, detail, now = Date.now(), meta = {}) {
   if (!DEPLOY_ERROR_PHASES.has(phase)) return { ...(deployErrors || {}) };
   const next = { ...(deployErrors || {}) };
   next[repoKey(repoPath)] = {
     phase,
     detail: detail || 'Deploy falhou',
-    failedAt: now
+    failedAt: now,
+    sha: meta.sha || '',
+    branch: meta.branch || ''
   };
   return next;
 }
@@ -55,11 +66,23 @@ function clearDeployError(deployErrors, repoPath) {
   return next;
 }
 
+function pruneDeployErrorsForRepos(deployErrors, repos) {
+  let next = sanitizeDeployErrors(deployErrors);
+  for (const repo of repos || []) {
+    const key = repoKey(repo.path);
+    if (next[key] && isDeployErrorStaleForRepo(repo, next[key])) {
+      delete next[key];
+    }
+  }
+  return next;
+}
+
 module.exports = {
   applyDeployState,
   clearDeployError,
   isPendingRepo,
   markDeployError,
+  pruneDeployErrorsForRepos,
   repoKey,
   sanitizeDeployErrors
 };

@@ -5,7 +5,15 @@ const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const { resolveDeployPhase } = require('./deploy-status');
-const { applyDeployState, clearDeployError, isPendingRepo, markDeployError, sanitizeDeployErrors } = require('./repo-state');
+const {
+  applyDeployState,
+  clearDeployError,
+  isPendingRepo,
+  markDeployError,
+  pruneDeployErrorsForRepos,
+  repoKey,
+  sanitizeDeployErrors
+} = require('./repo-state');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
@@ -257,7 +265,7 @@ function mapReposForNotch(results) {
   const mapped = results.map(r => applyDeployState({
     name: r.name, path: r.path, status: r.status, detail: r.detail,
     branch: r.branch, ahead: r.ahead, behind: r.behind,
-    changedFiles: r.changedFiles, remoteUrl: r.remoteUrl,
+    changedFiles: r.changedFiles, remoteUrl: r.remoteUrl, headSha: r.headSha,
   }, config.deployErrors));
   const order = { 'deploy-error': -1, diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3, dirty: 4, busy: 5, error: 6, clean: 7 };
   const sortStatus = r => r.deployError ? 'deploy-error' : r.status;
@@ -575,9 +583,10 @@ async function checkRepoOnce(repoPath) {
   try {
     const gitOpts = { cwd: repoPath, timeout: 15000 };
 
-    const [statusOutput, branch] = await Promise.all([
+    const [statusOutput, branch, headSha] = await Promise.all([
       gitExec('git --no-optional-locks status --porcelain', gitOpts).then(o => o.trim()),
       gitExec('git rev-parse --abbrev-ref HEAD', gitOpts).then(o => o.trim()),
+      gitExec('git rev-parse HEAD', gitOpts).then(o => o.trim()),
     ]);
 
     // fetch separado — não compete com status
@@ -629,7 +638,7 @@ async function checkRepoOnce(repoPath) {
       remoteUrl = (await gitExec('git config --get remote.origin.url', { cwd: repoPath, timeout: 5000 })).trim();
     } catch (e) { }
 
-    return { status, detail, branch, ahead, behind, changedFiles, remoteUrl };
+    return { status, detail, branch, headSha, ahead, behind, changedFiles, remoteUrl };
   } finally {
     release();
   }
@@ -661,8 +670,84 @@ async function checkAllRepos() {
     results.push(...batchResults);
   }
 
+  await reconcileDeployErrorsForRepos(results);
   lastRepoResults = results;
   return results;
+}
+
+function deployErrorsEqual(a, b) {
+  return JSON.stringify(a || {}) === JSON.stringify(b || {});
+}
+
+async function resolveDeployPhaseForRepoSnapshot(repo) {
+  if (!config.githubToken || !repo || !repo.headSha || !repo.remoteUrl) return null;
+
+  const gh = parseGithubOwnerRepo(repo.remoteUrl);
+  if (!gh) return null;
+
+  const workflowQuery = new URLSearchParams({ head_sha: repo.headSha, per_page: '50' });
+  if (repo.branch && repo.branch !== 'HEAD') workflowQuery.set('branch', repo.branch);
+
+  const [workflowRes, checkRes, statusRes] = await Promise.all([
+    githubApiGet(`/repos/${gh.owner}/${gh.repo}/actions/runs?${workflowQuery.toString()}`),
+    githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${repo.headSha}/check-runs`),
+    githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${repo.headSha}/status`)
+  ]);
+
+  const hasWorkflowAccess = workflowRes.statusCode === 200;
+  const hasCheckAccess  = checkRes.statusCode === 200;
+  const hasStatusAccess = statusRes.statusCode === 200;
+  if (!hasWorkflowAccess && !hasCheckAccess && !hasStatusAccess) return null;
+
+  const workflowRuns = (hasWorkflowAccess && workflowRes.data.workflow_runs) ? workflowRes.data.workflow_runs : [];
+  const checkRuns    = (hasCheckAccess && checkRes.data.check_runs) ? checkRes.data.check_runs : [];
+  const statuses     = (hasStatusAccess && statusRes.data.statuses) ? statusRes.data.statuses : [];
+  const statusTotal  = hasStatusAccess ? (statusRes.data.total_count || 0) : 0;
+
+  const hasData = workflowRuns.length > 0 || checkRuns.length > 0 || statusTotal > 0;
+  if (!hasData) return null;
+
+  return {
+    ...resolveDeployPhase({
+      checkRuns,
+      workflowRuns,
+      statuses,
+      combinedState: hasStatusAccess ? statusRes.data.state : null,
+      statusTotal
+    }),
+    sha: repo.headSha,
+    branch: repo.branch
+  };
+}
+
+async function reconcileDeployErrorsForRepos(results) {
+  let next = pruneDeployErrorsForRepos(config.deployErrors, results);
+
+  for (const repo of results) {
+    if (!next[repoKey(repo.path)]) continue;
+
+    const deployPhase = await resolveDeployPhaseForRepoSnapshot(repo);
+    if (!deployPhase) continue;
+
+    if (deployPhase.phase === 'success') {
+      next = clearDeployError(next, repo.path);
+    } else if (deployPhase.failed || ['failure', 'error'].includes(deployPhase.phase)) {
+      const phase = deployPhase.phase === 'error' ? 'error' : 'failure';
+      next = markDeployError(
+        next,
+        repo.path,
+        phase,
+        deployPhase.failedDetail || deployPhase.detail || 'Deploy falhou',
+        Date.now(),
+        { sha: repo.headSha, branch: repo.branch }
+      );
+    }
+  }
+
+  if (!deployErrorsEqual(config.deployErrors, next)) {
+    config.deployErrors = next;
+    saveConfig(config);
+  }
 }
 
 // ============================================================
@@ -1463,7 +1548,7 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
           return { phase: 'waiting' };
         }
 
-        return deployPhase;
+        return { ...deployPhase, sha, branch };
       } catch (e) {
         return { phase: 'error', detail: e.message };
       }
@@ -1473,7 +1558,14 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
     if (res.failed || ['failure', 'error'].includes(res.phase)) {
       const failedPhase = res.phase === 'error' ? 'error' : 'failure';
       const failedDetail = res.failedDetail || res.detail || 'Deploy falhou';
-      config.deployErrors = markDeployError(config.deployErrors, repoPath, failedPhase, failedDetail);
+      config.deployErrors = markDeployError(
+        config.deployErrors,
+        repoPath,
+        failedPhase,
+        failedDetail,
+        Date.now(),
+        { sha: res.sha || '', branch: res.branch || '' }
+      );
       saveConfig(config);
     } else if (res.phase === 'success') {
       config.deployErrors = clearDeployError(config.deployErrors, repoPath);
