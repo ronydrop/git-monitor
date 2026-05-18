@@ -4,6 +4,7 @@ const { exec, execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const https = require('https');
+const { resolveDeployPhase } = require('./deploy-status');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
@@ -1384,93 +1385,72 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
         const gh = parseGithubOwnerRepo(remoteUrl);
         if (!gh) return { phase: 'no-github' };
 
-        // Busca check-runs (GitHub Actions) e commit statuses (Vercel, Render, etc.) em paralelo
-        const [checkRes, statusRes] = await Promise.all([
+        let branch = '';
+        try { branch = (await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath, timeout: 3000 })).trim(); } catch (e) { }
+
+        const workflowQuery = new URLSearchParams({ head_sha: sha, per_page: '50' });
+        if (branch && branch !== 'HEAD') workflowQuery.set('branch', branch);
+
+        // Busca workflow runs, check-runs e commit statuses para o commit atual.
+        const [workflowRes, checkRes, statusRes] = await Promise.all([
+          githubApiGet(`/repos/${gh.owner}/${gh.repo}/actions/runs?${workflowQuery.toString()}`),
           githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/check-runs`),
           githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/status`)
         ]);
 
+        const hasWorkflowAccess = workflowRes.statusCode === 200;
         const hasCheckAccess  = checkRes.statusCode === 200;
         const hasStatusAccess = statusRes.statusCode === 200;
 
-        if (!hasCheckAccess && !hasStatusAccess) {
-          const code = checkRes.statusCode;
+        if (!hasWorkflowAccess && !hasCheckAccess && !hasStatusAccess) {
+          const code = workflowRes.statusCode || checkRes.statusCode || statusRes.statusCode;
           if (code === 401) return { phase: 'error', detail: 'Token GitHub inválido ou expirado — atualize nas configurações' };
           if (code === 403) return { phase: 'error', detail: 'Token sem permissão — gere um novo com escopo repo' };
           if (code === 404) return { phase: 'error', detail: 'Token sem acesso ao repo — verifique permissões' };
           return { phase: 'error', detail: `Erro ao acessar GitHub (HTTP ${code})` };
         }
 
-        // --- GitHub Actions (check-runs) ---
+        // --- GitHub Actions (workflow runs + check-runs) ---
+        const workflowRuns = (hasWorkflowAccess && workflowRes.data.workflow_runs) ? workflowRes.data.workflow_runs : [];
         const runs = (hasCheckAccess && checkRes.data.check_runs) ? checkRes.data.check_runs : [];
-        const pendingRuns = runs.filter(r => r.status !== 'completed');
-        const failedRuns  = runs.filter(r => ['failure','cancelled','timed_out'].includes(r.conclusion));
-        const runningJob  = runs.find(r => r.status === 'in_progress');
 
         // --- Commit statuses (Vercel, Render, Netlify etc.) ---
         const statuses      = (hasStatusAccess && statusRes.data.statuses) ? statusRes.data.statuses : [];
         const combinedState = hasStatusAccess ? statusRes.data.state : null;
         const statusTotal   = hasStatusAccess ? (statusRes.data.total_count || 0) : 0;
-        const pendingStatuses = statuses.filter(s => s.state === 'pending');
-        const failedStatuses  = statuses.filter(s => s.state === 'failure' || s.state === 'error');
-        const runningStatus   = pendingStatuses[0];
 
-        _diag = { repoPath, sha, attempts, checkStatus: checkRes.statusCode, statusStatus: statusRes.statusCode, runsTotal: runs.length, runsPending: pendingRuns.length, runsFailed: failedRuns.length, runsConclusions: runs.map(r => [r.name, r.status, r.conclusion]), statusTotal, combinedState, statusesDetail: statuses.map(s => [s.context, s.state]) };
+        const deployPhase = resolveDeployPhase({
+          checkRuns: runs,
+          workflowRuns,
+          statuses,
+          combinedState,
+          statusTotal
+        });
 
-        const hasData = runs.length > 0 || statusTotal > 0;
+        _diag = {
+          repoPath,
+          sha,
+          branch,
+          attempts,
+          workflowStatus: workflowRes.statusCode,
+          checkStatus: checkRes.statusCode,
+          statusStatus: statusRes.statusCode,
+          workflowsTotal: workflowRuns.length,
+          workflowsConclusions: workflowRuns.map(r => [r.name, r.status, r.conclusion]),
+          runsTotal: runs.length,
+          runsConclusions: runs.map(r => [r.name, r.status, r.conclusion]),
+          statusTotal,
+          combinedState,
+          statusesDetail: statuses.map(s => [s.context, s.state])
+        };
+
+        const hasData = workflowRuns.length > 0 || runs.length > 0 || statusTotal > 0;
         if (!hasData) {
           if (attempts >= 5) return { phase: 'no-ci' };
           return { phase: 'waiting' };
         }
 
-        // Pending: check-runs em andamento OU combined state pendente
-        const anyPending = pendingRuns.length > 0 || combinedState === 'pending';
-
-        // Failed: check-runs falharam OU combined state é failure/error
-        const anyFailed = failedRuns.length > 0 ||
-                          combinedState === 'failure' ||
-                          combinedState === 'error';
-
-        if (anyPending) {
-          const job = runningJob
-            ? runningJob.name
-            : runningStatus
-              ? (runningStatus.context || 'Deploy em andamento')
-              : `${pendingRuns.length} em andamento`;
-          return {
-            phase: 'running',
-            job,
-            total: runs.length + statusTotal,
-            done: (runs.length - pendingRuns.length) + (statusTotal - pendingStatuses.length)
-          };
-        }
-
-        if (anyFailed) {
-          const failedNames = [
-            ...failedRuns.map(r => r.name),
-            ...failedStatuses.map(s => s.context || s.description || 'deploy')
-          ];
-          const detail = failedNames.length > 0 ? failedNames.join(', ') : 'deploy falhou';
-          return { phase: 'failure', detail };
-        }
-
-        if (combinedState === 'pending') {
-          const job = runningStatus
-            ? (runningStatus.context || 'Deploy em andamento')
-            : 'Deploy em andamento';
-          return {
-            phase: 'running',
-            job,
-            total: runs.length + statusTotal,
-            done: (runs.length - pendingRuns.length) + (statusTotal - pendingStatuses.length)
-          };
-        }
-
-        if (combinedState !== null && combinedState !== 'success') {
-          return { phase: 'waiting' };
-        }
-
-        return { phase: 'success' };
+        return deployPhase;
       } catch (e) {
         return { phase: 'error', detail: e.message };
       }

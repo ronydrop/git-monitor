@@ -407,6 +407,7 @@
 <script src="themes.js"></script>
 <script>
   const { ipcRenderer } = require('electron');
+  const { isTerminalDeployPhase } = require('./deploy-status');
 
   const ICONS = {
     'refresh-cw':   '<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>',
@@ -1138,8 +1139,10 @@
   });
 
   ipcRenderer.on('deploy-update', (_, data) => {
-    const { repoPath, phase, done, detail } = data;
-    if (done || phase === 'none') {
+    const { repoPath, phase, detail } = data;
+    const terminal = isTerminalDeployPhase(phase);
+
+    if (terminal) {
       if (phase === 'success') {
         recentDeploySuccess = true;
         if (deploySuccessTimer) clearTimeout(deploySuccessTimer);
@@ -1180,7 +1183,6 @@
       restoreRowBtn(repoPath);
     }
 
-    const terminal = done || ['none', 'no-ci', 'success', 'failure', 'timeout', 'error', 'no-token', 'no-github'].includes(phase);
     if (terminal) {
       const wasPushAll = entry.fromPushAll;
       delete deployingRows[repoPath];

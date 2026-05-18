@@ -1,6 +1,6 @@
 {
   "name": "git-monitor",
-  "version": "1.2.37",
+  "version": "1.2.38",
   "description": "Mini widget desktop para monitorar repositórios Git em tempo real",
   "main": "main.js",
   "author": {
@@ -14,6 +14,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "test": "node tests/deploy-status.test.js",
     "build": "electron-builder --win portable",
     "build-installer": "electron-builder --win nsis",
     "release": "electron-builder --win portable nsis --publish always",
@@ -26,6 +27,7 @@
     "productName": "Git Monitor",
     "files": [
       "main.js",
+      "deploy-status.js",
       "index.html",
       "config.html",
       "diff.html",
