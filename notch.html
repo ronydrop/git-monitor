@@ -1218,10 +1218,14 @@
       updateRowPhase(repoPath, 'deployed', 'check');
       rowToast('ok', rname + ': Deploy concluído!');
       setTimeout(() => restoreRowBtn(repoPath), 4000);
-    } else if (phase === 'failure' || phase === 'timeout') {
-      setLocalDeployError(repoPath, { phase, detail: detail || (phase === 'timeout' ? 'Timeout aguardando deploy' : 'Deploy falhou') });
+    } else if (phase === 'failure') {
+      setLocalDeployError(repoPath, { phase, detail: detail || 'Deploy falhou' });
       updateRowPhase(repoPath, 'deploy-fail', 'x');
-      rowToast('err', rname + ': ' + (phase === 'timeout' ? 'Timeout aguardando deploy' : 'Deploy falhou' + (detail ? ' — ' + detail : '')), 6000);
+      rowToast('err', rname + ': Deploy falhou' + (detail ? ' — ' + detail : ''), 6000);
+    } else if (phase === 'timeout') {
+      updateRowPhase(repoPath, '', 'alert');
+      rowToast('info', rname + ': ' + (detail || 'Monitoramento expirou; confira o GitHub'), 5000);
+      setTimeout(() => restoreRowBtn(repoPath), 4000);
     } else if (phase === 'error') {
       setLocalDeployError(repoPath, { phase, detail: detail || 'Erro no deploy' });
       updateRowPhase(repoPath, '', 'alert');

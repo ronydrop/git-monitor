@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const { resolveDeployPhase } = require('./deploy-status');
-const { applyDeployState, clearDeployError, isPendingRepo, markDeployError } = require('./repo-state');
+const { applyDeployState, clearDeployError, isPendingRepo, markDeployError, sanitizeDeployErrors } = require('./repo-state');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
@@ -214,7 +214,9 @@ function loadConfig() {
   if (!cfg.anthropicAuthMode) cfg.anthropicAuthMode = 'oauth';
   if (!cfg.openaiAuthMode)    cfg.openaiAuthMode    = 'apiKey';
   if (!cfg.theme)             cfg.theme             = 'obsidian';
-  if (!cfg.deployErrors || typeof cfg.deployErrors !== 'object') cfg.deployErrors = {};
+  cfg.deployErrors = sanitizeDeployErrors(
+    cfg.deployErrors && typeof cfg.deployErrors === 'object' ? cfg.deployErrors : {}
+  );
   return cfg;
 }
 
@@ -1372,7 +1374,7 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
   saveConfig(config);
 
   let attempts = 0;
-  const maxAttempts = 60;
+  const maxAttempts = 180;
 
   const send = (payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1468,9 +1470,9 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
     })();
 
     if (_diag) console.log('[deploy-watch]', JSON.stringify({ ..._diag, emittedPhase: res.phase }));
-    if (res.failed || ['failure', 'timeout', 'error'].includes(res.phase)) {
-      const failedPhase = res.phase === 'timeout' || res.phase === 'error' ? res.phase : 'failure';
-      const failedDetail = res.failedDetail || res.detail || (failedPhase === 'timeout' ? 'Timeout aguardando deploy' : 'Deploy falhou');
+    if (res.failed || ['failure', 'error'].includes(res.phase)) {
+      const failedPhase = res.phase === 'error' ? 'error' : 'failure';
+      const failedDetail = res.failedDetail || res.detail || 'Deploy falhou';
       config.deployErrors = markDeployError(config.deployErrors, repoPath, failedPhase, failedDetail);
       saveConfig(config);
     } else if (res.phase === 'success') {
@@ -1483,9 +1485,7 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
       if (attempts < maxAttempts) {
         deployWatchers[repoPath] = { timer: setTimeout(check, 4000) };
       } else {
-        config.deployErrors = markDeployError(config.deployErrors, repoPath, 'timeout', 'Timeout aguardando deploy');
-        saveConfig(config);
-        send({ phase: 'timeout' });
+        send({ phase: 'timeout', detail: 'Monitoramento expirou sem conclusao no GitHub' });
         delete deployWatchers[repoPath];
       }
     } else {

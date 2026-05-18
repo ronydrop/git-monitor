@@ -1329,12 +1329,14 @@
       renderRepos(lastResults);
 
     } else if (phase === 'timeout') {
-      setLocalDeployError(repoPath, { phase, detail: 'Timeout aguardando deploy' });
-      if (btn) { btn.className = 'btn-commit deploy-fail'; setIcon(btn, 'x'); }
-      showCommitToast('err', (repoName || '') + ': Timeout aguardando deploy');
+      const msg = detail || 'Monitoramento expirou; confira o GitHub';
+      showBar('waiting', msg);
+      if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'alert'); }
+      showCommitToast('info', (repoName || '') + ': ' + msg);
+      hideBar();
       delete activeDeployBtns[repoPath];
       if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
-      renderRepos(lastResults);
+      setTimeout(() => checkRepos(), 500);
     } else if (phase === 'no-ci') {
       if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'arrow-up'); }
       if (bar)   { bar.style.display = 'none'; bar.className = 'deploy-bar'; }

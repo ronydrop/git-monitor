@@ -1,7 +1,7 @@
 const path = require('path');
 
 const PENDING_STATES = new Set(['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged', 'error']);
-const DEPLOY_ERROR_PHASES = new Set(['failure', 'timeout', 'error']);
+const DEPLOY_ERROR_PHASES = new Set(['failure', 'error']);
 
 function repoKey(repoPath) {
   if (!repoPath) return '';
@@ -12,8 +12,21 @@ function isPendingRepo(repo) {
   return !!(repo && (PENDING_STATES.has(repo.status) || repo.deployError));
 }
 
+function isDeployErrorEntry(entry) {
+  return !!(entry && DEPLOY_ERROR_PHASES.has(entry.phase));
+}
+
+function sanitizeDeployErrors(deployErrors) {
+  const next = {};
+  for (const [key, entry] of Object.entries(deployErrors || {})) {
+    if (isDeployErrorEntry(entry)) next[key] = entry;
+  }
+  return next;
+}
+
 function applyDeployState(repo, deployErrors) {
-  const entry = deployErrors && deployErrors[repoKey(repo.path)];
+  const rawEntry = deployErrors && deployErrors[repoKey(repo.path)];
+  const entry = isDeployErrorEntry(rawEntry) ? rawEntry : null;
   const next = {
     ...repo,
     deployError: !!entry,
@@ -30,7 +43,7 @@ function markDeployError(deployErrors, repoPath, phase, detail, now = Date.now()
   const next = { ...(deployErrors || {}) };
   next[repoKey(repoPath)] = {
     phase,
-    detail: detail || (phase === 'timeout' ? 'Timeout aguardando deploy' : 'Deploy falhou'),
+    detail: detail || 'Deploy falhou',
     failedAt: now
   };
   return next;
@@ -47,5 +60,6 @@ module.exports = {
   clearDeployError,
   isPendingRepo,
   markDeployError,
-  repoKey
+  repoKey,
+  sanitizeDeployErrors
 };

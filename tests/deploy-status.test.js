@@ -103,8 +103,8 @@ test('mantem erro de deploy separado do status git pendente', () => {
   assert.strictEqual(repo.deployDetail, 'CI Quality Gate');
 });
 
-test('repo limpo com erro de deploy continua pendente ate novo commit push', () => {
-  const deployErrors = markDeployError({}, 'C:/repo/app', 'timeout', 'Timeout aguardando deploy');
+test('repo limpo com erro real de deploy continua pendente ate novo commit push', () => {
+  const deployErrors = markDeployError({}, 'C:/repo/app', 'failure', 'Deploy Production');
   const repo = applyDeployState({
     name: 'App',
     path: 'C:/repo/app',
@@ -115,6 +115,40 @@ test('repo limpo com erro de deploy continua pendente ate novo commit push', () 
   assert.strictEqual(repo.status, 'clean');
   assert.strictEqual(repo.pending, true);
   assert.strictEqual(repo.deployError, true);
+});
+
+test('timeout do watcher nao vira erro de deploy persistido', () => {
+  const deployErrors = markDeployError({}, 'C:/repo/app', 'timeout', 'Timeout aguardando deploy');
+  const repo = applyDeployState({
+    name: 'App',
+    path: 'C:/repo/app',
+    status: 'clean',
+    detail: 'Sincronizado'
+  }, deployErrors);
+
+  assert.strictEqual(repo.status, 'clean');
+  assert.strictEqual(repo.pending, false);
+  assert.strictEqual(repo.deployError, false);
+  assert.strictEqual(repo.deployDetail, '');
+});
+
+test('timeout legado salvo no config e ignorado no status do repo', () => {
+  const deployErrors = {
+    'c:\\repo\\app': {
+      phase: 'timeout',
+      detail: 'Timeout aguardando deploy',
+      failedAt: Date.now()
+    }
+  };
+  const repo = applyDeployState({
+    name: 'App',
+    path: 'C:/repo/app',
+    status: 'clean',
+    detail: 'Sincronizado'
+  }, deployErrors);
+
+  assert.strictEqual(repo.pending, false);
+  assert.strictEqual(repo.deployError, false);
 });
 
 test('novo commit push limpa erro de deploy armazenado', () => {
