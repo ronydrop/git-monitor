@@ -621,13 +621,15 @@
   function setLocalDeployError(repoPath, entry) {
     repos = repos.map(r => {
       if (r.path !== repoPath) return r;
+      const gitPending = isGitPendingStatus(r.status);
       return {
         ...r,
         deployError: !!entry,
         deployPhase: entry ? entry.phase : '',
         deployDetail: entry ? (entry.detail || '') : '',
         deployFailedAt: entry ? Date.now() : null,
-        pending: !!entry || isGitPendingStatus(r.status)
+        pending: gitPending,
+        needsAttention: gitPending || !!entry
       };
     });
   }
@@ -640,18 +642,18 @@
   }
 
   function effectivePending() {
-    const pending = repos.filter(r => r.pending);
+    const pending = repos.filter(r => r.needsAttention || r.pending || r.deployError);
     const seen = new Set(pending.map(r => r.path));
     for (const p of runningActions) {
       if (!seen.has(p)) {
         const r = repos.find(rr => rr.path === p);
-        pending.push({ name: r ? r.name : p, path: p, status: 'busy', detail: 'Enviando…', pending: true });
+        pending.push({ name: r ? r.name : p, path: p, status: 'busy', detail: 'Enviando…', pending: true, needsAttention: true });
         seen.add(p);
       }
     }
     for (const [p, entry] of Object.entries(deployingRows)) {
       if (!seen.has(p)) {
-        pending.push({ name: entry.repoName || p, path: p, status: 'busy', detail: 'Aguardando CI…', pending: true });
+        pending.push({ name: entry.repoName || p, path: p, status: 'busy', detail: 'Aguardando CI…', pending: false, needsAttention: true });
         seen.add(p);
       }
     }

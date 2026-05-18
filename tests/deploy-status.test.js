@@ -129,12 +129,13 @@ test('mantem erro de deploy separado do status git pendente', () => {
 
   assert.strictEqual(repo.status, 'dirty');
   assert.strictEqual(repo.pending, true);
+  assert.strictEqual(repo.needsAttention, true);
   assert.strictEqual(repo.deployError, true);
   assert.strictEqual(repo.deployPhase, 'failure');
   assert.strictEqual(repo.deployDetail, 'CI Quality Gate');
 });
 
-test('repo limpo com erro real de deploy continua pendente ate novo commit push', () => {
+test('repo limpo com erro real de deploy nao vira pendencia git', () => {
   const deployErrors = markDeployError({}, 'C:/repo/app', 'failure', 'Deploy Production');
   const repo = applyDeployState({
     name: 'App',
@@ -144,7 +145,8 @@ test('repo limpo com erro real de deploy continua pendente ate novo commit push'
   }, deployErrors);
 
   assert.strictEqual(repo.status, 'clean');
-  assert.strictEqual(repo.pending, true);
+  assert.strictEqual(repo.pending, false);
+  assert.strictEqual(repo.needsAttention, true);
   assert.strictEqual(repo.deployError, true);
 });
 
@@ -159,6 +161,7 @@ test('timeout do watcher nao vira erro de deploy persistido', () => {
 
   assert.strictEqual(repo.status, 'clean');
   assert.strictEqual(repo.pending, false);
+  assert.strictEqual(repo.needsAttention, false);
   assert.strictEqual(repo.deployError, false);
   assert.strictEqual(repo.deployDetail, '');
 });
@@ -179,6 +182,7 @@ test('timeout legado salvo no config e ignorado no status do repo', () => {
   }, deployErrors);
 
   assert.strictEqual(repo.pending, false);
+  assert.strictEqual(repo.needsAttention, false);
   assert.strictEqual(repo.deployError, false);
 });
 
@@ -193,6 +197,7 @@ test('novo commit push limpa erro de deploy armazenado', () => {
   }, cleared);
 
   assert.strictEqual(repo.pending, true);
+  assert.strictEqual(repo.needsAttention, true);
   assert.strictEqual(repo.deployError, false);
   assert.strictEqual(repo.deployDetail, '');
 });
@@ -215,6 +220,7 @@ test('erro de deploy salvo nao aparece quando repo local mudou de commit', () =>
   }, deployErrors);
 
   assert.strictEqual(repo.pending, false);
+  assert.strictEqual(repo.needsAttention, false);
   assert.strictEqual(repo.deployError, false);
   assert.strictEqual(repo.deployDetail, '');
 });
@@ -231,6 +237,7 @@ test('erro de deploy salvo nao domina status quando remoto avancou', () => {
 
   assert.strictEqual(repo.status, 'behind');
   assert.strictEqual(repo.pending, true);
+  assert.strictEqual(repo.needsAttention, true);
   assert.strictEqual(repo.deployError, false);
   assert.strictEqual(repo.deployDetail, '');
 });

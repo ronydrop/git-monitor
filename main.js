@@ -8,8 +8,8 @@ const { resolveDeployPhase } = require('./deploy-status');
 const {
   applyDeployState,
   clearDeployError,
-  isPendingRepo,
   markDeployError,
+  needsAttentionRepo,
   pruneDeployErrorsForRepos,
   repoKey,
   sanitizeDeployErrors
@@ -1889,12 +1889,14 @@ ipcMain.handle('notch-pending-repos', async () => {
   const results = await checkAllRepos();
   const pending = results
     .map(r => applyDeployState(r, config.deployErrors))
-    .filter(r => isPendingRepo(r))
+    .filter(r => needsAttentionRepo(r))
     .map(r => ({
       name: r.name,
       path: r.path,
       status: r.status,
       detail: r.detail,
+      pending: r.pending,
+      needsAttention: r.needsAttention,
       deployError: r.deployError,
       deployPhase: r.deployPhase,
       deployDetail: r.deployDetail,

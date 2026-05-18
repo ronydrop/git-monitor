@@ -9,7 +9,11 @@ function repoKey(repoPath) {
 }
 
 function isPendingRepo(repo) {
-  return !!(repo && (PENDING_STATES.has(repo.status) || repo.deployError));
+  return !!(repo && PENDING_STATES.has(repo.status));
+}
+
+function needsAttentionRepo(repo) {
+  return !!(repo && (isPendingRepo(repo) || repo.deployError));
 }
 
 function isDeployErrorEntry(entry) {
@@ -44,6 +48,7 @@ function applyDeployState(repo, deployErrors) {
     deployFailedAt: entry ? entry.failedAt : null
   };
   next.pending = isPendingRepo(next);
+  next.needsAttention = needsAttentionRepo(next);
   return next;
 }
 
@@ -82,6 +87,7 @@ module.exports = {
   clearDeployError,
   isPendingRepo,
   markDeployError,
+  needsAttentionRepo,
   pruneDeployErrorsForRepos,
   repoKey,
   sanitizeDeployErrors

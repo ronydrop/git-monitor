@@ -678,7 +678,7 @@
     <div class="titlebar-actions">
       <button class="btn-refresh" id="refreshBtn" onclick="refreshNow()" title="Atualizar"></button>
       <button id="configBtn" onclick="openConfig()" title="Configurar"></button>
-      <button id="pendingToggleBtn" onclick="togglePending()" title="Mostrar pendentes"></button>
+      <button id="pendingToggleBtn" onclick="togglePending()" title="Mostrar alertas"></button>
       <button id="modeBtn" onclick="switchMode()" title="Mudar para modo notch"></button>
       <button id="collapseBtn" onclick="toggleCollapse()" title="Minimizar"></button>
       <button class="btn-close" id="closeBtn" onclick="closeApp()" title="Fechar"></button>
@@ -833,13 +833,15 @@
   function setLocalDeployError(repoPath, entry) {
     lastResults = lastResults.map(r => {
       if (r.path !== repoPath) return r;
+      const gitPending = isGitPendingStatus(r.status);
       return {
         ...r,
         deployError: !!entry,
         deployPhase: entry ? entry.phase : '',
         deployDetail: entry ? (entry.detail || '') : '',
         deployFailedAt: entry ? Date.now() : null,
-        pending: !!entry || isGitPendingStatus(r.status)
+        pending: gitPending,
+        needsAttention: gitPending || !!entry
       };
     });
   }
@@ -1040,31 +1042,31 @@
     btn.title = collapsed ? 'Expandir' : 'Minimizar';
   }
 
-  // ---- Pending preview (collapsed mode) ----
+  // ---- Attention preview (collapsed mode) ----
   function togglePending() {
     const container = document.getElementById('container');
     const visible = container.classList.toggle('pending-visible');
     const btn = document.getElementById('pendingToggleBtn');
     setIcon(btn, visible ? 'eye-off' : 'eye');
-    btn.title = visible ? 'Ocultar pendentes' : 'Mostrar pendentes';
+    btn.title = visible ? 'Ocultar alertas' : 'Mostrar alertas';
     if (visible) renderPendingPreview();
   }
 
   function renderPendingPreview() {
     const preview = document.getElementById('pendingPreview');
     preview.replaceChildren();
-    const pending = lastResults.filter(r => r.pending);
+    const pending = lastResults.filter(r => r.needsAttention || r.pending || r.deployError);
     // Adiciona repos aguardando Actions que ainda não estão na lista
     const pendingPaths = new Set(pending.map(r => r.path));
     for (const [repoPath, entry] of Object.entries(activeDeployBtns)) {
       if (!pendingPaths.has(repoPath)) {
-        pending.push({ name: entry.repoName, path: repoPath, status: 'busy', detail: 'Aguardando CI...' });
+        pending.push({ name: entry.repoName, path: repoPath, status: 'busy', detail: 'Aguardando CI...', pending: false, needsAttention: true });
       }
     }
     if (pending.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty-pending';
-      empty.textContent = 'Nenhum pendente';
+      empty.textContent = 'Nenhum alerta';
       preview.appendChild(empty);
       return;
     }
