@@ -31,6 +31,6 @@ Quando o usuario pedir explicitamente uma nova branch, use o prefixo `codex/`.
 
 ## Excecao local: `/push` / `Git Monitor Push`
 
-Quando o usuario enviar `/push` neste repositorio ou invocar explicitamente a skill local "Git Monitor Push", isso conta como confirmacao explicita para executar o fluxo de publicacao local: bump patch automatico, validacoes, build Electron, commit, tag `vX.Y.Z` e push atomico para `origin/master`.
+Quando o usuario enviar `/push` neste repositorio ou invocar explicitamente a skill local "Git Monitor Push" (`git-monitor-push`), isso conta como confirmacao explicita para executar o fluxo de publicacao local: bump patch automatico, validacoes, build Electron, commit, tag `vX.Y.Z` e push atomico para `origin/master`.
 
-Nessa situacao, carregue e siga a skill local em `.codex/skills/push/SKILL.md`. Nao peca uma confirmacao adicional para commit, tag ou push. Fora dessa invocacao explicita, continue pedindo confirmacao antes de qualquer commit, tag, push, branch, PR ou release.
+Nessa situacao, carregue e siga a skill local em `.codex/skills/push/SKILL.md`; nao use nenhuma skill global/externa chamada `push`. Nao peca uma confirmacao adicional para commit, tag ou push. Fora dessa invocacao explicita, continue pedindo confirmacao antes de qualquer commit, tag, push, branch, PR ou release.

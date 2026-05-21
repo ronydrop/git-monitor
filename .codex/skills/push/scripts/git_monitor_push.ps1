@@ -162,9 +162,14 @@ function Assert-GitMonitorRepo {
     $repoRoot = Capture 'git' @('rev-parse', '--show-toplevel')
     $cwd = (Resolve-Path -LiteralPath '.').Path
     $resolvedRoot = (Resolve-Path -LiteralPath $repoRoot).Path
+    $expectedRoot = (Resolve-Path -LiteralPath 'C:\Users\ronyo\projects\git-monitor').Path
 
     if ($cwd -ne $resolvedRoot) {
         Fail "Execute /push na raiz do repo. cwd=$cwd repo=$resolvedRoot"
+    }
+
+    if ($resolvedRoot -ne $expectedRoot) {
+        Fail "Esta skill so pode rodar em $expectedRoot. Repo atual: $resolvedRoot"
     }
 
     $package = Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json

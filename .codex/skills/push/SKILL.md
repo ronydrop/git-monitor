@@ -1,6 +1,6 @@
 ---
-name: push
-description: Use somente no repo Git Monitor quando o usuario digitar /push ou invocar explicitamente a skill Git Monitor Push para publicar uma nova versao patch via validacoes locais, build Electron, commit, tag vX.Y.Z e push atomico para origin/master. A invocacao explicita de /push ou desta skill conta como confirmacao para essas acoes; fora disso, continue pedindo confirmacao.
+name: git-monitor-push
+description: Use somente no repo Git Monitor quando o usuario digitar /push neste projeto ou invocar explicitamente a skill Git Monitor Push para publicar uma nova versao patch via validacoes locais, build Electron, commit, tag vX.Y.Z e push atomico para origin/master. A invocacao explicita de /push neste repo ou desta skill conta como confirmacao para essas acoes; fora disso, continue pedindo confirmacao.
 ---
 
 # Push Do Git Monitor
@@ -8,6 +8,8 @@ description: Use somente no repo Git Monitor quando o usuario digitar /push ou i
 ## Regra central
 
 Quando o usuario digitar `/push` neste repo ou invocar explicitamente esta skill pela interface como "Git Monitor Push", isso conta como confirmacao explicita para executar validacoes, build, bump de versao, commit, tag e push. Nao faca perguntas adicionais de confirmacao, mas aborte em qualquer falha de preflight.
+
+O identificador interno desta skill e `git-monitor-push` para nao colidir com skills locais de outros repos que tambem usam `/push`.
 
 Fora de `/push` ou da invocacao explicita desta skill, continue seguindo `AGENTS.md`: nao rode build publicavel, commit, push, tag, release, PR ou troca/criacao de branch sem confirmacao explicita.
 
