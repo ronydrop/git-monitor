@@ -14,6 +14,12 @@ const {
   repoKey,
   sanitizeDeployErrors
 } = require('./repo-state');
+const {
+  formatGitError,
+  isRebaseConflictError,
+  pullRebaseCommand,
+  pushCommand
+} = require('./git-sync');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
@@ -1382,17 +1388,19 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
       await gitExec(commitCmd, { cwd: repoPath, timeout: 15000 });
     }
 
+    const branch = (await gitExec('git rev-parse --abbrev-ref HEAD', { cwd: repoPath, timeout: 5000 })).trim();
+
     // Pull rebase para sincronizar com o remote, depois push
     try {
-      await gitExec('git pull --rebase', { cwd: repoPath, timeout: 30000 });
+      await gitExec(pullRebaseCommand(branch), { cwd: repoPath, timeout: 30000 });
     } catch (e) {
-      const msg = e.message || '';
-      if (/CONFLICT|conflict|rebase/i.test(msg)) {
+      if (isRebaseConflictError(e)) {
         await gitExec('git rebase --abort', { cwd: repoPath, timeout: 10000 }).catch(() => {});
         throw new Error('Conflito no pull --rebase. Resolva manualmente antes de fazer push.');
       }
+      throw new Error(`Falha no pull --rebase: ${formatGitError(e)}`);
     }
-    await gitExec('git push', { cwd: repoPath, timeout: 30000 });
+    await gitExec(pushCommand(branch), { cwd: repoPath, timeout: 30000 });
 
     return { ok: true, title, body };
   } catch (e) {

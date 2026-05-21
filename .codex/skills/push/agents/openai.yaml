@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Monitor Push"
+  short_description: "Publica uma nova versao patch do Git Monitor"
+  default_prompt: "Publique uma nova versao patch do Git Monitor via validacoes locais, build Electron, commit, tag e push para origin/master."
