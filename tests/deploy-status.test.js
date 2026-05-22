@@ -80,6 +80,22 @@ test('retorna sucesso somente quando todos os sinais conhecidos passaram', () =>
   assert.strictEqual(result.phase, 'success');
 });
 
+test('ignora combined status pending quando nao existem commit statuses', () => {
+  const result = resolveDeployPhase({
+    checkRuns: [
+      { name: 'Test, build and deploy', status: 'completed', conclusion: 'success' }
+    ],
+    workflowRuns: [
+      { name: 'Deploy', status: 'completed', conclusion: 'success' }
+    ],
+    statuses: [],
+    combinedState: 'pending',
+    statusTotal: 0
+  });
+
+  assert.strictEqual(result.phase, 'success');
+});
+
 test('ignora falha antiga quando rerun mais recente do workflow passou', () => {
   const result = resolveDeployPhase({
     checkRuns: [],

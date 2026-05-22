@@ -121,6 +121,7 @@ function resolveDeployPhase(input = {}) {
   const statusTotal = Number.isFinite(input.statusTotal)
     ? input.statusTotal
     : statuses.length;
+  const hasCommitStatusSignal = statusTotal > 0 || statuses.length > 0;
 
   const pendingCheckRuns = checkRuns.filter(isPendingRun);
   const failedCheckRuns = checkRuns.filter(isFailedRun);
@@ -131,8 +132,8 @@ function resolveDeployPhase(input = {}) {
   const pendingStatuses = statuses.filter(status => status.state === 'pending');
   const failedStatuses = statuses.filter(status => status.state === 'failure' || status.state === 'error');
 
-  const combinedPending = combinedState === 'pending' && pendingStatuses.length === 0;
-  const combinedFailed = (combinedState === 'failure' || combinedState === 'error') && failedStatuses.length === 0;
+  const combinedPending = hasCommitStatusSignal && combinedState === 'pending' && pendingStatuses.length === 0;
+  const combinedFailed = hasCommitStatusSignal && (combinedState === 'failure' || combinedState === 'error') && failedStatuses.length === 0;
 
   const pendingCount =
     pendingCheckRuns.length +
@@ -198,7 +199,7 @@ function resolveDeployPhase(input = {}) {
     };
   }
 
-  if (combinedState !== null && combinedState !== 'success') {
+  if (hasCommitStatusSignal && combinedState !== null && combinedState !== 'success') {
     return { phase: 'waiting' };
   }
 
