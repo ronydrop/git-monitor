@@ -469,12 +469,20 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
   }
 
   .agent-name {
     font-size: 12px;
     font-weight: 600;
     color: var(--text);
+  }
+
+  .agent-badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
   }
 
   .agent-badge {
@@ -484,9 +492,49 @@
     border-radius: 20px;
     letter-spacing: 0.5px;
     text-transform: uppercase;
+    white-space: nowrap;
   }
   .agent-badge.principal { background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue); }
   .agent-badge.fallback  { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+  .agent-badge.ok        { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); }
+  .agent-badge.warn      { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
+  .agent-badge.error     { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+
+  .model-row {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+
+  .model-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  .model-select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 7px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text);
+    outline: none;
+  }
+  .model-select:focus { border-color: var(--blue); }
+
+  .model-note {
+    grid-column: 2;
+    font-size: 10px;
+    line-height: 1.45;
+    color: var(--text-dim);
+  }
 
   .auth-mode-row {
     display: flex;
@@ -616,8 +664,25 @@
   .btn-eye:hover { color: var(--text); }
 
   /* ---- Provider buttons ---- */
+  .provider-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .provider-help {
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
+
+  .provider-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
   .provider-btn {
-    flex: 1;
     padding: 6px;
     border-radius: 6px;
     border: 1px solid var(--border);
@@ -630,6 +695,11 @@
     transition: all 0.15s;
   }
   .provider-btn:hover { background: var(--bg-hover); }
+  .provider-btn.active {
+    background: var(--blue-bg);
+    color: var(--blue);
+    border-color: var(--blue);
+  }
 
   /* ---- CLI status ---- */
   .cli-status-box {
@@ -825,20 +895,28 @@
   <!-- ===== TAB: IA & AUTH ===== -->
   <div class="tab-panel" id="tab-ai">
 
-    <div class="section-label">Provider principal</div>
-    <div class="config-card">
-      <div style="font-size: 11px; color: var(--text-dim);">O outro agent entra como fallback automático se o principal falhar</div>
-      <div style="display: flex; gap: 8px;">
-        <button id="btnProviderAnthropic" class="provider-btn" onclick="setProvider('anthropic')">Claude (Anthropic)</button>
-        <button id="btnProviderOpenai" class="provider-btn" onclick="setProvider('openai')">GPT-4o mini (OpenAI)</button>
+    <div class="section-label">IA para mensagens de commit</div>
+    <div class="config-card provider-summary">
+      <div class="provider-help">Provider principal. Se ele falhar, o app tenta outro provider configurado.</div>
+      <div class="provider-buttons">
+        <button id="btnProviderAnthropic" class="provider-btn" onclick="setProvider('anthropic')">Anthropic</button>
+        <button id="btnProviderOpenai" class="provider-btn" onclick="setProvider('openai')">OpenAI</button>
+        <button id="btnProviderOpenrouter" class="provider-btn" onclick="setProvider('openrouter')">OpenRouter</button>
       </div>
     </div>
 
     <!-- Agent: Anthropic -->
     <div class="agent-card">
       <div class="agent-card-header">
-        <span class="agent-name">Claude (Anthropic)</span>
-        <span id="badgeAnthropic" class="agent-badge"></span>
+        <span class="agent-name">Anthropic</span>
+        <span class="agent-badges">
+          <span id="badgeAnthropic" class="agent-badge"></span>
+          <span id="statusAnthropic" class="agent-badge"></span>
+        </span>
+      </div>
+      <div class="model-row">
+        <label class="model-label" for="anthropicModel">Modelo</label>
+        <select id="anthropicModel" class="model-select" onchange="setModel('anthropic', this.value)"></select>
       </div>
       <div class="auth-mode-row">
         <label class="auth-mode-opt">
@@ -860,8 +938,15 @@
     <!-- Agent: OpenAI -->
     <div class="agent-card">
       <div class="agent-card-header">
-        <span class="agent-name">GPT-4o mini (OpenAI)</span>
-        <span id="badgeOpenai" class="agent-badge"></span>
+        <span class="agent-name">OpenAI</span>
+        <span class="agent-badges">
+          <span id="badgeOpenai" class="agent-badge"></span>
+          <span id="statusOpenai" class="agent-badge"></span>
+        </span>
+      </div>
+      <div class="model-row">
+        <label class="model-label" for="openaiModel">Modelo</label>
+        <select id="openaiModel" class="model-select" onchange="setModel('openai', this.value)"></select>
       </div>
       <div class="auth-mode-row">
         <label class="auth-mode-opt">
@@ -875,6 +960,23 @@
         </label>
       </div>
       <div id="authDetailOpenai" class="auth-detail"></div>
+    </div>
+
+    <!-- Agent: OpenRouter -->
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <span class="agent-name">OpenRouter</span>
+        <span class="agent-badges">
+          <span id="badgeOpenrouter" class="agent-badge"></span>
+          <span id="statusOpenrouter" class="agent-badge"></span>
+        </span>
+      </div>
+      <div class="model-row">
+        <label class="model-label" for="openrouterModel">Modelo</label>
+        <select id="openrouterModel" class="model-select" onchange="setModel('openrouter', this.value)"></select>
+        <div class="model-note">Top 5 do ranking semanal OpenRouter em 21/05/2026. Custo e disponibilidade podem variar.</div>
+      </div>
+      <div id="authDetailOpenrouter" class="auth-detail"></div>
     </div>
 
     <div class="section-label">Deploy &amp; CI/CD</div>
@@ -1103,6 +1205,7 @@
   }
 
   async function initAiTab() {
+    populateModelSelects();
     setProvider(configSafe.aiProvider || 'anthropic');
 
     const modeA = configSafe.anthropicAuthMode || 'oauth';
@@ -1114,6 +1217,27 @@
 
     await detectCliCreds();
     renderGithubTokenField();
+  }
+
+  function populateModelSelects() {
+    const options = configSafe.aiModelOptions || {};
+    const selected = {
+      anthropic: configSafe.anthropicModel || 'claude-haiku-4-5',
+      openai: configSafe.openaiModel || 'gpt-4o-mini',
+      openrouter: configSafe.openrouterModel || 'tencent/hy3-preview'
+    };
+    ['anthropic', 'openai', 'openrouter'].forEach(agent => {
+      const el = document.getElementById(agent + 'Model');
+      if (!el) return;
+      clearEl(el);
+      (options[agent] || []).forEach(model => {
+        const opt = document.createElement('option');
+        opt.value = model.id;
+        opt.textContent = model.name + (model.detail ? ' — ' + model.detail : '');
+        el.appendChild(opt);
+      });
+      el.value = selected[agent];
+    });
   }
 
   const modeHints = {
@@ -1131,30 +1255,78 @@
   }
 
   function setProvider(provider) {
-    const btnA = document.getElementById('btnProviderAnthropic');
-    const btnO = document.getElementById('btnProviderOpenai');
-    const isAnthropic = provider === 'anthropic';
-    btnA.style.background  = isAnthropic ? 'var(--blue-bg)' : 'transparent';
-    btnA.style.color       = isAnthropic ? 'var(--blue)' : 'var(--text-dim)';
-    btnA.style.borderColor = isAnthropic ? 'var(--blue)' : 'var(--border)';
-    btnO.style.background  = !isAnthropic ? 'var(--blue-bg)' : 'transparent';
-    btnO.style.color       = !isAnthropic ? 'var(--blue)' : 'var(--text-dim)';
-    btnO.style.borderColor = !isAnthropic ? 'var(--blue)' : 'var(--border)';
+    if (!['anthropic', 'openai', 'openrouter'].includes(provider)) provider = 'anthropic';
+    const ids = {
+      anthropic: 'btnProviderAnthropic',
+      openai: 'btnProviderOpenai',
+      openrouter: 'btnProviderOpenrouter'
+    };
+    Object.entries(ids).forEach(([key, id]) => {
+      const btn = document.getElementById(id);
+      if (btn) btn.classList.toggle('active', key === provider);
+    });
+    configSafe.aiProvider = provider;
     renderBadges(provider);
     ipcRenderer.invoke('save-ai-provider', provider);
   }
 
   function renderBadges(principal) {
-    const bA = document.getElementById('badgeAnthropic');
-    const bO = document.getElementById('badgeOpenai');
-    if (!bA || !bO) return;
-    if (principal === 'anthropic') {
-      bA.textContent = 'PRINCIPAL'; bA.className = 'agent-badge principal';
-      bO.textContent = 'FALLBACK';  bO.className = 'agent-badge fallback';
+    const map = {
+      anthropic: 'badgeAnthropic',
+      openai: 'badgeOpenai',
+      openrouter: 'badgeOpenrouter'
+    };
+    Object.entries(map).forEach(([provider, id]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const active = provider === principal;
+      el.textContent = active ? 'PRINCIPAL' : 'FALLBACK';
+      el.className = 'agent-badge ' + (active ? 'principal' : 'fallback');
+    });
+    renderCredentialBadges();
+  }
+
+  function setStatusBadge(agent, text, cls) {
+    const id = agent === 'anthropic' ? 'statusAnthropic' : agent === 'openai' ? 'statusOpenai' : 'statusOpenrouter';
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'agent-badge ' + cls;
+  }
+
+  function renderCredentialBadges() {
+    const modeA = getSelectedAuthMode('anthropic');
+    const claude = cliResult.claude || {};
+    if (modeA === 'oauth') {
+      if (claude.expired) setStatusBadge('anthropic', 'EXPIRADO', 'warn');
+      else if (claude.available) setStatusBadge('anthropic', 'CLI OK', 'ok');
+      else setStatusBadge('anthropic', 'SEM CLI', 'error');
     } else {
-      bA.textContent = 'FALLBACK';  bA.className = 'agent-badge fallback';
-      bO.textContent = 'PRINCIPAL'; bO.className = 'agent-badge principal';
+      setStatusBadge('anthropic', configSafe.hasAnthropicKey ? 'KEY OK' : 'SEM KEY', configSafe.hasAnthropicKey ? 'ok' : 'error');
     }
+
+    const modeO = getSelectedAuthMode('openai');
+    const codex = cliResult.openai || {};
+    if (modeO === 'oauth') {
+      if (codex.available) setStatusBadge('openai', 'CLI OK', 'ok');
+      else if (codex.mode && codex.mode !== 'ApiKey') setStatusBadge('openai', 'MODO ' + codex.mode, 'warn');
+      else setStatusBadge('openai', 'SEM CLI', 'error');
+    } else {
+      setStatusBadge('openai', configSafe.hasOpenaiKey ? 'KEY OK' : 'SEM KEY', configSafe.hasOpenaiKey ? 'ok' : 'error');
+    }
+
+    setStatusBadge('openrouter', configSafe.hasOpenrouterKey ? 'KEY OK' : 'SEM KEY', configSafe.hasOpenrouterKey ? 'ok' : 'error');
+  }
+
+  async function setModel(agent, model) {
+    const handlers = {
+      anthropic: 'save-anthropic-model',
+      openai: 'save-openai-model',
+      openrouter: 'save-openrouter-model'
+    };
+    if (!handlers[agent]) return;
+    await ipcRenderer.invoke(handlers[agent], model);
+    configSafe[agent + 'Model'] = model;
   }
 
   async function setAuthMode(agent, mode) {
@@ -1163,6 +1335,7 @@
     if (agent === 'anthropic') configSafe.anthropicAuthMode = mode;
     else configSafe.openaiAuthMode = mode;
     renderAuthDetail(agent);
+    renderCredentialBadges();
   }
 
   async function detectCliCreds() {
@@ -1171,6 +1344,8 @@
     updateCliBadge('openai', cliResult.openai);
     renderAuthDetail('anthropic');
     renderAuthDetail('openai');
+    renderAuthDetail('openrouter');
+    renderCredentialBadges();
   }
 
   function updateCliBadge(which, status) {
@@ -1220,10 +1395,15 @@
   }
 
   function renderAuthDetail(agent) {
-    const id = 'authDetail' + (agent === 'anthropic' ? 'Anthropic' : 'Openai');
+    const suffix = agent === 'anthropic' ? 'Anthropic' : agent === 'openai' ? 'Openai' : 'Openrouter';
+    const id = 'authDetail' + suffix;
     const el = document.getElementById(id);
     if (!el) return;
     clearEl(el);
+    if (agent === 'openrouter') {
+      renderKeyFieldInto(el, agent);
+      return;
+    }
     const mode = getSelectedAuthMode(agent);
     const cli  = agent === 'anthropic' ? (cliResult.claude || {}) : (cliResult.openai || {});
 
@@ -1279,9 +1459,11 @@
         await ipcRenderer.invoke(saveCmd, '');
         if (agent === 'anthropic') { configSafe.hasAnthropicKey = false; configSafe.anthropicKeyHint = ''; }
         else if (agent === 'openai') { configSafe.hasOpenaiKey = false; configSafe.openaiKeyHint = ''; }
+        else if (agent === 'openrouter') { configSafe.hasOpenrouterKey = false; configSafe.openrouterKeyHint = ''; }
         else { configSafe.hasGithubToken = false; configSafe.githubTokenHint = ''; }
         if (agent === 'github') renderGithubTokenField();
         else renderAuthDetail(agent);
+        renderCredentialBadges();
         showToast('Key removida', 'success');
       };
       row.appendChild(btnRemove);
@@ -1290,13 +1472,35 @@
   }
 
   function renderKeyFieldInto(container, agent) {
-    const isAnthropic = agent === 'anthropic';
-    const hasKey   = isAnthropic ? configSafe.hasAnthropicKey  : configSafe.hasOpenaiKey;
-    const hint     = isAnthropic ? configSafe.anthropicKeyHint : configSafe.openaiKeyHint;
-    const ph       = isAnthropic ? 'sk-ant-...' : 'sk-...';
-    const saveCmd  = isAnthropic ? 'save-anthropic-key' : 'save-openai-key';
-    const linkUrl  = isAnthropic ? 'https://console.anthropic.com/settings/keys' : 'https://platform.openai.com/api-keys';
-    const linkText = isAnthropic ? 'console.anthropic.com' : 'platform.openai.com';
+    const meta = {
+      anthropic: {
+        hasKey: configSafe.hasAnthropicKey,
+        hint: configSafe.anthropicKeyHint,
+        ph: 'sk-ant-...',
+        saveCmd: 'save-anthropic-key',
+        linkUrl: 'https://console.anthropic.com/settings/keys',
+        linkText: 'console.anthropic.com'
+      },
+      openai: {
+        hasKey: configSafe.hasOpenaiKey,
+        hint: configSafe.openaiKeyHint,
+        ph: 'sk-...',
+        saveCmd: 'save-openai-key',
+        linkUrl: 'https://platform.openai.com/api-keys',
+        linkText: 'platform.openai.com'
+      },
+      openrouter: {
+        hasKey: configSafe.hasOpenrouterKey,
+        hint: configSafe.openrouterKeyHint,
+        ph: 'sk-or-v1-...',
+        saveCmd: 'save-openrouter-key',
+        linkUrl: 'https://openrouter.ai/settings/keys',
+        linkText: 'openrouter.ai/settings/keys'
+      }
+    }[agent];
+    if (!meta) return;
+    const hasKey = !!meta.hasKey;
+    const hint = meta.hint || '';
 
     const inp = document.createElement('input');
     inp.type      = 'password';
@@ -1304,15 +1508,15 @@
     inp.className = 'key-masked-input' + (hasKey ? ' masked' : '');
     inp.readOnly  = hasKey;
     inp.value     = hasKey ? hint : '';
-    inp.placeholder = ph;
+    inp.placeholder = meta.ph;
 
-    const row = buildKeyRow(inp, hasKey, hint, saveCmd, ph, agent);
+    const row = buildKeyRow(inp, hasKey, hint, meta.saveCmd, meta.ph, agent);
     container.appendChild(row);
 
     const link = document.createElement('a');
-    link.href = '#'; link.className = 'key-link'; link.textContent = linkText;
+    link.href = '#'; link.className = 'key-link'; link.textContent = meta.linkText;
     link.appendChild(icon('arrow-ur', { size: 10 }));
-    link.onclick = () => ipcRenderer.invoke('open-git-url', linkUrl);
+    link.onclick = () => ipcRenderer.invoke('open-git-url', meta.linkUrl);
     container.appendChild(link);
   }
 
@@ -1636,7 +1840,16 @@
     };
     await saveKeyIfEdited('anthropicKey', 'save-anthropic-key');
     await saveKeyIfEdited('openaiKey',    'save-openai-key');
+    await saveKeyIfEdited('openrouterKey','save-openrouter-key');
     await saveKeyIfEdited('githubToken',  'save-github-token');
+
+    const saveModelIfPresent = async (id, handler) => {
+      const el = document.getElementById(id);
+      if (el && el.value) await ipcRenderer.invoke(handler, el.value);
+    };
+    await saveModelIfPresent('anthropicModel', 'save-anthropic-model');
+    await saveModelIfPresent('openaiModel', 'save-openai-model');
+    await saveModelIfPresent('openrouterModel', 'save-openrouter-model');
 
     const scToggleVal   = document.getElementById('scToggle').value.trim();
     const scMinimizeVal = document.getElementById('scMinimize').value.trim();

@@ -5,7 +5,7 @@
 ## ✨ Funcionalidades
 
 - **Monitoramento em tempo real** — verifica status de múltiplos repos (dirty, ahead, behind, clean)
-- **Commit com IA** — gera título e descrição em português via Claude (Anthropic) e faz push automático
+- **Commit com IA** — gera título e descrição em português via Anthropic, OpenAI ou OpenRouter e faz push automático
 - **Push All** — commita e dá push em todos os repos modificados de uma vez
 - **Status de deploy** — monitora GitHub Actions após push (verde = sucesso, vermelho = falha)
 - **Ghost mode** — define uma zona na tela; quando o mouse passa naquela área, o widget fica quase invisível
@@ -85,7 +85,10 @@ Clique em ⚙ no widget:
 |-------|-----------|
 | **Repositórios** | Caminho local dos repos. Suporte a browse de pasta |
 | **Intervalo** | Frequência de verificação (10s a 5min) |
-| **Anthropic API Key** | Para commits com IA → [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| **IA & Auth** | Provider principal, modelo e credencial para commits com IA |
+| **Anthropic API Key** | Token opcional do Claude → [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| **OpenAI API Key** | Token opcional da OpenAI → [platform.openai.com](https://platform.openai.com/api-keys) |
+| **OpenRouter API Key** | Token opcional para modelos OpenRouter → [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) |
 | **GitHub Token** | Para monitorar deploy → [github.com/settings/tokens](https://github.com/settings/tokens) com escopo `repo` |
 | **Atalho** | `Ctrl+Shift+G` — esconde/mostra o widget globalmente |
 
@@ -95,6 +98,8 @@ Clique em ⚙ no widget:
 
 - [Electron](https://www.electronjs.org/)
 - [Anthropic Claude](https://www.anthropic.com/)
+- [OpenAI](https://openai.com/)
+- [OpenRouter](https://openrouter.ai/)
 - [GitHub API](https://docs.github.com/en/rest)
 - [electron-updater](https://www.electron.build/auto-update)
 

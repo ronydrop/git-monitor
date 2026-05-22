@@ -172,6 +172,38 @@ async function gitExec(cmd, opts) {
 // Sempre AppData\Roaming\git-monitor\config.json — dev e prod compartilham
 // (nome do app vem de package.json "name"; electron-builder usa o mesmo).
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
+const AI_PROVIDERS = ['anthropic', 'openai', 'openrouter'];
+const AI_MODEL_OPTIONS = {
+  anthropic: [
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', detail: 'padrao atual' }
+  ],
+  openai: [
+    { id: 'gpt-4o-mini', name: 'GPT-4o mini', detail: 'fallback rapido' }
+  ],
+  openrouter: [
+    { id: 'tencent/hy3-preview', name: 'Hy3 preview', detail: 'Tencent' },
+    { id: 'deepseek/deepseek-v4-flash', name: 'DeepSeek V4 Flash', detail: 'DeepSeek' },
+    { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6', detail: 'Anthropic' },
+    { id: 'anthropic/claude-opus-4.7', name: 'Claude Opus 4.7', detail: 'Anthropic' },
+    { id: 'openrouter/owl-alpha', name: 'Owl Alpha', detail: 'OpenRouter' }
+  ]
+};
+const DEFAULT_AI_MODELS = {
+  anthropic: AI_MODEL_OPTIONS.anthropic[0].id,
+  openai: AI_MODEL_OPTIONS.openai[0].id,
+  openrouter: AI_MODEL_OPTIONS.openrouter[0].id
+};
+
+function normalizeAiProvider(provider) {
+  return AI_PROVIDERS.includes(provider) ? provider : 'anthropic';
+}
+
+function normalizeAiModel(provider, model) {
+  const options = AI_MODEL_OPTIONS[provider] || [];
+  return options.some(opt => opt.id === model)
+    ? model
+    : DEFAULT_AI_MODELS[provider];
+}
 
 function migrateConfigIfNeeded() {
   if (!app.isPackaged) return;
@@ -198,7 +230,11 @@ function getDefaultConfig() {
     windowHeight: 420,
     anthropicKey: '',
     openaiKey: '',
+    openrouterKey: '',
     aiProvider: 'anthropic',
+    anthropicModel: DEFAULT_AI_MODELS.anthropic,
+    openaiModel: DEFAULT_AI_MODELS.openai,
+    openrouterModel: DEFAULT_AI_MODELS.openrouter,
     anthropicAuthMode: 'oauth',
     openaiAuthMode: 'apiKey',
     githubToken: '',
@@ -227,6 +263,11 @@ function loadConfig() {
   // migração: novos campos de authMode
   if (!cfg.anthropicAuthMode) cfg.anthropicAuthMode = 'oauth';
   if (!cfg.openaiAuthMode)    cfg.openaiAuthMode    = 'apiKey';
+  if (!cfg.openrouterKey)     cfg.openrouterKey     = '';
+  cfg.aiProvider       = normalizeAiProvider(cfg.aiProvider);
+  cfg.anthropicModel   = normalizeAiModel('anthropic', cfg.anthropicModel);
+  cfg.openaiModel      = normalizeAiModel('openai', cfg.openaiModel);
+  cfg.openrouterModel  = normalizeAiModel('openrouter', cfg.openrouterModel);
   if (!cfg.theme)             cfg.theme             = 'obsidian';
   cfg.deployErrors = sanitizeDeployErrors(
     cfg.deployErrors && typeof cfg.deployErrors === 'object' ? cfg.deployErrors : {}
@@ -1144,8 +1185,28 @@ ipcMain.handle('save-openai-key', (_, key) => {
   saveConfig(config);
 });
 
+ipcMain.handle('save-openrouter-key', (_, key) => {
+  config.openrouterKey = key;
+  saveConfig(config);
+});
+
 ipcMain.handle('save-ai-provider', (_, provider) => {
-  config.aiProvider = provider;
+  config.aiProvider = normalizeAiProvider(provider);
+  saveConfig(config);
+});
+
+ipcMain.handle('save-anthropic-model', (_, model) => {
+  config.anthropicModel = normalizeAiModel('anthropic', model);
+  saveConfig(config);
+});
+
+ipcMain.handle('save-openai-model', (_, model) => {
+  config.openaiModel = normalizeAiModel('openai', model);
+  saveConfig(config);
+});
+
+ipcMain.handle('save-openrouter-model', (_, model) => {
+  config.openrouterModel = normalizeAiModel('openrouter', model);
   saveConfig(config);
 });
 
@@ -1164,12 +1225,18 @@ ipcMain.handle('get-config-safe', () => {
     repos:              config.repos,
     intervalSeconds:    config.intervalSeconds,
     aiProvider:         config.aiProvider,
+    anthropicModel:     config.anthropicModel,
+    openaiModel:        config.openaiModel,
+    openrouterModel:    config.openrouterModel,
+    aiModelOptions:     AI_MODEL_OPTIONS,
     anthropicAuthMode:  config.anthropicAuthMode,
     openaiAuthMode:     config.openaiAuthMode,
     hasAnthropicKey:    !!config.anthropicKey,
     anthropicKeyHint:   maskSecret(config.anthropicKey),
     hasOpenaiKey:       !!config.openaiKey,
     openaiKeyHint:      maskSecret(config.openaiKey),
+    hasOpenrouterKey:   !!config.openrouterKey,
+    openrouterKeyHint:  maskSecret(config.openrouterKey),
     hasGithubToken:     !!config.githubToken,
     githubTokenHint:    maskSecret(config.githubToken),
     widgetMode:         config.widgetMode,
@@ -1267,7 +1334,7 @@ function friendlyAiError(provider, err) {
     const detail = json?.error?.message || json?.message || '';
     if (detail) {
       if (/credit|balance|billing|quota|insufficient/i.test(detail)) return `${provider}: saldo insuficiente — verifique seu plano`;
-      if (/invalid.*key|api.key|authentication|unauthorized/i.test(detail)) return `${provider}: API key inválida`;
+      if (/invalid.*key|api.key|authentication|unauthorized|no auth|forbidden/i.test(detail)) return `${provider}: API key inválida`;
       if (/rate.limit|too many/i.test(detail)) return `${provider}: limite de requisições atingido`;
       return `${provider}: ${detail.substring(0, 80)}`;
     }
@@ -1275,22 +1342,62 @@ function friendlyAiError(provider, err) {
   if (/key não configurada|sem credencial/i.test(msg)) return `${provider}: key não configurada`;
   if (/credit|balance|billing/i.test(msg)) return `${provider}: saldo insuficiente`;
   if (/oauth|token.*expirado|expirado.*token/i.test(msg)) return `${provider}: token OAuth expirado — faça login no CLI`;
-  if (/invalid.*key|authentication|401/i.test(msg)) return `${provider}: API key inválida`;
+  if (/invalid.*key|authentication|unauthorized|no auth|401|403/i.test(msg)) return `${provider}: API key inválida`;
   if (/rate.limit|429/i.test(msg)) return `${provider}: limite atingido`;
   return `${provider}: erro ao gerar commit`;
 }
 
+function textFromContent(content) {
+  if (Array.isArray(content)) {
+    return content.map(part => {
+      if (typeof part === 'string') return part;
+      if (part && typeof part.text === 'string') return part.text;
+      return '';
+    }).join('');
+  }
+  return content ? String(content) : '';
+}
+
+function providerHasConfiguredCredential(provider) {
+  if (provider === 'anthropic') {
+    if (config.anthropicAuthMode === 'oauth') {
+      const cli = readClaudeCredentials();
+      return !!cli && !cli.expired;
+    }
+    return !!config.anthropicKey;
+  }
+  if (provider === 'openai') {
+    if (config.openaiAuthMode === 'oauth') {
+      const cli = readCodexCredentials();
+      return !!cli && !!cli.apiKey;
+    }
+    return !!config.openaiKey;
+  }
+  if (provider === 'openrouter') return !!config.openrouterKey;
+  return false;
+}
+
+function buildProviderAttemptOrder(primary) {
+  const normalizedPrimary = normalizeAiProvider(primary);
+  const order = [normalizedPrimary];
+  AI_PROVIDERS.forEach(provider => {
+    if (provider !== normalizedPrimary && providerHasConfiguredCredential(provider)) {
+      order.push(provider);
+    }
+  });
+  return order;
+}
+
 async function generateCommitMessage(diff) {
-  const primary   = config.aiProvider || 'anthropic';
-  const secondary = primary === 'anthropic' ? 'openai' : 'anthropic';
+  const primary = normalizeAiProvider(config.aiProvider);
 
   const callAnthropic = async (client) => {
     const msg = await client.messages.create({
-      model: 'claude-haiku-4-5',
+      model: normalizeAiModel('anthropic', config.anthropicModel),
       max_tokens: 300,
       messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }]
     });
-    return cleanCommitMessage(msg.content[0].text);
+    return cleanCommitMessage(textFromContent(msg.content));
   };
 
   const tryAnthropic = async () => {
@@ -1307,6 +1414,15 @@ async function generateCommitMessage(diff) {
     }
   };
 
+  const callOpenAiCompatible = async (client, model) => {
+    const msg = await client.chat.completions.create({
+      model,
+      max_tokens: 300,
+      messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }]
+    });
+    return cleanCommitMessage(textFromContent(msg.choices?.[0]?.message?.content));
+  };
+
   const tryOpenAI = async () => {
     const mode = config.openaiAuthMode || 'apiKey';
     if (mode === 'oauth') {
@@ -1318,29 +1434,38 @@ async function generateCommitMessage(diff) {
         throw new Error(hint);
       }
       const client = new OpenAI({ apiKey: cli.apiKey });
-      const msg = await client.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 300, messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }] });
-      return cleanCommitMessage(msg.choices[0].message.content);
+      return await callOpenAiCompatible(client, normalizeAiModel('openai', config.openaiModel));
     } else {
       if (!config.openaiKey) throw new Error('OpenAI: API key não configurada nas configurações');
       const client = new OpenAI({ apiKey: config.openaiKey });
-      const msg = await client.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 300, messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }] });
-      return cleanCommitMessage(msg.choices[0].message.content);
+      return await callOpenAiCompatible(client, normalizeAiModel('openai', config.openaiModel));
     }
   };
 
-  const providers = { anthropic: tryAnthropic, openai: tryOpenAI };
+  const tryOpenRouter = async () => {
+    if (!config.openrouterKey) throw new Error('OpenRouter: API key não configurada nas configurações');
+    const client = new OpenAI({
+      apiKey: config.openrouterKey,
+      baseURL: 'https://openrouter.ai/api/v1',
+      defaultHeaders: {
+        'HTTP-Referer': 'https://github.com/ronydrop/git-monitor',
+        'X-OpenRouter-Title': 'Git Monitor'
+      }
+    });
+    return await callOpenAiCompatible(client, normalizeAiModel('openrouter', config.openrouterModel));
+  };
 
-  try {
-    return await providers[primary]();
-  } catch (primaryErr) {
+  const providers = { anthropic: tryAnthropic, openai: tryOpenAI, openrouter: tryOpenRouter };
+  const errors = [];
+  for (const provider of buildProviderAttemptOrder(primary)) {
     try {
-      return await providers[secondary]();
-    } catch (secondaryErr) {
-      const e1 = friendlyAiError(primary, primaryErr);
-      const e2 = friendlyAiError(secondary, secondaryErr);
-      throw new Error(`${e1} · ${e2}`);
+      return await providers[provider]();
+    } catch (err) {
+      const label = provider === 'openrouter' ? 'OpenRouter' : provider === 'openai' ? 'OpenAI' : 'Anthropic';
+      errors.push(friendlyAiError(label, err));
     }
   }
+  throw new Error(errors.join(' · '));
 }
 
 ipcMain.handle('commit-and-push', async (_, repoPath) => {
@@ -1358,8 +1483,9 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
 
     const hasAnthropicAuth = config.anthropicKey || config.anthropicAuthMode === 'oauth';
     const hasOpenAIAuth = config.openaiKey || config.openaiAuthMode === 'oauth';
-    if (hasUncommitted && !hasAnthropicAuth && !hasOpenAIAuth) {
-      return { ok: false, error: 'Nenhuma API key de IA configurada (Anthropic ou OpenAI).' };
+    const hasOpenRouterAuth = !!config.openrouterKey;
+    if (hasUncommitted && !hasAnthropicAuth && !hasOpenAIAuth && !hasOpenRouterAuth) {
+      return { ok: false, error: 'Nenhuma credencial de IA configurada (Anthropic, OpenAI ou OpenRouter).' };
     }
 
     let title = 'Push de commits pendentes';
