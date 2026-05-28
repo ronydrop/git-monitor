@@ -26,6 +26,10 @@ const {
   parseCommitMessage,
   textFromContent
 } = require('./commit-message');
+const {
+  loadConfigFile,
+  saveConfigFile
+} = require('./config-store');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
@@ -218,6 +222,7 @@ async function gitExecFile(args, opts) {
 // Sempre AppData\Roaming\git-monitor\config.json — dev e prod compartilham
 // (nome do app vem de package.json "name"; electron-builder usa o mesmo).
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
+const CONFIG_BACKUP_FILE = path.join(app.getPath('userData'), 'config.backup.json');
 const AI_PROVIDERS = ['anthropic', 'openai', 'openrouter'];
 const AI_MODEL_OPTIONS = {
   anthropic: [
@@ -295,17 +300,12 @@ function getDefaultConfig() {
 }
 
 function loadConfig() {
-  let cfg;
-  try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-    }
-  } catch (e) { }
-  if (!cfg) {
-    const def = getDefaultConfig();
-    saveConfig(def);
-    return def;
-  }
+  const loaded = loadConfigFile(CONFIG_FILE, getDefaultConfig, {
+    backupFile: CONFIG_BACKUP_FILE,
+    logger: console
+  });
+  const cfg = loaded.config;
+
   // migração: novos campos de authMode
   if (!cfg.anthropicAuthMode) cfg.anthropicAuthMode = 'oauth';
   if (!cfg.openaiAuthMode)    cfg.openaiAuthMode    = 'apiKey';
@@ -328,8 +328,10 @@ function maskSecret(raw) {
 
 function saveConfig(cfg) {
   try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
-  } catch (e) { }
+    saveConfigFile(CONFIG_FILE, cfg, { backupFile: CONFIG_BACKUP_FILE });
+  } catch (e) {
+    console.error('[config] falha ao salvar config:', e.message);
+  }
 }
 
 let mainWindow;
