@@ -20,6 +20,12 @@ const {
   pullRebaseCommand,
   pushCommand
 } = require('./git-sync');
+const {
+  buildCommitArgs,
+  ensureCommitMessage,
+  parseCommitMessage,
+  textFromContent
+} = require('./commit-message');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
@@ -52,6 +58,20 @@ function execAsync(cmd, opts) {
     exec(cmd, { windowsHide: true, ...opts }, (err, stdout) => {
       if (err) reject(err);
       else resolve(stdout);
+    });
+  });
+}
+
+function execFileAsync(file, args, opts) {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { windowsHide: true, ...opts }, (err, stdout, stderr) => {
+      if (err) {
+        err.stdout = stdout;
+        err.stderr = stderr;
+        reject(err);
+      } else {
+        resolve(stdout);
+      }
     });
   });
 }
@@ -155,6 +175,32 @@ async function gitExec(cmd, opts) {
   for (let i = 0; i < 2; i++) {
     try {
       return await execAsync(cmd, noPromptOpts);
+    } catch (err) {
+      const isLockError = err.message && err.message.includes('index.lock');
+      if (isLockError && i === 0) {
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+async function gitExecFile(args, opts) {
+  const noPromptOpts = opts
+    ? { ...opts, env: { ...process.env, ...GIT_NO_PROMPT_ENV, ...(opts.env || {}) } }
+    : { env: { ...process.env, ...GIT_NO_PROMPT_ENV } };
+
+  const wsl = opts && opts.cwd ? parseWslPath(opts.cwd) : null;
+  const file = wsl ? 'wsl.exe' : 'git';
+  const execArgs = wsl
+    ? ['-d', wsl.distro, '--', 'git', '-C', wsl.unixPath, ...args]
+    : args;
+  const execOpts = wsl ? { ...noPromptOpts, cwd: undefined, windowsHide: true } : noPromptOpts;
+
+  for (let i = 0; i < 2; i++) {
+    try {
+      return await execFileAsync(file, execArgs, execOpts);
     } catch (err) {
       const isLockError = err.message && err.message.includes('index.lock');
       if (isLockError && i === 0) {
@@ -1316,16 +1362,6 @@ REGRAS OBRIGATÓRIAS:
 Mudanças:
 ${diff}`;
 
-function cleanCommitMessage(msg) {
-  // Remove blocos de código markdown (```...```)
-  msg = msg.replace(/^```[\w]*\n?/gm, '').replace(/```$/gm, '');
-  // Remove aspas no início/fim
-  msg = msg.replace(/^["'`]|["'`]$/g, '');
-  // Remove prefixos como "Mensagem de commit:" ou "Commit:"
-  msg = msg.replace(/^(mensagem de commit|commit message|commit):\s*/i, '');
-  return msg.trim();
-}
-
 function friendlyAiError(provider, err) {
   const msg = err.message || String(err);
   // Extrai mensagem legível de erros JSON da API
@@ -1340,22 +1376,12 @@ function friendlyAiError(provider, err) {
     }
   } catch (_) {}
   if (/key não configurada|sem credencial/i.test(msg)) return `${provider}: key não configurada`;
+  if (/resposta vazia ao gerar commit/i.test(msg)) return msg;
   if (/credit|balance|billing/i.test(msg)) return `${provider}: saldo insuficiente`;
   if (/oauth|token.*expirado|expirado.*token/i.test(msg)) return `${provider}: token OAuth expirado — faça login no CLI`;
   if (/invalid.*key|authentication|unauthorized|no auth|401|403/i.test(msg)) return `${provider}: API key inválida`;
   if (/rate.limit|429/i.test(msg)) return `${provider}: limite atingido`;
   return `${provider}: erro ao gerar commit`;
-}
-
-function textFromContent(content) {
-  if (Array.isArray(content)) {
-    return content.map(part => {
-      if (typeof part === 'string') return part;
-      if (part && typeof part.text === 'string') return part.text;
-      return '';
-    }).join('');
-  }
-  return content ? String(content) : '';
 }
 
 function providerHasConfiguredCredential(provider) {
@@ -1397,7 +1423,7 @@ async function generateCommitMessage(diff) {
       max_tokens: 300,
       messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }]
     });
-    return cleanCommitMessage(textFromContent(msg.content));
+    return ensureCommitMessage(textFromContent(msg.content), 'Anthropic');
   };
 
   const tryAnthropic = async () => {
@@ -1414,13 +1440,13 @@ async function generateCommitMessage(diff) {
     }
   };
 
-  const callOpenAiCompatible = async (client, model) => {
+  const callOpenAiCompatible = async (client, model, providerLabel) => {
     const msg = await client.chat.completions.create({
       model,
       max_tokens: 300,
       messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }]
     });
-    return cleanCommitMessage(textFromContent(msg.choices?.[0]?.message?.content));
+    return ensureCommitMessage(textFromContent(msg.choices?.[0]?.message?.content), providerLabel);
   };
 
   const tryOpenAI = async () => {
@@ -1434,11 +1460,11 @@ async function generateCommitMessage(diff) {
         throw new Error(hint);
       }
       const client = new OpenAI({ apiKey: cli.apiKey });
-      return await callOpenAiCompatible(client, normalizeAiModel('openai', config.openaiModel));
+      return await callOpenAiCompatible(client, normalizeAiModel('openai', config.openaiModel), 'OpenAI');
     } else {
       if (!config.openaiKey) throw new Error('OpenAI: API key não configurada nas configurações');
       const client = new OpenAI({ apiKey: config.openaiKey });
-      return await callOpenAiCompatible(client, normalizeAiModel('openai', config.openaiModel));
+      return await callOpenAiCompatible(client, normalizeAiModel('openai', config.openaiModel), 'OpenAI');
     }
   };
 
@@ -1452,7 +1478,7 @@ async function generateCommitMessage(diff) {
         'X-OpenRouter-Title': 'Git Monitor'
       }
     });
-    return await callOpenAiCompatible(client, normalizeAiModel('openrouter', config.openrouterModel));
+    return await callOpenAiCompatible(client, normalizeAiModel('openrouter', config.openrouterModel), 'OpenRouter');
   };
 
   const providers = { anthropic: tryAnthropic, openai: tryOpenAI, openrouter: tryOpenRouter };
@@ -1503,15 +1529,12 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
 
       const diffTruncated = diff.length > 6000 ? diff.substring(0, 6000) + '\n\n[diff truncado]' : diff;
       const commitMsg = await generateCommitMessage(diffTruncated);
-      const lines = commitMsg.split('\n');
-      title = lines[0].trim();
-      body = lines.slice(1).join('\n').trim();
+      const parsedCommit = parseCommitMessage(commitMsg);
+      title = parsedCommit.title;
+      body = parsedCommit.body;
 
       await gitExec('git add .', { cwd: repoPath, timeout: 10000 });
-      const commitCmd = body
-        ? `git commit -m "${title.replace(/"/g, '\\"')}" -m "${body.replace(/"/g, '\\"')}"`
-        : `git commit -m "${title.replace(/"/g, '\\"')}"`;
-      await gitExec(commitCmd, { cwd: repoPath, timeout: 15000 });
+      await gitExecFile(buildCommitArgs(title, body), { cwd: repoPath, timeout: 15000 });
     }
 
     const branch = (await gitExec('git rev-parse --abbrev-ref HEAD', { cwd: repoPath, timeout: 5000 })).trim();
