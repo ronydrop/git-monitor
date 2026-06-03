@@ -30,6 +30,11 @@ const {
   loadConfigFile,
   saveConfigFile
 } = require('./config-store');
+const {
+  mergeRepoGithubSecrets,
+  parseGithubRemote,
+  resolveGithubToken
+} = require('./github-auth');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI    = require('openai');
 const { autoUpdater } = require('electron-updater');
@@ -355,6 +360,11 @@ function clampWindowPos(x, y, w = 300, h = 420) {
 }
 
 let lastRepoResults = null;
+
+function findConfiguredRepo(repoPath) {
+  const key = repoKey(repoPath);
+  return (config.repos || []).find(repo => repoKey(repo.path) === key) || null;
+}
 
 function mapReposForNotch(results) {
   const mapped = results.map(r => applyDeployState({
@@ -775,18 +785,20 @@ function deployErrorsEqual(a, b) {
 }
 
 async function resolveDeployPhaseForRepoSnapshot(repo) {
-  if (!config.githubToken || !repo || !repo.headSha || !repo.remoteUrl) return null;
+  if (!repo || !repo.headSha || !repo.remoteUrl) return null;
 
-  const gh = parseGithubOwnerRepo(repo.remoteUrl);
+  const gh = parseGithubRemote(repo.remoteUrl);
   if (!gh) return null;
+  const tokenInfo = resolveGithubToken(findConfiguredRepo(repo.path), repo.remoteUrl, config);
+  if (!tokenInfo) return null;
 
   const workflowQuery = new URLSearchParams({ head_sha: repo.headSha, per_page: '50' });
   if (repo.branch && repo.branch !== 'HEAD') workflowQuery.set('branch', repo.branch);
 
   const [workflowRes, checkRes, statusRes] = await Promise.all([
-    githubApiGet(`/repos/${gh.owner}/${gh.repo}/actions/runs?${workflowQuery.toString()}`),
-    githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${repo.headSha}/check-runs`),
-    githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${repo.headSha}/status`)
+    githubApiGet(`/repos/${gh.owner}/${gh.repo}/actions/runs?${workflowQuery.toString()}`, tokenInfo.token),
+    githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${repo.headSha}/check-runs`, tokenInfo.token),
+    githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${repo.headSha}/status`, tokenInfo.token)
   ]);
 
   const hasWorkflowAccess = workflowRes.statusCode === 200;
@@ -869,7 +881,7 @@ ipcMain.handle('get-cached-repos', () => {
 });
 
 ipcMain.handle('save-repos', (_, repos) => {
-  config.repos = repos;
+  config.repos = mergeRepoGithubSecrets(config.repos, repos);
   saveConfig(config);
   lastRepoResults = null;
   return true;
@@ -1627,11 +1639,6 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
   };
 
   const check = async () => {
-    if (!config.githubToken) {
-      send({ phase: 'no-token' });
-      return;
-    }
-
     attempts++;
     let _diag = null;
     const res = await (async () => {
@@ -1639,8 +1646,10 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
         const sha = (await execAsync('git rev-parse HEAD', { cwd: repoPath, timeout: 5000 })).trim();
         let remoteUrl = '';
         try { remoteUrl = (await execAsync('git config --get remote.origin.url', { cwd: repoPath, timeout: 3000 })).trim(); } catch (e) { }
-        const gh = parseGithubOwnerRepo(remoteUrl);
+        const gh = parseGithubRemote(remoteUrl);
         if (!gh) return { phase: 'no-github' };
+        const tokenInfo = resolveGithubToken(findConfiguredRepo(repoPath), remoteUrl, config);
+        if (!tokenInfo) return { phase: 'no-token', detail: 'Configure um token GitHub global ou especifico deste repo' };
 
         let branch = '';
         try { branch = (await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath, timeout: 3000 })).trim(); } catch (e) { }
@@ -1650,9 +1659,9 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
 
         // Busca workflow runs, check-runs e commit statuses para o commit atual.
         const [workflowRes, checkRes, statusRes] = await Promise.all([
-          githubApiGet(`/repos/${gh.owner}/${gh.repo}/actions/runs?${workflowQuery.toString()}`),
-          githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/check-runs`),
-          githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/status`)
+          githubApiGet(`/repos/${gh.owner}/${gh.repo}/actions/runs?${workflowQuery.toString()}`, tokenInfo.token),
+          githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/check-runs`, tokenInfo.token),
+          githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/status`, tokenInfo.token)
         ]);
 
         const hasWorkflowAccess = workflowRes.statusCode === 200;
@@ -1663,7 +1672,7 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
           const code = workflowRes.statusCode || checkRes.statusCode || statusRes.statusCode;
           if (code === 401) return { phase: 'error', detail: 'Token GitHub inválido ou expirado — atualize nas configurações' };
           if (code === 403) return { phase: 'error', detail: 'Token sem permissão — gere um novo com escopo repo' };
-          if (code === 404) return { phase: 'error', detail: 'Token sem acesso ao repo — verifique permissões' };
+          if (code === 404) return { phase: 'error', detail: `Token sem acesso a ${gh.owner}/${gh.repo} — configure token especifico do repo` };
           return { phase: 'error', detail: `Erro ao acessar GitHub (HTTP ${code})` };
         }
 
@@ -1688,6 +1697,7 @@ ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
           repoPath,
           sha,
           branch,
+          tokenSource: tokenInfo.source,
           attempts,
           workflowStatus: workflowRes.statusCode,
           checkStatus: checkRes.statusCode,
@@ -1779,11 +1789,12 @@ ipcMain.handle('open-terminal', (_, folderPath, projectName) => {
 });
 
 ipcMain.handle('open-git-url', (_, remoteUrl) => {
-  let url = remoteUrl;
-  if (url.startsWith('git@')) {
+  const parsed = parseGithubRemote(remoteUrl);
+  let url = parsed ? parsed.webUrl : remoteUrl;
+  if (url && url.startsWith('git@')) {
     url = url.replace(':', '/').replace('git@', 'https://');
   }
-  url = url.replace(/\.git$/, '');
+  url = String(url || '').replace(/\.git$/, '');
   shell.openExternal(url);
 });
 
@@ -1792,27 +1803,18 @@ ipcMain.handle('save-github-token', (_, token) => {
   saveConfig(config);
 });
 
-function parseGithubOwnerRepo(remoteUrl) {
-  if (!remoteUrl) return null;
-  let url = remoteUrl;
-  if (url.startsWith('git@')) {
-    url = url.replace(':', '/').replace('git@', 'https://');
-  }
-  url = url.replace(/\.git$/, '');
-  const match = url.match(/github\.com\/([^/]+)\/([^/]+)/);
-  return match ? { owner: match[1], repo: match[2] } : null;
-}
-
-function githubApiGet(apiPath) {
+function githubApiGet(apiPath, token) {
   return new Promise((resolve) => {
+    const headers = {
+      'User-Agent': 'GitMonitor',
+      'Accept': 'application/vnd.github+json'
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
     const req = https.get({
       hostname: 'api.github.com',
       path: apiPath,
-      headers: {
-        'User-Agent': 'GitMonitor',
-        'Authorization': `Bearer ${config.githubToken}`,
-        'Accept': 'application/vnd.github+json'
-      }
+      headers
     }, (res) => {
       let body = '';
       res.on('data', c => body += c);

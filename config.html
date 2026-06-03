@@ -347,6 +347,32 @@
     padding-left: 24px;
   }
 
+  .repo-github-row {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    padding-left: 24px;
+  }
+
+  .repo-github-label {
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .repo-github-row .key-row-new {
+    margin-bottom: 0;
+  }
+
+  .repo-github-row .key-masked-input {
+    padding: 5px 8px;
+    font-size: 10.5px;
+  }
+
+  .repo-github-row .btn-key-action {
+    padding: 5px 8px;
+  }
+
   .path-input {
     flex: 1;
     background: var(--bg);
@@ -1180,7 +1206,7 @@
     renderThemeSelector(rawConfig.theme || 'obsidian');
     document.getElementById('activeRepos').textContent   = '';
     document.getElementById('inactiveRepos').textContent = '';
-    (rawConfig.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false));
+    (rawConfig.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false, r.githubToken || ''));
     if (!rawConfig.repos || rawConfig.repos.length === 0) addRepo();
     updateInactiveDivider();
     loadShortcuts();
@@ -1252,6 +1278,11 @@
 
   function clearEl(el) {
     while (el.firstChild) el.removeChild(el.firstChild);
+  }
+
+  function maskSecret(raw) {
+    if (!raw || raw.length < 8) return raw ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' : '';
+    return raw.slice(0, 7) + '\u2022'.repeat(Math.max(4, raw.length - 11)) + raw.slice(-4);
   }
 
   function setProvider(provider) {
@@ -1642,10 +1673,79 @@
     return el;
   }
 
-  function addRepo(name, repoPath, enabled) {
+  function buildRepoGithubTokenControl(initialToken) {
+    const hasToken = !!initialToken;
+    const hint = maskSecret(initialToken || '');
+
+    const inp = document.createElement('input');
+    inp.type = 'password';
+    inp.className = 'key-masked-input repo-github-token' + (hasToken ? ' masked' : '');
+    inp.placeholder = 'usa token global';
+    inp.dataset.secretState = hasToken ? 'stored' : 'none';
+    inp.readOnly = hasToken;
+    inp.value = hasToken ? hint : '';
+
+    const row = document.createElement('div');
+    row.className = 'key-row-new';
+    row.appendChild(inp);
+
+    if (hasToken) {
+      const btnEdit = document.createElement('button');
+      btnEdit.textContent = 'Editar';
+      btnEdit.className = 'btn-key-action';
+      let editing = false;
+
+      const setStored = () => {
+        editing = false;
+        inp.dataset.secretState = 'stored';
+        inp.readOnly = true;
+        inp.value = hint;
+        inp.className = 'key-masked-input repo-github-token masked';
+        inp.placeholder = 'usa token global';
+        btnEdit.textContent = 'Editar';
+        btnEdit.onclick = toggleEdit;
+      };
+
+      const toggleEdit = () => {
+        editing = !editing;
+        if (editing) {
+          inp.dataset.secretState = 'editing';
+          inp.readOnly = false;
+          inp.value = '';
+          inp.className = 'key-masked-input repo-github-token';
+          inp.placeholder = 'ghp_...';
+          inp.focus();
+          btnEdit.textContent = 'Cancelar';
+        } else {
+          setStored();
+        }
+      };
+      btnEdit.onclick = toggleEdit;
+      row.appendChild(btnEdit);
+
+      const btnRemove = document.createElement('button');
+      btnRemove.textContent = 'Remover';
+      btnRemove.className = 'btn-key-action btn-key-remove';
+      btnRemove.onclick = () => {
+        inp.dataset.secretState = 'remove';
+        inp.readOnly = true;
+        inp.value = '';
+        inp.className = 'key-masked-input repo-github-token masked';
+        inp.placeholder = 'remover ao salvar';
+        btnEdit.textContent = 'Desfazer';
+        btnEdit.onclick = setStored;
+      };
+      row.appendChild(btnRemove);
+    }
+
+    return row;
+  }
+
+  function addRepo(name, repoPath, enabled, githubToken) {
     name     = name     || '';
     repoPath = repoPath || '';
     enabled  = enabled  !== false;
+    githubToken = githubToken || '';
 
     const activeGroup   = document.getElementById('activeRepos');
     const inactiveGroup = document.getElementById('inactiveRepos');
@@ -1688,11 +1788,20 @@
 
     const pathRow = makeEl('div', { className: 'path-row' }, [pathInput, btnBrowse, btnTest]);
 
+    const githubLabel = makeEl('span', {
+      className: 'repo-github-label',
+      textContent: 'Token CI/CD'
+    });
+    const githubControl = buildRepoGithubTokenControl(githubToken);
+    const githubRow = makeEl('div', { className: 'repo-github-row' }, [githubLabel, githubControl]);
+
     // card
     const card = makeEl('div', { className: 'repo-card' + (enabled ? '' : ' disabled') });
     card.draggable = true;
+    card.dataset.originalPath = repoPath;
     card.appendChild(header);
     card.appendChild(pathRow);
+    card.appendChild(githubRow);
 
     // events
     checkbox.addEventListener('change', () => {
@@ -1825,7 +1934,18 @@
       const name    = card.querySelector('.name-input').value.trim();
       const path    = card.querySelector('.path-input').value.trim();
       const enabled = card.querySelector('.enabled-toggle').checked;
-      if (name && path) repos.push({ name, path, enabled });
+      if (name && path) {
+        const repo = { name, path, enabled };
+        const tokenInput = card.querySelector('.repo-github-token');
+        if (tokenInput) {
+          const state = tokenInput.dataset.secretState || 'none';
+          const token = tokenInput.readOnly ? '' : tokenInput.value.trim();
+          if (state === 'remove') repo.githubTokenAction = 'remove';
+          else if (token) repo.githubToken = token;
+          else if (state === 'stored' && card.dataset.originalPath) repo.githubTokenSourcePath = card.dataset.originalPath;
+        }
+        repos.push(repo);
+      }
     });
 
     const interval = parseInt(document.getElementById('intervalSelect').value);
