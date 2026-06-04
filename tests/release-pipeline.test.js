@@ -27,6 +27,15 @@ test('electron updater usa provider generico da VPS Jarvis', () => {
   });
 });
 
+test('artefatos de build ficam fora do Git', () => {
+  const gitignore = read('.gitignore');
+
+  assert.match(gitignore, /^dist\/$/m);
+  assert.doesNotMatch(gitignore, /!dist\//);
+  assert.doesNotMatch(gitignore, /!dist\/\*\.exe/);
+  assert.doesNotMatch(gitignore, /!dist\/latest\.yml/);
+});
+
 test('workflow builda no Windows e publica artefatos no GitHub', () => {
   const workflow = read('.github/workflows/release.yml');
 
@@ -74,6 +83,7 @@ test('runner remoto tem lock, validacoes e push atomico', () => {
   assert.match(runner, /gh run list/);
   assert.match(runner, /gh run download/);
   assert.match(runner, /git-monitor-promote-artifacts/);
+  assert.match(runner, /git rm -r --cached --ignore-unmatch dist/);
   assert.match(runner, /--validate-package <package\.tgz>/);
   assert.match(runner, /validate_package\(\)/);
 });

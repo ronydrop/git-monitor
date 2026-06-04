@@ -240,6 +240,8 @@ apply_package() {
     (cd "$work_dir/untracked" && tar -cf - .) | tar -xf - -C "$REPO_DIR"
   fi
 
+  run git rm -r --cached --ignore-unmatch dist
+
   if [[ -z "$(git status --porcelain=v1)" ]]; then
     fail "pacote nao gerou mudancas no clone remoto"
   fi

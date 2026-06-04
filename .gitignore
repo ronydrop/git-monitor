@@ -1,7 +1,4 @@
 node_modules/
-dist/*
-!dist/*.exe
-!dist/*.exe.blockmap
-!dist/latest.yml
+dist/
 config.json
 assets/
