@@ -1,6 +1,18 @@
 const assert = require('assert');
-const { resolveDeployPhase, isTerminalDeployPhase } = require('../deploy-status');
-const { applyDeployState, markDeployError, clearDeployError } = require('../repo-state');
+const {
+  findGithubApiProblem,
+  githubApiFailureDetail,
+  resolveDeployPhase,
+  isTerminalDeployPhase
+} = require('../deploy-status');
+const {
+  applyDeployState,
+  applyDeployWatchUpdate,
+  clearDeployState,
+  markDeployError,
+  markDeployState,
+  repoKey
+} = require('../repo-state');
 
 function test(name, fn) {
   try {
@@ -134,6 +146,22 @@ test('fase running com progresso numerico nao e terminal', () => {
   assert.strictEqual(isTerminalDeployPhase('failure'), true);
 });
 
+test('erro de parse da GitHub API com HTTP 200 nao vira ausencia de CI', () => {
+  const apiProblem = findGithubApiProblem([
+    { statusCode: 200, data: {}, error: 'Resposta invalida da API GitHub: Unexpected token' },
+    { statusCode: 404, data: {}, error: '' },
+    { statusCode: 404, data: {}, error: '' }
+  ]);
+
+  assert.ok(apiProblem);
+  assert.strictEqual(apiProblem.statusCode, 200);
+  assert.match(apiProblem.error, /Resposta invalida/);
+  assert.match(
+    githubApiFailureDetail(apiProblem, {}, {}, { owner: 'ronydrop', repo: 'git-monitor' }),
+    /Resposta invalida/
+  );
+});
+
 test('mantem erro de deploy separado do status git pendente', () => {
   const deployErrors = markDeployError({}, 'C:/repo/app', 'failure', 'CI Quality Gate');
   const repo = applyDeployState({
@@ -166,45 +194,98 @@ test('repo limpo com erro real de deploy nao vira pendencia git', () => {
   assert.strictEqual(repo.deployError, true);
 });
 
-test('timeout do watcher nao vira erro de deploy persistido', () => {
-  const deployErrors = markDeployError({}, 'C:/repo/app', 'timeout', 'Timeout aguardando deploy');
+test('push bem-sucedido entra em deploy pendente e nao vira sucesso final automaticamente', () => {
+  const deployStates = markDeployState({}, 'C:/repo/app', 'waiting', 'Aguardando CI iniciar', Date.now(), {
+    sha: 'abc123',
+    branch: 'main',
+    watchId: 'watch-1'
+  });
   const repo = applyDeployState({
     name: 'App',
     path: 'C:/repo/app',
     status: 'clean',
-    detail: 'Sincronizado'
-  }, deployErrors);
+    detail: 'Sincronizado',
+    headSha: 'abc123',
+    branch: 'main'
+  }, deployStates);
 
   assert.strictEqual(repo.status, 'clean');
   assert.strictEqual(repo.pending, false);
-  assert.strictEqual(repo.needsAttention, false);
+  assert.strictEqual(repo.needsAttention, true);
   assert.strictEqual(repo.deployError, false);
-  assert.strictEqual(repo.deployDetail, '');
+  assert.strictEqual(repo.deployPending, true);
+  assert.strictEqual(repo.deployPhase, 'waiting');
+  assert.strictEqual(repo.deployDetail, 'Aguardando CI iniciar');
 });
 
-test('timeout legado salvo no config e ignorado no status do repo', () => {
-  const deployErrors = {
-    'c:\\repo\\app': {
+test('timeout do watcher aparece como erro claro de deploy', () => {
+  const deployStates = markDeployState({}, 'C:/repo/app', 'timeout', 'Monitoramento expirou sem conclusao no GitHub', Date.now(), {
+    sha: 'abc123',
+    branch: 'main',
+    watchId: 'watch-1'
+  });
+  const repo = applyDeployState({
+    name: 'App',
+    path: 'C:/repo/app',
+    status: 'clean',
+    detail: 'Sincronizado',
+    headSha: 'abc123',
+    branch: 'main'
+  }, deployStates);
+
+  assert.strictEqual(repo.pending, false);
+  assert.strictEqual(repo.needsAttention, true);
+  assert.strictEqual(repo.deployError, true);
+  assert.strictEqual(repo.deployPhase, 'timeout');
+  assert.match(repo.deployDetail, /expirou/);
+});
+
+test('repo sem CI detectavel aparece como erro de deploy verificavel', () => {
+  const deployStates = markDeployState({}, 'C:/repo/app', 'no-ci', 'Nenhum workflow, check-run ou commit status encontrado', Date.now(), {
+    sha: 'abc123',
+    branch: 'main',
+    watchId: 'watch-1'
+  });
+  const repo = applyDeployState({
+    name: 'App',
+    path: 'C:/repo/app',
+    status: 'clean',
+    detail: 'Sincronizado',
+    headSha: 'abc123',
+    branch: 'main'
+  }, deployStates);
+
+  assert.strictEqual(repo.needsAttention, true);
+  assert.strictEqual(repo.deployError, true);
+  assert.strictEqual(repo.deployPhase, 'no-ci');
+});
+
+test('timeout legado salvo no config agora permanece visivel', () => {
+  const repoPath = 'C:/repo/app';
+  const deployStates = {
+    [repoKey(repoPath)]: {
       phase: 'timeout',
       detail: 'Timeout aguardando deploy',
-      failedAt: Date.now()
+      failedAt: Date.now(),
+      sha: 'abc123'
     }
   };
   const repo = applyDeployState({
     name: 'App',
-    path: 'C:/repo/app',
+    path: repoPath,
     status: 'clean',
-    detail: 'Sincronizado'
-  }, deployErrors);
+    detail: 'Sincronizado',
+    headSha: 'abc123'
+  }, deployStates);
 
   assert.strictEqual(repo.pending, false);
-  assert.strictEqual(repo.needsAttention, false);
-  assert.strictEqual(repo.deployError, false);
+  assert.strictEqual(repo.needsAttention, true);
+  assert.strictEqual(repo.deployError, true);
 });
 
 test('novo commit push limpa erro de deploy armazenado', () => {
   const deployErrors = markDeployError({}, 'C:/repo/app', 'failure', 'CI Quality Gate');
-  const cleared = clearDeployError(deployErrors, 'C:/repo/app');
+  const cleared = clearDeployState(deployErrors, 'C:/repo/app');
   const repo = applyDeployState({
     name: 'App',
     path: 'C:/repo/app',
@@ -216,6 +297,35 @@ test('novo commit push limpa erro de deploy armazenado', () => {
   assert.strictEqual(repo.needsAttention, true);
   assert.strictEqual(repo.deployError, false);
   assert.strictEqual(repo.deployDetail, '');
+});
+
+test('polling antigo nao sobrescreve estado de push mais novo', () => {
+  const deployStates = markDeployState({}, 'C:/repo/app', 'waiting', 'Aguardando deploy novo', Date.now(), {
+    sha: 'new-sha',
+    branch: 'main',
+    watchId: 'new-watch'
+  });
+  const result = applyDeployWatchUpdate(deployStates, 'C:/repo/app', {
+    phase: 'failure',
+    detail: 'Deploy antigo falhou',
+    sha: 'old-sha',
+    branch: 'main',
+    watchId: 'old-watch'
+  }, Date.now());
+
+  const repo = applyDeployState({
+    name: 'App',
+    path: 'C:/repo/app',
+    status: 'clean',
+    detail: 'Sincronizado',
+    headSha: 'new-sha',
+    branch: 'main'
+  }, result.deployStates);
+
+  assert.strictEqual(result.applied, false);
+  assert.strictEqual(repo.deployPending, true);
+  assert.strictEqual(repo.deployPhase, 'waiting');
+  assert.strictEqual(repo.deployDetail, 'Aguardando deploy novo');
 });
 
 test('erro de deploy salvo nao aparece quando repo local mudou de commit', () => {

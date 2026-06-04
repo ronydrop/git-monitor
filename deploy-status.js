@@ -113,6 +113,34 @@ function isTerminalDeployPhase(phase) {
   return TERMINAL_PHASES.has(phase);
 }
 
+function findGithubApiProblem(responses = []) {
+  return asList(responses).find(res => res && res.error) ||
+    asList(responses).find(res => res && res.statusCode === 0) ||
+    asList(responses).find(res =>
+      res && res.statusCode && res.statusCode !== 200 && res.statusCode !== 404
+    ) ||
+    null;
+}
+
+function githubApiFailureDetail(workflowRes = {}, checkRes = {}, statusRes = {}, gh = {}) {
+  const responses = [workflowRes, checkRes, statusRes].filter(Boolean);
+  const failed = responses.find(res => res.error) ||
+    responses.find(res => res.statusCode && res.statusCode !== 200) ||
+    responses.find(res => res.statusCode === 0) ||
+    responses[0] || {};
+  const code = failed.statusCode || 0;
+  const apiMessage = failed.error || (failed.data && failed.data.message) || '';
+  const repoLabel = gh.owner && gh.repo ? `${gh.owner}/${gh.repo}` : 'repositorio';
+
+  if (/Resposta invalida da API GitHub/i.test(apiMessage)) return apiMessage;
+  if (code === 0) return `Erro de rede ao acessar GitHub: ${apiMessage || 'sem resposta da API'}`;
+  if (code === 401) return 'Token GitHub invalido ou expirado; atualize nas configuracoes';
+  if (code === 403 && /rate limit/i.test(apiMessage)) return `GitHub API rate limit atingido para ${repoLabel}`;
+  if (code === 403) return `Token sem permissao para consultar Actions/status de ${repoLabel}`;
+  if (code === 404) return `Token sem acesso a ${repoLabel}; configure token especifico do repo`;
+  return `Erro ao acessar GitHub (HTTP ${code})${apiMessage ? ': ' + apiMessage : ''}`;
+}
+
 function resolveDeployPhase(input = {}) {
   const checkRuns = latestCheckRuns(input.checkRuns);
   const workflowRuns = latestWorkflowRuns(input.workflowRuns);
@@ -206,4 +234,9 @@ function resolveDeployPhase(input = {}) {
   return { phase: 'success' };
 }
 
-module.exports = { resolveDeployPhase, isTerminalDeployPhase };
+module.exports = {
+  findGithubApiProblem,
+  githubApiFailureDetail,
+  resolveDeployPhase,
+  isTerminalDeployPhase
+};

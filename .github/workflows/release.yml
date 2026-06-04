@@ -16,20 +16,70 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build & Publish
+      - name: Test
+        run: npm test
+
+      - name: Build Windows artifacts
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          EP_DRAFT: false
-        run: npm run release
+        run: npx electron-builder --win portable nsis --publish never
 
-      - name: Publish release (remove draft)
+      - name: Validate artifacts
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}' -replace '^v', ''
+          $required = @(
+            'dist/latest.yml',
+            "dist/GitMonitor-Setup-$version.exe",
+            "dist/GitMonitor-Setup-$version.exe.blockmap",
+            'dist/GitMonitor-portable.exe'
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path -LiteralPath $file)) {
+              throw "Artifact missing: $file"
+            }
+          }
+
+      - name: Configure Jarvis SSH
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${{ github.ref_name }}" --draft=false --repo ${{ github.repository }}
+          JARVIS_UPDATE_SSH_KEY: ${{ secrets.JARVIS_UPDATE_SSH_KEY }}
+          JARVIS_UPDATE_KNOWN_HOSTS: ${{ secrets.JARVIS_UPDATE_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$JARVIS_UPDATE_SSH_KEY" > ~/.ssh/jarvis_update
+          chmod 600 ~/.ssh/jarvis_update
+          printf '%s\n' "$JARVIS_UPDATE_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Package artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p upload
+          cp dist/latest.yml upload/latest.yml
+          cp "dist/GitMonitor-Setup-${version}.exe" upload/
+          cp "dist/GitMonitor-Setup-${version}.exe.blockmap" upload/
+          cp dist/GitMonitor-portable.exe upload/
+          tar -czf "git-monitor-${GITHUB_REF_NAME}-${GITHUB_RUN_ID}.tgz" -C upload .
+
+      - name: Upload artifacts to Jarvis
+        shell: bash
+        env:
+          JARVIS_UPDATE_HOST: ${{ secrets.JARVIS_UPDATE_HOST }}
+          JARVIS_UPDATE_USER: ${{ secrets.JARVIS_UPDATE_USER }}
+        run: |
+          set -euo pipefail
+          package="git-monitor-${GITHUB_REF_NAME}-${GITHUB_RUN_ID}.tgz"
+          remote="/srv/git-monitor/incoming/${package}"
+          ssh -i ~/.ssh/jarvis_update "${JARVIS_UPDATE_USER}@${JARVIS_UPDATE_HOST}" "mkdir -p /srv/git-monitor/incoming"
+          scp -O -i ~/.ssh/jarvis_update "$package" "${JARVIS_UPDATE_USER}@${JARVIS_UPDATE_HOST}:$remote"
+          ssh -i ~/.ssh/jarvis_update "${JARVIS_UPDATE_USER}@${JARVIS_UPDATE_HOST}" "git-monitor-promote-artifacts '$remote' '${GITHUB_REF_NAME}'"

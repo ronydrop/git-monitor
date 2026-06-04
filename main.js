@@ -4,15 +4,21 @@ const { exec, execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const https = require('https');
-const { resolveDeployPhase } = require('./deploy-status');
 const {
+  findGithubApiProblem,
+  githubApiFailureDetail,
+  resolveDeployPhase
+} = require('./deploy-status');
+const {
+  applyDeployWatchUpdate,
   applyDeployState,
-  clearDeployError,
-  markDeployError,
+  clearDeployState,
+  markDeployState,
   needsAttentionRepo,
-  pruneDeployErrorsForRepos,
+  pruneDeployStatesForRepos,
   repoKey,
-  sanitizeDeployErrors
+  sanitizeDeployErrors,
+  sanitizeDeployStates
 } = require('./repo-state');
 const {
   formatGitError,
@@ -300,7 +306,8 @@ function getDefaultConfig() {
     widgetMode: 'floating',
     autoStart: true,
     theme: 'obsidian',
-    deployErrors: {}
+    deployErrors: {},
+    deployStates: {}
   };
 }
 
@@ -322,6 +329,9 @@ function loadConfig() {
   if (!cfg.theme)             cfg.theme             = 'obsidian';
   cfg.deployErrors = sanitizeDeployErrors(
     cfg.deployErrors && typeof cfg.deployErrors === 'object' ? cfg.deployErrors : {}
+  );
+  cfg.deployStates = sanitizeDeployStates(
+    cfg.deployStates && typeof cfg.deployStates === 'object' ? cfg.deployStates : cfg.deployErrors
   );
   return cfg;
 }
@@ -371,7 +381,7 @@ function mapReposForNotch(results) {
     name: r.name, path: r.path, status: r.status, detail: r.detail,
     branch: r.branch, ahead: r.ahead, behind: r.behind,
     changedFiles: r.changedFiles, remoteUrl: r.remoteUrl, headSha: r.headSha,
-  }, config.deployErrors));
+  }, config.deployStates));
   const order = { 'deploy-error': -1, diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3, dirty: 4, busy: 5, error: 6, clean: 7 };
   const sortStatus = r => r.deployError ? 'deploy-error' : r.status;
   mapped.sort((a, b) => (order[sortStatus(a)] ?? 99) - (order[sortStatus(b)] ?? 99));
@@ -775,36 +785,67 @@ async function checkAllRepos() {
     results.push(...batchResults);
   }
 
-  await reconcileDeployErrorsForRepos(results);
+  await reconcileDeployStatesForRepos(results);
   lastRepoResults = results;
   return results;
 }
 
-function deployErrorsEqual(a, b) {
+function deployStatesEqual(a, b) {
   return JSON.stringify(a || {}) === JSON.stringify(b || {});
 }
 
-async function resolveDeployPhaseForRepoSnapshot(repo) {
-  if (!repo || !repo.headSha || !repo.remoteUrl) return null;
+async function resolveDeployPhaseForRepoSnapshot(repo, deployState = null) {
+  const sha = (deployState && deployState.sha) || (repo && repo.headSha) || '';
+  const branch = (deployState && deployState.branch) || (repo && repo.branch) || '';
+  const remoteUrl = (deployState && deployState.remoteUrl) || (repo && repo.remoteUrl) || '';
+  if (!repo || !sha || !remoteUrl) return null;
 
-  const gh = parseGithubRemote(repo.remoteUrl);
-  if (!gh) return null;
-  const tokenInfo = resolveGithubToken(findConfiguredRepo(repo.path), repo.remoteUrl, config);
-  if (!tokenInfo) return null;
+  const gh = parseGithubRemote(remoteUrl);
+  if (!gh) {
+    return {
+      phase: 'no-github',
+      detail: 'Remote origin nao e GitHub; deploy nao monitorado',
+      sha,
+      branch,
+      remoteUrl
+    };
+  }
+  const tokenInfo = resolveGithubToken(findConfiguredRepo(repo.path), remoteUrl, config);
+  if (!tokenInfo) {
+    return {
+      phase: 'no-token',
+      detail: 'Configure um token GitHub global ou especifico deste repo',
+      sha,
+      branch,
+      remoteUrl,
+      owner: gh.owner,
+      repo: gh.repo
+    };
+  }
 
-  const workflowQuery = new URLSearchParams({ head_sha: repo.headSha, per_page: '50' });
-  if (repo.branch && repo.branch !== 'HEAD') workflowQuery.set('branch', repo.branch);
+  const workflowQuery = new URLSearchParams({ head_sha: sha, per_page: '50' });
+  if (branch && branch !== 'HEAD') workflowQuery.set('branch', branch);
 
   const [workflowRes, checkRes, statusRes] = await Promise.all([
     githubApiGet(`/repos/${gh.owner}/${gh.repo}/actions/runs?${workflowQuery.toString()}`, tokenInfo.token),
-    githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${repo.headSha}/check-runs`, tokenInfo.token),
-    githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${repo.headSha}/status`, tokenInfo.token)
+    githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/check-runs`, tokenInfo.token),
+    githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/status`, tokenInfo.token)
   ]);
 
   const hasWorkflowAccess = workflowRes.statusCode === 200;
   const hasCheckAccess  = checkRes.statusCode === 200;
   const hasStatusAccess = statusRes.statusCode === 200;
-  if (!hasWorkflowAccess && !hasCheckAccess && !hasStatusAccess) return null;
+  if (!hasWorkflowAccess && !hasCheckAccess && !hasStatusAccess) {
+    return {
+      phase: 'error',
+      detail: githubApiFailureDetail(workflowRes, checkRes, statusRes, gh),
+      sha,
+      branch,
+      remoteUrl,
+      owner: gh.owner,
+      repo: gh.repo
+    };
+  }
 
   const workflowRuns = (hasWorkflowAccess && workflowRes.data.workflow_runs) ? workflowRes.data.workflow_runs : [];
   const checkRuns    = (hasCheckAccess && checkRes.data.check_runs) ? checkRes.data.check_runs : [];
@@ -812,7 +853,42 @@ async function resolveDeployPhaseForRepoSnapshot(repo) {
   const statusTotal  = hasStatusAccess ? (statusRes.data.total_count || 0) : 0;
 
   const hasData = workflowRuns.length > 0 || checkRuns.length > 0 || statusTotal > 0;
-  if (!hasData) return null;
+  if (!hasData) {
+    const startedAt = deployState && deployState.startedAt ? Number(deployState.startedAt) : 0;
+    const noCiGraceMs = DEPLOY_INITIAL_DELAY_MS + (DEPLOY_NO_CI_ATTEMPTS * DEPLOY_POLL_INTERVAL_MS);
+    if (deployState && isDeployStatePending(deployState) && startedAt && Date.now() - startedAt < noCiGraceMs) {
+      return {
+        phase: 'waiting',
+        detail: 'Aguardando CI iniciar',
+        sha,
+        branch,
+        remoteUrl,
+        owner: gh.owner,
+        repo: gh.repo
+      };
+    }
+    const apiProblem = findGithubApiProblem([workflowRes, checkRes, statusRes]);
+    if (apiProblem) {
+      return {
+        phase: 'error',
+        detail: githubApiFailureDetail(workflowRes, checkRes, statusRes, gh),
+        sha,
+        branch,
+        remoteUrl,
+        owner: gh.owner,
+        repo: gh.repo
+      };
+    }
+    return {
+      phase: 'no-ci',
+      detail: 'Nenhum workflow, check-run ou commit status encontrado para este commit',
+      sha,
+      branch,
+      remoteUrl,
+      owner: gh.owner,
+      repo: gh.repo
+    };
+  }
 
   return {
     ...resolveDeployPhase({
@@ -822,37 +898,43 @@ async function resolveDeployPhaseForRepoSnapshot(repo) {
       combinedState: hasStatusAccess ? statusRes.data.state : null,
       statusTotal
     }),
-    sha: repo.headSha,
-    branch: repo.branch
+    sha,
+    branch,
+    remoteUrl,
+    owner: gh.owner,
+    repo: gh.repo
   };
 }
 
-async function reconcileDeployErrorsForRepos(results) {
-  let next = pruneDeployErrorsForRepos(config.deployErrors, results);
+async function reconcileDeployStatesForRepos(results) {
+  let next = pruneDeployStatesForRepos(config.deployStates, results);
 
   for (const repo of results) {
-    if (!next[repoKey(repo.path)]) continue;
+    const current = next[repoKey(repo.path)];
+    if (!current || current.phase === 'success') continue;
 
-    const deployPhase = await resolveDeployPhaseForRepoSnapshot(repo);
+    const deployPhase = await resolveDeployPhaseForRepoSnapshot(repo, current);
     if (!deployPhase) continue;
 
     if (deployPhase.phase === 'success') {
-      next = clearDeployError(next, repo.path);
-    } else if (deployPhase.failed || ['failure', 'error'].includes(deployPhase.phase)) {
-      const phase = deployPhase.phase === 'error' ? 'error' : 'failure';
-      next = markDeployError(
-        next,
-        repo.path,
-        phase,
-        deployPhase.failedDetail || deployPhase.detail || 'Deploy falhou',
-        Date.now(),
-        { sha: repo.headSha, branch: repo.branch }
-      );
+      next = clearDeployState(next, repo.path);
+    } else {
+      const update = applyDeployWatchUpdate(next, repo.path, {
+        ...deployPhase,
+        detail: deployPhase.failedDetail || deployPhase.detail || deployPhase.job || '',
+        watchId: current.watchId || '',
+        sha: deployPhase.sha,
+        branch: deployPhase.branch,
+        remoteUrl: deployPhase.remoteUrl,
+        owner: deployPhase.owner,
+        repo: deployPhase.repo
+      }, Date.now());
+      next = update.deployStates;
     }
   }
 
-  if (!deployErrorsEqual(config.deployErrors, next)) {
-    config.deployErrors = next;
+  if (!deployStatesEqual(config.deployStates, next)) {
+    config.deployStates = next;
     saveConfig(config);
   }
 }
@@ -862,7 +944,7 @@ async function reconcileDeployErrorsForRepos(results) {
 // ============================================================
 ipcMain.handle('check-repos', async () => {
   const results = await checkAllRepos();
-  return results.map(r => applyDeployState(r, config.deployErrors));
+  return results.map(r => applyDeployState(r, config.deployStates));
 });
 ipcMain.handle('get-config', () => config);
 
@@ -873,7 +955,7 @@ ipcMain.handle('get-cached-repos', () => {
   );
   const filtered = lastRepoResults
     .filter(r => activePaths.has(path.resolve(r.path)))
-    .map(r => applyDeployState(r, config.deployErrors));
+    .map(r => applyDeployState(r, config.deployStates));
   return {
     repos: filtered,
     notch: { repos: mapReposForNotch(filtered), total: filtered.length }
@@ -1508,18 +1590,41 @@ async function generateCommitMessage(diff) {
   throw new Error(errors.join(' · '));
 }
 
+function createDeployWatchId(repoPath, sha) {
+  const seed = `${repoPath || ''}:${sha || ''}:${Date.now()}:${Math.random()}`;
+  return Buffer.from(seed).toString('base64url').slice(0, 24);
+}
+
+function getDeployStateForRepo(repoPath) {
+  return (config.deployStates || {})[repoKey(repoPath)] || null;
+}
+
+function isDeployStatePending(state) {
+  return !!state && (state.phase === 'waiting' || state.phase === 'running');
+}
+
 ipcMain.handle('commit-and-push', async (_, repoPath) => {
   const release = await acquireRepoLock(repoPath);
   markWriting(repoPath, true);
   try {
-    config.deployErrors = clearDeployError(config.deployErrors, repoPath);
-    saveConfig(config);
-
     cleanStaleLock(repoPath);
 
     // Checa se há mudanças não commitadas
     const statusOutput = (await gitExec('git status --porcelain', { cwd: repoPath, timeout: 5000 })).trim();
     const hasUncommitted = statusOutput.length > 0;
+    const [initialBranch, initialHeadSha] = await Promise.all([
+      gitExec('git rev-parse --abbrev-ref HEAD', { cwd: repoPath, timeout: 5000 }).then(o => o.trim()),
+      gitExec('git rev-parse HEAD', { cwd: repoPath, timeout: 5000 }).then(o => o.trim())
+    ]);
+    const pendingDeploy = getDeployStateForRepo(repoPath);
+    if (!hasUncommitted && isDeployStatePending(pendingDeploy) &&
+        pendingDeploy.sha === initialHeadSha &&
+        (!pendingDeploy.branch || pendingDeploy.branch === initialBranch)) {
+      return {
+        ok: false,
+        error: `Deploy ainda em andamento para ${initialBranch}@${initialHeadSha.slice(0, 7)}. Aguarde o resultado do GitHub Actions.`
+      };
+    }
 
     const hasAnthropicAuth = config.anthropicKey || config.anthropicAuthMode === 'oauth';
     const hasOpenAIAuth = config.openaiKey || config.openaiAuthMode === 'oauth';
@@ -1527,6 +1632,10 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
     if (hasUncommitted && !hasAnthropicAuth && !hasOpenAIAuth && !hasOpenRouterAuth) {
       return { ok: false, error: 'Nenhuma credencial de IA configurada (Anthropic, OpenAI ou OpenRouter).' };
     }
+
+    config.deployStates = clearDeployState(config.deployStates, repoPath);
+    config.deployErrors = clearDeployState(config.deployErrors, repoPath);
+    saveConfig(config);
 
     let title = 'Push de commits pendentes';
     let body = '';
@@ -1563,9 +1672,38 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
       }
       throw new Error(`Falha no pull --rebase: ${formatGitError(e)}`);
     }
+    const [sha, remoteUrl] = await Promise.all([
+      gitExec('git rev-parse HEAD', { cwd: repoPath, timeout: 5000 }).then(o => o.trim()),
+      gitExec('git config --get remote.origin.url', { cwd: repoPath, timeout: 5000 }).then(o => o.trim()).catch(() => '')
+    ]);
     await gitExec(pushCommand(branch), { cwd: repoPath, timeout: 30000 });
 
-    return { ok: true, title, body };
+    const gh = parseGithubRemote(remoteUrl);
+    const deploy = {
+      phase: 'waiting',
+      detail: 'Aguardando CI iniciar',
+      repoPath,
+      repoName: (findConfiguredRepo(repoPath) || {}).name || '',
+      sha,
+      branch,
+      remoteUrl,
+      owner: gh ? gh.owner : '',
+      repo: gh ? gh.repo : '',
+      watchId: createDeployWatchId(repoPath, sha),
+      startedAt: Date.now()
+    };
+    config.deployStates = markDeployState(
+      config.deployStates,
+      repoPath,
+      'waiting',
+      deploy.detail,
+      deploy.startedAt,
+      deploy
+    );
+    saveConfig(config);
+    startDeployWatcher({ ...deploy });
+
+    return { ok: true, title, body, deploy };
   } catch (e) {
     return { ok: false, error: e.message ? e.message.substring(0, 200) : String(e) };
   } finally {
@@ -1623,146 +1761,284 @@ ipcMain.handle('get-diff', async (_, repoPath) => {
 
 // Deploy watchers ativos por repoPath
 const deployWatchers = {};
+const DEPLOY_MAX_ATTEMPTS = 180;
+const DEPLOY_NO_CI_ATTEMPTS = 5;
+const DEPLOY_INITIAL_DELAY_MS = 3000;
+const DEPLOY_POLL_INTERVAL_MS = 4000;
 
-ipcMain.on('watch-deploy-start', (event, { repoPath, repoName }) => {
-  if (deployWatchers[repoPath]) clearTimeout(deployWatchers[repoPath].timer);
-  config.deployErrors = clearDeployError(config.deployErrors, repoPath);
-  saveConfig(config);
+function deployWatcherKey(repoPath) {
+  return repoKey(repoPath);
+}
 
-  let attempts = 0;
-  const maxAttempts = 180;
+function sendDeployUpdate(repoPath, repoName, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('deploy-update', { repoPath, repoName, ...payload });
+  }
+}
 
-  const send = (payload) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('deploy-update', { repoPath, repoName, ...payload });
+async function resolveDeployWatchPhase(context, attempts) {
+  const repoPath = context.repoPath;
+  const sha = context.sha || (await execAsync('git rev-parse HEAD', { cwd: repoPath, timeout: 5000 })).trim();
+  const branch = context.branch ||
+    (await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath, timeout: 3000 }).then(o => o.trim()).catch(() => ''));
+  const remoteUrl = context.remoteUrl ||
+    (await execAsync('git config --get remote.origin.url', { cwd: repoPath, timeout: 3000 }).then(o => o.trim()).catch(() => ''));
+  const parsed = context.owner && context.repo
+    ? { owner: context.owner, repo: context.repo }
+    : parseGithubRemote(remoteUrl);
+
+  if (!parsed) {
+    return { phase: 'no-github', detail: 'Remote origin nao e GitHub; deploy nao monitorado', sha, branch, remoteUrl };
+  }
+
+  const tokenInfo = resolveGithubToken(findConfiguredRepo(repoPath), remoteUrl, config);
+  if (!tokenInfo) {
+    return {
+      phase: 'no-token',
+      detail: 'Configure um token GitHub global ou especifico deste repo',
+      sha,
+      branch,
+      remoteUrl,
+      owner: parsed.owner,
+      repo: parsed.repo
+    };
+  }
+
+  const workflowQuery = new URLSearchParams({ head_sha: sha, per_page: '50' });
+  if (branch && branch !== 'HEAD') workflowQuery.set('branch', branch);
+
+  const [workflowRes, checkRes, statusRes] = await Promise.all([
+    githubApiGet(`/repos/${parsed.owner}/${parsed.repo}/actions/runs?${workflowQuery.toString()}`, tokenInfo.token),
+    githubApiGet(`/repos/${parsed.owner}/${parsed.repo}/commits/${sha}/check-runs`, tokenInfo.token),
+    githubApiGet(`/repos/${parsed.owner}/${parsed.repo}/commits/${sha}/status`, tokenInfo.token)
+  ]);
+
+  const hasWorkflowAccess = workflowRes.statusCode === 200;
+  const hasCheckAccess  = checkRes.statusCode === 200;
+  const hasStatusAccess = statusRes.statusCode === 200;
+
+  if (!hasWorkflowAccess && !hasCheckAccess && !hasStatusAccess) {
+    return {
+      phase: 'error',
+      detail: githubApiFailureDetail(workflowRes, checkRes, statusRes, parsed),
+      sha,
+      branch,
+      remoteUrl,
+      owner: parsed.owner,
+      repo: parsed.repo
+    };
+  }
+
+  const workflowRuns = (hasWorkflowAccess && workflowRes.data.workflow_runs) ? workflowRes.data.workflow_runs : [];
+  const checkRuns = (hasCheckAccess && checkRes.data.check_runs) ? checkRes.data.check_runs : [];
+  const statuses = (hasStatusAccess && statusRes.data.statuses) ? statusRes.data.statuses : [];
+  const combinedState = hasStatusAccess ? statusRes.data.state : null;
+  const statusTotal = hasStatusAccess ? (statusRes.data.total_count || 0) : 0;
+  const hasData = workflowRuns.length > 0 || checkRuns.length > 0 || statusTotal > 0;
+
+  const diag = {
+    repoPath,
+    sha,
+    branch,
+    tokenSource: tokenInfo.source,
+    attempts,
+    workflowStatus: workflowRes.statusCode,
+    workflowError: workflowRes.error || '',
+    checkStatus: checkRes.statusCode,
+    checkError: checkRes.error || '',
+    statusStatus: statusRes.statusCode,
+    statusError: statusRes.error || '',
+    workflowsTotal: workflowRuns.length,
+    workflowsConclusions: workflowRuns.map(r => [r.name, r.status, r.conclusion]),
+    runsTotal: checkRuns.length,
+    runsConclusions: checkRuns.map(r => [r.name, r.status, r.conclusion]),
+    statusTotal,
+    combinedState,
+    statusesDetail: statuses.map(s => [s.context, s.state])
+  };
+
+  if (!hasData) {
+    if (attempts >= DEPLOY_NO_CI_ATTEMPTS) {
+      const apiProblem = findGithubApiProblem([workflowRes, checkRes, statusRes]);
+      if (apiProblem) {
+        return {
+          phase: 'error',
+          detail: githubApiFailureDetail(workflowRes, checkRes, statusRes, parsed),
+          sha,
+          branch,
+          remoteUrl,
+          owner: parsed.owner,
+          repo: parsed.repo,
+          _diag: diag
+        };
+      }
+      return {
+        phase: 'no-ci',
+        detail: 'Nenhum workflow, check-run ou commit status encontrado para este commit',
+        sha,
+        branch,
+        remoteUrl,
+        owner: parsed.owner,
+        repo: parsed.repo,
+        _diag: diag
+      };
+    }
+    return { phase: 'waiting', detail: 'Aguardando CI iniciar', sha, branch, remoteUrl, owner: parsed.owner, repo: parsed.repo, _diag: diag };
+  }
+
+  return {
+    ...resolveDeployPhase({ checkRuns, workflowRuns, statuses, combinedState, statusTotal }),
+    sha,
+    branch,
+    remoteUrl,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    _diag: diag
+  };
+}
+
+function updateDeployStateFromWatch(repoPath, res, watchId) {
+  const update = applyDeployWatchUpdate(config.deployStates, repoPath, {
+    ...res,
+    detail: res.failedDetail || res.detail || res.job || '',
+    watchId
+  }, Date.now());
+  config.deployStates = update.deployStates;
+  if (update.applied) saveConfig(config);
+  return update;
+}
+
+function startDeployWatcher(context = {}) {
+  const repoPath = context.repoPath;
+  if (!repoPath) return;
+
+  const key = deployWatcherKey(repoPath);
+  const current = getDeployStateForRepo(repoPath);
+  const watchId = context.watchId || (current && current.watchId) || createDeployWatchId(repoPath, context.sha || '');
+  if (context.watchId && current && current.watchId && current.watchId !== context.watchId) return;
+
+  if (deployWatchers[key]) clearTimeout(deployWatchers[key].timer);
+
+  const repoConfig = findConfiguredRepo(repoPath);
+  const repoName = context.repoName || (repoConfig && repoConfig.name) || repoPath;
+  const startedAt = context.startedAt || (current && current.startedAt) || Date.now();
+  let attempts = Number(context.attempts || 0) || 0;
+
+  if (!current) {
+    config.deployStates = markDeployState(config.deployStates, repoPath, 'waiting', 'Aguardando CI iniciar', Date.now(), {
+      ...context,
+      watchId,
+      startedAt
+    });
+    saveConfig(config);
+  }
+
+  const baseContext = {
+    ...current,
+    ...context,
+    repoPath,
+    repoName,
+    watchId,
+    startedAt
+  };
+
+  const stop = () => {
+    if (deployWatchers[key]) {
+      clearTimeout(deployWatchers[key].timer);
+      delete deployWatchers[key];
     }
   };
 
   const check = async () => {
     attempts++;
-    let _diag = null;
-    const res = await (async () => {
-      try {
-        const sha = (await execAsync('git rev-parse HEAD', { cwd: repoPath, timeout: 5000 })).trim();
-        let remoteUrl = '';
-        try { remoteUrl = (await execAsync('git config --get remote.origin.url', { cwd: repoPath, timeout: 3000 })).trim(); } catch (e) { }
-        const gh = parseGithubRemote(remoteUrl);
-        if (!gh) return { phase: 'no-github' };
-        const tokenInfo = resolveGithubToken(findConfiguredRepo(repoPath), remoteUrl, config);
-        if (!tokenInfo) return { phase: 'no-token', detail: 'Configure um token GitHub global ou especifico deste repo' };
-
-        let branch = '';
-        try { branch = (await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath, timeout: 3000 })).trim(); } catch (e) { }
-
-        const workflowQuery = new URLSearchParams({ head_sha: sha, per_page: '50' });
-        if (branch && branch !== 'HEAD') workflowQuery.set('branch', branch);
-
-        // Busca workflow runs, check-runs e commit statuses para o commit atual.
-        const [workflowRes, checkRes, statusRes] = await Promise.all([
-          githubApiGet(`/repos/${gh.owner}/${gh.repo}/actions/runs?${workflowQuery.toString()}`, tokenInfo.token),
-          githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/check-runs`, tokenInfo.token),
-          githubApiGet(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/status`, tokenInfo.token)
-        ]);
-
-        const hasWorkflowAccess = workflowRes.statusCode === 200;
-        const hasCheckAccess  = checkRes.statusCode === 200;
-        const hasStatusAccess = statusRes.statusCode === 200;
-
-        if (!hasWorkflowAccess && !hasCheckAccess && !hasStatusAccess) {
-          const code = workflowRes.statusCode || checkRes.statusCode || statusRes.statusCode;
-          if (code === 401) return { phase: 'error', detail: 'Token GitHub inválido ou expirado — atualize nas configurações' };
-          if (code === 403) return { phase: 'error', detail: 'Token sem permissão — gere um novo com escopo repo' };
-          if (code === 404) return { phase: 'error', detail: `Token sem acesso a ${gh.owner}/${gh.repo} — configure token especifico do repo` };
-          return { phase: 'error', detail: `Erro ao acessar GitHub (HTTP ${code})` };
-        }
-
-        // --- GitHub Actions (workflow runs + check-runs) ---
-        const workflowRuns = (hasWorkflowAccess && workflowRes.data.workflow_runs) ? workflowRes.data.workflow_runs : [];
-        const runs = (hasCheckAccess && checkRes.data.check_runs) ? checkRes.data.check_runs : [];
-
-        // --- Commit statuses (Vercel, Render, Netlify etc.) ---
-        const statuses      = (hasStatusAccess && statusRes.data.statuses) ? statusRes.data.statuses : [];
-        const combinedState = hasStatusAccess ? statusRes.data.state : null;
-        const statusTotal   = hasStatusAccess ? (statusRes.data.total_count || 0) : 0;
-
-        const deployPhase = resolveDeployPhase({
-          checkRuns: runs,
-          workflowRuns,
-          statuses,
-          combinedState,
-          statusTotal
-        });
-
-        _diag = {
-          repoPath,
-          sha,
-          branch,
-          tokenSource: tokenInfo.source,
-          attempts,
-          workflowStatus: workflowRes.statusCode,
-          checkStatus: checkRes.statusCode,
-          statusStatus: statusRes.statusCode,
-          workflowsTotal: workflowRuns.length,
-          workflowsConclusions: workflowRuns.map(r => [r.name, r.status, r.conclusion]),
-          runsTotal: runs.length,
-          runsConclusions: runs.map(r => [r.name, r.status, r.conclusion]),
-          statusTotal,
-          combinedState,
-          statusesDetail: statuses.map(s => [s.context, s.state])
-        };
-
-        const hasData = workflowRuns.length > 0 || runs.length > 0 || statusTotal > 0;
-        if (!hasData) {
-          if (attempts >= 5) return { phase: 'no-ci' };
-          return { phase: 'waiting' };
-        }
-
-        return { ...deployPhase, sha, branch };
-      } catch (e) {
-        return { phase: 'error', detail: e.message };
-      }
-    })();
-
-    if (_diag) console.log('[deploy-watch]', JSON.stringify({ ..._diag, emittedPhase: res.phase }));
-    if (res.failed || ['failure', 'error'].includes(res.phase)) {
-      const failedPhase = res.phase === 'error' ? 'error' : 'failure';
-      const failedDetail = res.failedDetail || res.detail || 'Deploy falhou';
-      config.deployErrors = markDeployError(
-        config.deployErrors,
-        repoPath,
-        failedPhase,
-        failedDetail,
-        Date.now(),
-        { sha: res.sha || '', branch: res.branch || '' }
-      );
-      saveConfig(config);
-    } else if (res.phase === 'success') {
-      config.deployErrors = clearDeployError(config.deployErrors, repoPath);
-      saveConfig(config);
+    const activeBefore = getDeployStateForRepo(repoPath);
+    if (!activeBefore || (activeBefore.watchId && activeBefore.watchId !== watchId)) {
+      stop();
+      return;
     }
-    send(res);
+
+    let res;
+    try {
+      res = await resolveDeployWatchPhase({ ...baseContext, ...activeBefore, watchId }, attempts);
+    } catch (e) {
+      res = {
+        phase: 'error',
+        detail: e.message || String(e),
+        sha: activeBefore.sha || baseContext.sha || '',
+        branch: activeBefore.branch || baseContext.branch || '',
+        remoteUrl: activeBefore.remoteUrl || baseContext.remoteUrl || ''
+      };
+    }
+
+    const activeAfter = getDeployStateForRepo(repoPath);
+    if (!activeAfter || (activeAfter.watchId && activeAfter.watchId !== watchId)) {
+      stop();
+      return;
+    }
+
+    if ((res.phase === 'waiting' || res.phase === 'running') && attempts >= DEPLOY_MAX_ATTEMPTS) {
+      res = {
+        ...res,
+        phase: 'timeout',
+        detail: 'Monitoramento expirou sem conclusao no GitHub'
+      };
+    }
+
+    if (res._diag) console.log('[deploy-watch]', JSON.stringify({ ...res._diag, emittedPhase: res.phase }));
+
+    const update = updateDeployStateFromWatch(repoPath, { ...res, watchId }, watchId);
+    if (!update.applied) {
+      stop();
+      return;
+    }
+
+    sendDeployUpdate(repoPath, repoName, { ...res, watchId });
 
     if (res.phase === 'waiting' || res.phase === 'running') {
-      if (attempts < maxAttempts) {
-        deployWatchers[repoPath] = { timer: setTimeout(check, 4000) };
-      } else {
-        send({ phase: 'timeout', detail: 'Monitoramento expirou sem conclusao no GitHub' });
-        delete deployWatchers[repoPath];
-      }
+      deployWatchers[key] = { timer: setTimeout(check, DEPLOY_POLL_INTERVAL_MS), watchId };
     } else {
-      delete deployWatchers[repoPath];
+      stop();
     }
   };
 
-  // Aguarda CI iniciar (3s) e começa polling
-  send({ phase: 'waiting' });
-  deployWatchers[repoPath] = { timer: setTimeout(check, 3000) };
+  sendDeployUpdate(repoPath, repoName, {
+    phase: 'waiting',
+    detail: 'Aguardando CI iniciar',
+    sha: baseContext.sha || '',
+    branch: baseContext.branch || '',
+    watchId
+  });
+  deployWatchers[key] = { timer: setTimeout(check, DEPLOY_INITIAL_DELAY_MS), watchId };
+}
+
+function resumePendingDeployWatchers() {
+  for (const repo of config.repos || []) {
+    if (repo.enabled === false) continue;
+    const state = getDeployStateForRepo(repo.path);
+    if (!isDeployStatePending(state)) continue;
+    startDeployWatcher({
+      ...state,
+      repoPath: repo.path,
+      repoName: repo.name
+    });
+  }
+}
+
+ipcMain.on('watch-deploy-start', (event, payload = {}) => {
+  const deploy = payload.deploy || {};
+  const repoPath = payload.repoPath || deploy.repoPath;
+  if (!repoPath) return;
+
+  const current = getDeployStateForRepo(repoPath);
+  if (deploy.watchId && current && current.watchId && current.watchId !== deploy.watchId) return;
+  startDeployWatcher({ ...deploy, repoPath, repoName: payload.repoName || deploy.repoName });
 });
 
 ipcMain.on('watch-deploy-stop', (_, repoPath) => {
-  if (deployWatchers[repoPath]) {
-    clearTimeout(deployWatchers[repoPath].timer);
-    delete deployWatchers[repoPath];
+  const key = deployWatcherKey(repoPath);
+  if (deployWatchers[key]) {
+    clearTimeout(deployWatchers[key].timer);
+    delete deployWatchers[key];
   }
 });
 
@@ -1805,6 +2081,12 @@ ipcMain.handle('save-github-token', (_, token) => {
 
 function githubApiGet(apiPath, token) {
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (payload) => {
+      if (settled) return;
+      settled = true;
+      resolve(payload);
+    };
     const headers = {
       'User-Agent': 'GitMonitor',
       'Accept': 'application/vnd.github+json'
@@ -1819,15 +2101,21 @@ function githubApiGet(apiPath, token) {
       let body = '';
       res.on('data', c => body += c);
       res.on('end', () => {
+        if (!body.trim()) {
+          finish({ statusCode: res.statusCode, data: {}, error: '' });
+          return;
+        }
         try {
-          resolve({ statusCode: res.statusCode, data: JSON.parse(body) });
-        } catch {
-          resolve({ statusCode: res.statusCode, data: {} });
+          finish({ statusCode: res.statusCode, data: JSON.parse(body), error: '' });
+        } catch (e) {
+          finish({ statusCode: res.statusCode, data: {}, error: `Resposta invalida da API GitHub: ${e.message}` });
         }
       });
     });
-    req.on('error', () => resolve({ statusCode: 0, data: {} }));
-    req.setTimeout(10000, () => { req.destroy(); resolve({ statusCode: 0, data: {} }); });
+    req.on('error', (e) => finish({ statusCode: 0, data: {}, error: e.message || 'erro de rede' }));
+    req.setTimeout(10000, () => {
+      req.destroy(new Error('Timeout ao acessar GitHub API'));
+    });
   });
 }
 
@@ -1856,6 +2144,7 @@ app.whenReady().then(() => {
   }
 
   applyAutoStart(config.autoStart !== false);
+  resumePendingDeployWatchers();
 
   const icon = nativeImage.createFromPath(getIconPath());
   tray = new Tray(icon);
@@ -2049,7 +2338,7 @@ ipcMain.handle('set-auto-start', (_, enabled) => {
 ipcMain.handle('notch-pending-repos', async () => {
   const results = await checkAllRepos();
   const pending = results
-    .map(r => applyDeployState(r, config.deployErrors))
+    .map(r => applyDeployState(r, config.deployStates))
     .filter(r => needsAttentionRepo(r))
     .map(r => ({
       name: r.name,
@@ -2058,6 +2347,7 @@ ipcMain.handle('notch-pending-repos', async () => {
       detail: r.detail,
       pending: r.pending,
       needsAttention: r.needsAttention,
+      deployPending: r.deployPending,
       deployError: r.deployError,
       deployPhase: r.deployPhase,
       deployDetail: r.deployDetail,

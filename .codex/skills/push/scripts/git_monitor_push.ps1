@@ -1,9 +1,12 @@
 [CmdletBinding()]
 param(
     [switch]$PlanOnly,
-    [switch]$SelfTest
+    [switch]$SelfTest,
+    [string]$RemoteHost = 'jarvis',
+    [string]$RemoteCommand = 'git-monitor-release'
 )
 
+# Interface remota padrao: git-monitor-release --apply <package.tgz>
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -56,41 +59,110 @@ function Normalize-RepoPath {
     return ($Path -replace '\\', '/').Trim('"')
 }
 
-function Get-ChangedPaths {
+function ConvertTo-JsonArrayLiteral {
+    param([string[]]$Values)
+
+    $items = @($Values | ForEach-Object {
+        '"' + ($_ -replace '\\', '\\' -replace '"', '\"') + '"'
+    })
+    return '[' + ($items -join ',') + ']'
+}
+
+function Write-Utf8NoBom {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+
+    $encoding = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $encoding)
+}
+
+function Write-GitDiffPatch {
+    param([string]$Path)
+
+    $errorPath = [System.IO.Path]::GetTempFileName()
+    try {
+        $args = @(
+            'diff',
+            '--binary',
+            'HEAD',
+            '--',
+            '.',
+            ':!dist/**',
+            ':!node_modules/**',
+            ':!.secrets/**'
+        )
+        $process = Start-Process -FilePath 'git' `
+            -ArgumentList $args `
+            -NoNewWindow `
+            -Wait `
+            -PassThru `
+            -RedirectStandardOutput $Path `
+            -RedirectStandardError $errorPath
+
+        if ($process.ExitCode -ne 0) {
+            $stderr = ''
+            if (Test-Path -LiteralPath $errorPath) {
+                $stderr = Get-Content -LiteralPath $errorPath -Raw -ErrorAction SilentlyContinue
+            }
+            Fail "Nao foi possivel gerar patch git: $stderr"
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $errorPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-ChangedEntries {
     $lines = & git status --porcelain=v1
     if ($LASTEXITCODE -ne 0) {
         Fail "Nao foi possivel ler git status"
     }
 
-    $paths = @()
+    $entries = @()
     foreach ($line in $lines) {
         if ($line.Length -lt 4) {
             continue
         }
 
+        $status = $line.Substring(0, 2)
         $path = $line.Substring(3)
         if ($path -match ' -> ') {
             $path = ($path -split ' -> ')[-1]
         }
 
-        $paths += (Normalize-RepoPath $path)
+        $entries += [pscustomobject]@{
+            Status = $status
+            Path = Normalize-RepoPath $path
+        }
     }
 
-    return $paths
+    return $entries
 }
 
-function Assert-NoDangerousChangedPaths {
-    param([string[]]$Paths)
+function Test-IgnoredReleasePath {
+    param([string]$Path)
+    return $Path -match '^dist(/|$)'
+}
 
-    $dangerousPatterns = @(
+function Test-BlockedReleasePath {
+    param([string]$Path)
+
+    $blockedPatterns = @(
         '^\.secrets(/|$)',
         '^node_modules(/|$)',
-        '^dist(/|$)',
         '^assets(/|$)',
         '^config\.json$',
         '(^|/)nul(/|$)',
         '(^|/)[^/]+\.(db|sqlite|sqlite3|db-journal|sqlite-journal)$'
     )
+
+    foreach ($pattern in $blockedPatterns) {
+        if ($Path -match $pattern) {
+            return $true
+        }
+    }
 
     $mediaExtensions = '\.(jpg|jpeg|png|webp|gif|avif|bmp|tiff|tif|mp4|mov|avi|mkv|webm|wmv|flv|m4v)$'
     $mediaAllowList = @(
@@ -99,32 +171,49 @@ function Assert-NoDangerousChangedPaths {
         '^\.codex/skills/push/'
     )
 
-    $blocked = New-Object System.Collections.Generic.List[string]
-    foreach ($path in $Paths) {
-        foreach ($pattern in $dangerousPatterns) {
-            if ($path -match $pattern) {
-                $blocked.Add($path)
-                break
+    if ($Path -match $mediaExtensions) {
+        foreach ($allow in $mediaAllowList) {
+            if ($Path -match $allow) {
+                return $false
             }
         }
+        return $true
+    }
 
-        if ($path -match $mediaExtensions) {
-            $allowed = $false
-            foreach ($allow in $mediaAllowList) {
-                if ($path -match $allow) {
-                    $allowed = $true
-                    break
-                }
-            }
-            if (-not $allowed) {
-                $blocked.Add($path)
-            }
+    return $false
+}
+
+function Split-ReleasePaths {
+    param([object[]]$Entries)
+
+    $safe = New-Object System.Collections.Generic.List[string]
+    $ignored = New-Object System.Collections.Generic.List[string]
+    $blocked = New-Object System.Collections.Generic.List[string]
+
+    foreach ($entry in $Entries) {
+        if (Test-IgnoredReleasePath $entry.Path) {
+            $ignored.Add($entry.Path)
+        }
+        elseif (Test-BlockedReleasePath $entry.Path) {
+            $blocked.Add($entry.Path)
+        }
+        else {
+            $safe.Add($entry.Path)
         }
     }
 
-    if ($blocked.Count -gt 0) {
-        $unique = $blocked | Sort-Object -Unique
-        Fail "Arquivos perigosos no worktree/stage. Remova ou confirme manualmente fora do /push:`n$($unique -join "`n")"
+    return [pscustomobject]@{
+        Safe = @($safe | Sort-Object -Unique)
+        Ignored = @($ignored | Sort-Object -Unique)
+        Blocked = @($blocked | Sort-Object -Unique)
+    }
+}
+
+function Assert-NoBlockedReleasePaths {
+    param([string[]]$Paths)
+
+    if ($Paths.Count -gt 0) {
+        Fail "Arquivos bloqueados no worktree/stage. Remova ou confirme manualmente fora do /push:`n$($Paths -join "`n")"
     }
 }
 
@@ -219,7 +308,7 @@ function Assert-GitPreflight {
 }
 
 function Assert-ReleasePreflight {
-    foreach ($command in @('git', 'node', 'npm')) {
+    foreach ($command in @('git', 'node', 'npm', 'ssh', 'scp', 'tar')) {
         Assert-Command $command
     }
 }
@@ -243,18 +332,70 @@ function Assert-TagAvailable {
     }
 }
 
-function Clear-DistBuildChanges {
-    if (-not (Test-Path -LiteralPath 'dist')) {
-        return
+function New-ReleasePackage {
+    param(
+        [string[]]$SafePaths,
+        [string[]]$IgnoredPaths,
+        [string]$NextVersion
+    )
+
+    if ($SafePaths.Count -eq 0) {
+        Fail "Nenhuma mudanca segura para enviar ao Jarvis"
     }
 
-    Run 'git' @('restore', '--worktree', '--', 'dist')
-    Run 'git' @('clean', '-fd', '--', 'dist')
-}
+    $baseHead = Capture 'git' @('rev-parse', 'HEAD')
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "git-monitor-release-$stamp-$PID"
+    $payloadDir = Join-Path $tempRoot 'payload'
+    $untrackedDir = Join-Path $payloadDir 'untracked'
+    New-Item -ItemType Directory -Force -Path $payloadDir, $untrackedDir | Out-Null
 
-function Assert-BuildArtifact {
-    if (-not (Test-Path -LiteralPath 'dist/GitMonitor-portable.exe')) {
-        Fail 'Build nao gerou dist/GitMonitor-portable.exe'
+    try {
+        $patchPath = Join-Path $payloadDir 'changes.patch'
+        Write-GitDiffPatch -Path $patchPath
+
+        $untrackedRaw = & git ls-files --others --exclude-standard
+        if ($LASTEXITCODE -ne 0) {
+            Fail "Nao foi possivel listar arquivos untracked"
+        }
+
+        $untrackedSafe = @()
+        foreach ($path in $untrackedRaw) {
+            $normalized = Normalize-RepoPath $path
+            if ($SafePaths -contains $normalized) {
+                $untrackedSafe += $normalized
+                $target = Join-Path $untrackedDir ($normalized -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+                $targetDir = Split-Path -Parent $target
+                New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+                Copy-Item -LiteralPath $normalized -Destination $target -Force
+            }
+        }
+
+        $trackedSafe = @($SafePaths | Where-Object { $untrackedSafe -notcontains $_ })
+        $manifest = @"
+{
+  "createdAt": "$(Get-Date -Format o)",
+  "baseHead": "$baseHead",
+  "nextVersion": "$NextVersion",
+  "trackedPaths": $(ConvertTo-JsonArrayLiteral $trackedSafe),
+  "untrackedPaths": $(ConvertTo-JsonArrayLiteral $untrackedSafe),
+  "ignoredPaths": $(ConvertTo-JsonArrayLiteral $IgnoredPaths)
+}
+"@
+        Write-Utf8NoBom -Path (Join-Path $payloadDir 'manifest.json') -Content $manifest
+
+        $packagePath = Join-Path $tempRoot "git-monitor-$stamp.tgz"
+        Run 'tar' @('-czf', $packagePath, '-C', $payloadDir, '.')
+        return [pscustomobject]@{
+            Path = $packagePath
+            TempRoot = $tempRoot
+        }
+    }
+    catch {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        throw
     }
 }
 
@@ -278,22 +419,20 @@ function Invoke-SelfTest {
         }
     }
 
-    Assert-NoDangerousChangedPaths @(
-        '.codex/skills/push/SKILL.md',
-        'docs/example.png',
-        'main.js'
+    $paths = Split-ReleasePaths @(
+        [pscustomobject]@{ Status = ' M'; Path = 'main.js' },
+        [pscustomobject]@{ Status = ' M'; Path = 'dist/GitMonitor-portable.exe' },
+        [pscustomobject]@{ Status = '??'; Path = '.secrets/token.txt' }
     )
 
-    $blocked = $false
-    try {
-        Assert-NoDangerousChangedPaths @('dist/GitMonitor-Setup-9.9.9.exe')
+    if ($paths.Safe -notcontains 'main.js') {
+        Fail 'SelfTest falhou: main.js deveria ser seguro'
     }
-    catch {
-        $blocked = $true
+    if ($paths.Ignored -notcontains 'dist/GitMonitor-portable.exe') {
+        Fail 'SelfTest falhou: dist deveria ser ignorado'
     }
-
-    if (-not $blocked) {
-        Fail 'SelfTest falhou: caminho perigoso nao foi bloqueado'
+    if ($paths.Blocked -notcontains '.secrets/token.txt') {
+        Fail 'SelfTest falhou: .secrets deveria ser bloqueado'
     }
 
     Write-Host 'SelfTest OK'
@@ -304,13 +443,14 @@ if ($SelfTest) {
     exit 0
 }
 
-Write-Step 'Preflight'
+Write-Step 'Preflight local'
 Assert-GitMonitorRepo
 Assert-GitPreflight
 Assert-ReleasePreflight
 
-$changedPaths = Get-ChangedPaths
-Assert-NoDangerousChangedPaths $changedPaths
+$entries = Get-ChangedEntries
+$paths = Split-ReleasePaths $entries
+Assert-NoBlockedReleasePaths $paths.Blocked
 
 $packageJson = Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json
 $currentVersion = [string]$packageJson.version
@@ -319,50 +459,35 @@ Assert-TagAvailable $nextVersion
 
 Write-Host "Versao atual: $currentVersion"
 Write-Host "Proxima versao patch: $nextVersion"
+Write-Host "Mudancas seguras: $($paths.Safe.Count)"
+if ($paths.Ignored.Count -gt 0) {
+    Write-Host "Mudancas ignoradas no pacote:" -ForegroundColor Yellow
+    $paths.Ignored | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+}
+
+Write-Step 'Preflight remoto'
+Run 'ssh' @($RemoteHost, "$RemoteCommand --plan-only")
 
 if ($PlanOnly) {
-    Write-Host "PlanOnly ativo: nenhum arquivo sera alterado."
+    Write-Host "PlanOnly ativo: nenhum pacote sera enviado e nenhum release sera criado."
     exit 0
 }
 
-Write-Step 'Bump e validacoes'
-Run 'npm' @('version', $nextVersion, '--no-git-tag-version')
-Run 'npm' @('test')
-Run 'npm' @('audit')
+Write-Step 'Empacotar mudancas seguras'
+$releasePackage = $null
+$releasePackage = New-ReleasePackage -SafePaths $paths.Safe -IgnoredPaths $paths.Ignored -NextVersion $nextVersion
 
-Write-Step 'Build Electron'
-$previousAutoDiscovery = [Environment]::GetEnvironmentVariable('CSC_IDENTITY_AUTO_DISCOVERY', 'Process')
-$env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
 try {
-    Run 'npm' @('run', 'build')
-    Assert-BuildArtifact
+    $remotePackage = "/srv/git-monitor/incoming/git-monitor-local-$([System.IO.Path]::GetFileName($releasePackage.Path))"
+    Write-Step 'Enviar pacote para Jarvis'
+    Run 'ssh' @($RemoteHost, 'mkdir -p /srv/git-monitor/incoming')
+    Run 'scp' @('-O', $releasePackage.Path, "${RemoteHost}:$remotePackage")
+
+    Write-Step 'Executar release remoto'
+    Run 'ssh' @($RemoteHost, "$RemoteCommand --apply '$remotePackage'")
 }
 finally {
-    if ($null -eq $previousAutoDiscovery) {
-        Remove-Item Env:\CSC_IDENTITY_AUTO_DISCOVERY -ErrorAction SilentlyContinue
-    }
-    else {
-        $env:CSC_IDENTITY_AUTO_DISCOVERY = $previousAutoDiscovery
+    if ($releasePackage -and (Test-Path -LiteralPath $releasePackage.TempRoot)) {
+        Remove-Item -LiteralPath $releasePackage.TempRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
-
-Write-Step 'Limpar artefatos locais'
-Clear-DistBuildChanges
-Assert-NoDangerousChangedPaths (Get-ChangedPaths)
-
-Write-Step 'Commit, tag e push'
-Run 'git' @('add', '-A', '--', '.', ':!dist/**')
-$stagedStatus = & git diff --cached --name-only
-if ($LASTEXITCODE -ne 0) {
-    Fail "Nao foi possivel ler diff staged"
-}
-if (-not $stagedStatus) {
-    Fail "Nenhuma mudanca staged para commit"
-}
-
-Run 'git' @('commit', '-m', "chore: publica Git Monitor v$nextVersion")
-Run 'git' @('tag', '-a', "v$nextVersion", '-m', "Git Monitor v$nextVersion")
-Run 'git' @('push', '--atomic', 'origin', 'master', "v$nextVersion")
-
-Write-Host ""
-Write-Host "Git Monitor v$nextVersion enviado com sucesso. O GitHub Actions publicara o release pela tag v$nextVersion." -ForegroundColor Green
