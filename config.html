@@ -658,6 +658,20 @@
   .btn-key-action:hover { background: var(--bg-hover); color: var(--text); }
   .btn-key-action.btn-key-remove { color: var(--red); border-color: var(--border); }
   .btn-key-action.btn-key-remove:hover { background: var(--red-bg); border-color: var(--red); }
+  .btn-key-eye {
+    padding: 4px 5px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg);
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .btn-key-eye:hover { background: var(--bg-hover); color: var(--text); }
 
   .redetect-row {
     display: flex;
@@ -1154,6 +1168,7 @@
     'hourglass':    '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
     'zap':          '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
     'eye':          '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+    'eye-off':      '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/>',
     'app-window':   '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>',
     'grip':         '<circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>',
   };
@@ -1467,6 +1482,20 @@
     row.className = 'key-row-new';
     row.appendChild(inp);
     if (hasKey) {
+      const btnEye = document.createElement('button');
+      btnEye.className = 'btn-key-eye';
+      btnEye.title = 'Revelar / ocultar';
+      btnEye.type = 'button';
+      let revealed = false;
+      btnEye.appendChild(icon('eye', { size: 13 }));
+      btnEye.onclick = () => {
+        if (editing) return;
+        revealed = !revealed;
+        inp.type = revealed ? 'text' : 'password';
+        btnEye.replaceChildren(icon(revealed ? 'eye-off' : 'eye', { size: 13 }));
+      };
+      row.appendChild(btnEye);
+
       const btnEdit = document.createElement('button');
       btnEdit.textContent = 'Editar';
       btnEdit.className   = 'btn-key-action';
@@ -1475,6 +1504,8 @@
         editing = !editing;
         if (editing) {
           inp.readOnly = false; inp.value = ''; inp.className = 'key-masked-input';
+          inp.type = 'password'; revealed = false;
+          btnEye.replaceChildren(icon('eye', { size: 13 }));
           inp.placeholder = ph; inp.focus(); btnEdit.textContent = 'Cancelar';
         } else {
           inp.readOnly = true; inp.value = hint; inp.className = 'key-masked-input masked';
@@ -1690,16 +1721,32 @@
     row.appendChild(inp);
 
     if (hasToken) {
+      const btnEye = document.createElement('button');
+      btnEye.className = 'btn-key-eye';
+      btnEye.title = 'Revelar / ocultar';
+      btnEye.type = 'button';
+      let revealed = false;
+      btnEye.appendChild(icon('eye', { size: 13 }));
+
       const btnEdit = document.createElement('button');
       btnEdit.textContent = 'Editar';
       btnEdit.className = 'btn-key-action';
       let editing = false;
+
+      btnEye.onclick = () => {
+        if (editing) return;
+        revealed = !revealed;
+        inp.type = revealed ? 'text' : 'password';
+        btnEye.replaceChildren(icon(revealed ? 'eye-off' : 'eye', { size: 13 }));
+      };
 
       const setStored = () => {
         editing = false;
         inp.dataset.secretState = 'stored';
         inp.readOnly = true;
         inp.value = hint;
+        inp.type = 'password'; revealed = false;
+        btnEye.replaceChildren(icon('eye', { size: 13 }));
         inp.className = 'key-masked-input repo-github-token masked';
         inp.placeholder = 'usa token global';
         btnEdit.textContent = 'Editar';
@@ -1712,6 +1759,8 @@
           inp.dataset.secretState = 'editing';
           inp.readOnly = false;
           inp.value = '';
+          inp.type = 'password'; revealed = false;
+          btnEye.replaceChildren(icon('eye', { size: 13 }));
           inp.className = 'key-masked-input repo-github-token';
           inp.placeholder = 'ghp_...';
           inp.focus();
@@ -1721,6 +1770,7 @@
         }
       };
       btnEdit.onclick = toggleEdit;
+      row.appendChild(btnEye);
       row.appendChild(btnEdit);
 
       const btnRemove = document.createElement('button');
@@ -1730,6 +1780,8 @@
         inp.dataset.secretState = 'remove';
         inp.readOnly = true;
         inp.value = '';
+        inp.type = 'password'; revealed = false;
+        btnEye.replaceChildren(icon('eye', { size: 13 }));
         inp.className = 'key-masked-input repo-github-token masked';
         inp.placeholder = 'remover ao salvar';
         btnEdit.textContent = 'Desfazer';
