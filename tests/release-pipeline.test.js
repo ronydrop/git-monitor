@@ -36,9 +36,10 @@ test('workflow builda no Windows e publica artefatos na VPS', () => {
   assert.match(workflow, /electron-builder --win portable nsis --publish never/);
   assert.match(workflow, /JARVIS_UPDATE_HOST/);
   assert.match(workflow, /JARVIS_UPDATE_USER/);
+  assert.match(workflow, /JARVIS_UPDATE_PORT/);
   assert.match(workflow, /JARVIS_UPDATE_SSH_KEY/);
   assert.match(workflow, /git-monitor-promote-artifacts/);
-  assert.match(workflow, /scp -O -i/);
+  assert.match(workflow, /scp -O -P "\$JARVIS_UPDATE_PORT" -i/);
   assert.doesNotMatch(workflow, /npm run release/);
   assert.doesNotMatch(workflow, /gh release edit/);
 });

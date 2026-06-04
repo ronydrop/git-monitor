@@ -53,6 +53,8 @@ jobs:
           JARVIS_UPDATE_KNOWN_HOSTS: ${{ secrets.JARVIS_UPDATE_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
+          [[ -n "$JARVIS_UPDATE_SSH_KEY" ]] || { echo "Missing secret: JARVIS_UPDATE_SSH_KEY" >&2; exit 1; }
+          [[ -n "$JARVIS_UPDATE_KNOWN_HOSTS" ]] || { echo "Missing secret: JARVIS_UPDATE_KNOWN_HOSTS" >&2; exit 1; }
           mkdir -p ~/.ssh
           printf '%s\n' "$JARVIS_UPDATE_SSH_KEY" > ~/.ssh/jarvis_update
           chmod 600 ~/.ssh/jarvis_update
@@ -75,11 +77,15 @@ jobs:
         shell: bash
         env:
           JARVIS_UPDATE_HOST: ${{ secrets.JARVIS_UPDATE_HOST }}
+          JARVIS_UPDATE_PORT: ${{ secrets.JARVIS_UPDATE_PORT }}
           JARVIS_UPDATE_USER: ${{ secrets.JARVIS_UPDATE_USER }}
         run: |
           set -euo pipefail
+          [[ -n "$JARVIS_UPDATE_HOST" ]] || { echo "Missing secret: JARVIS_UPDATE_HOST" >&2; exit 1; }
+          [[ -n "$JARVIS_UPDATE_USER" ]] || { echo "Missing secret: JARVIS_UPDATE_USER" >&2; exit 1; }
+          JARVIS_UPDATE_PORT="${JARVIS_UPDATE_PORT:-22}"
           package="git-monitor-${GITHUB_REF_NAME}-${GITHUB_RUN_ID}.tgz"
           remote="/srv/git-monitor/incoming/${package}"
-          ssh -i ~/.ssh/jarvis_update "${JARVIS_UPDATE_USER}@${JARVIS_UPDATE_HOST}" "mkdir -p /srv/git-monitor/incoming"
-          scp -O -i ~/.ssh/jarvis_update "$package" "${JARVIS_UPDATE_USER}@${JARVIS_UPDATE_HOST}:$remote"
-          ssh -i ~/.ssh/jarvis_update "${JARVIS_UPDATE_USER}@${JARVIS_UPDATE_HOST}" "git-monitor-promote-artifacts '$remote' '${GITHUB_REF_NAME}'"
+          ssh -p "$JARVIS_UPDATE_PORT" -i ~/.ssh/jarvis_update "${JARVIS_UPDATE_USER}@${JARVIS_UPDATE_HOST}" "mkdir -p /srv/git-monitor/incoming"
+          scp -O -P "$JARVIS_UPDATE_PORT" -i ~/.ssh/jarvis_update "$package" "${JARVIS_UPDATE_USER}@${JARVIS_UPDATE_HOST}:$remote"
+          ssh -p "$JARVIS_UPDATE_PORT" -i ~/.ssh/jarvis_update "${JARVIS_UPDATE_USER}@${JARVIS_UPDATE_HOST}" "git-monitor-promote-artifacts '$remote' '${GITHUB_REF_NAME}'"
