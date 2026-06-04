@@ -27,19 +27,17 @@ test('electron updater usa provider generico da VPS Jarvis', () => {
   });
 });
 
-test('workflow builda no Windows e publica artefatos na VPS', () => {
+test('workflow builda no Windows e publica artefatos no GitHub', () => {
   const workflow = read('.github/workflows/release.yml');
 
   assert.match(workflow, /runs-on:\s*windows-latest/);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm test/);
   assert.match(workflow, /electron-builder --win portable nsis --publish never/);
-  assert.match(workflow, /JARVIS_UPDATE_HOST/);
-  assert.match(workflow, /JARVIS_UPDATE_USER/);
-  assert.match(workflow, /JARVIS_UPDATE_PORT/);
-  assert.match(workflow, /JARVIS_UPDATE_SSH_KEY/);
-  assert.match(workflow, /git-monitor-promote-artifacts/);
-  assert.match(workflow, /scp -O -P "\$JARVIS_UPDATE_PORT" -i/);
+  assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /git-monitor-artifacts-\$\{\{ github\.ref_name \}\}/);
+  assert.doesNotMatch(workflow, /JARVIS_UPDATE_HOST/);
+  assert.doesNotMatch(workflow, /scp -O/);
   assert.doesNotMatch(workflow, /npm run release/);
   assert.doesNotMatch(workflow, /gh release edit/);
 });
@@ -73,6 +71,9 @@ test('runner remoto tem lock, validacoes e push atomico', () => {
   assert.match(runner, /git diff --check/);
   assert.match(runner, /npm version "\$next_version" --no-git-tag-version/);
   assert.match(runner, /git push --atomic origin master "v\$next_version"/);
+  assert.match(runner, /gh run list/);
+  assert.match(runner, /gh run download/);
+  assert.match(runner, /git-monitor-promote-artifacts/);
   assert.match(runner, /--validate-package <package\.tgz>/);
   assert.match(runner, /validate_package\(\)/);
 });

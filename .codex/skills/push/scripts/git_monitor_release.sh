@@ -7,6 +7,10 @@ INCOMING_DIR="/srv/git-monitor/incoming"
 LOG_DIR="/srv/git-monitor/logs"
 LOCK_FILE="/run/lock/git-monitor-release.lock"
 REMOTE_URL="https://github.com/ronydrop/git-monitor.git"
+GITHUB_REPO="ronydrop/git-monitor"
+GITHUB_WORKFLOW="Release"
+ACTION_TIMEOUT_SECONDS="${GIT_MONITOR_ACTION_TIMEOUT_SECONDS:-1800}"
+ACTION_POLL_SECONDS="${GIT_MONITOR_ACTION_POLL_SECONDS:-10}"
 
 fail() {
   echo "[git-monitor-release] $*" >&2
@@ -29,6 +33,71 @@ run() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "comando obrigatorio nao encontrado: $1"
+}
+
+find_release_run_id() {
+  local tag_name="$1"
+  local commit_sha="$2"
+  gh run list \
+    --repo "$GITHUB_REPO" \
+    --workflow "$GITHUB_WORKFLOW" \
+    --limit 50 \
+    --json databaseId,headSha,headBranch,event \
+    --jq ".[] | select(.headSha == \"$commit_sha\" and .headBranch == \"$tag_name\" and .event == \"push\") | .databaseId" \
+    | head -n 1
+}
+
+release_run_status() {
+  local run_id="$1"
+  gh run view "$run_id" \
+    --repo "$GITHUB_REPO" \
+    --json status,conclusion \
+    --jq '.status + " " + (.conclusion // "")'
+}
+
+wait_for_release_artifact() {
+  local tag_name="$1"
+  local commit_sha="$2"
+  local artifact_name="git-monitor-artifacts-$tag_name"
+  local deadline=$(( $(date +%s) + ACTION_TIMEOUT_SECONDS ))
+  local run_id=""
+
+  while [[ $(date +%s) -lt $deadline ]]; do
+    if [[ -z "$run_id" ]]; then
+      run_id="$(find_release_run_id "$tag_name" "$commit_sha" || true)"
+      if [[ -n "$run_id" ]]; then
+        echo "GitHub Actions run encontrado: $run_id"
+      fi
+    fi
+
+    if [[ -n "$run_id" ]]; then
+      local status_line status conclusion
+      status_line="$(release_run_status "$run_id")"
+      status="${status_line%% *}"
+      conclusion="${status_line#* }"
+      echo "GitHub Actions run $run_id: status=$status conclusion=${conclusion:-pending}"
+
+      if [[ "$status" == "completed" ]]; then
+        [[ "$conclusion" == "success" ]] || fail "GitHub Actions falhou para $tag_name: conclusion=$conclusion run=$run_id"
+
+        local artifact_dir package_path
+        artifact_dir="$(mktemp -d "$ROOT_DIR/artifact.$tag_name.XXXXXX")"
+        package_path="$INCOMING_DIR/git-monitor-$tag_name-artifacts.tgz"
+        run gh run download "$run_id" --repo "$GITHUB_REPO" --name "$artifact_name" --dir "$artifact_dir"
+        run tar -czf "$package_path" -C "$artifact_dir" .
+        rm -rf "$artifact_dir"
+        run git-monitor-promote-artifacts "$package_path" "$tag_name"
+        echo "Git Monitor $tag_name publicado no feed da VPS."
+        return 0
+      fi
+    else
+      echo "Aguardando GitHub Actions iniciar para $tag_name ($commit_sha)"
+    fi
+
+    sleep "$ACTION_POLL_SECONDS"
+  done
+
+  fail "timeout aguardando GitHub Actions/artifact para $tag_name"
 }
 
 read_json() {
@@ -136,6 +205,8 @@ validate_package() {
 apply_package() {
   local package_path="$1"
   [[ -f "$package_path" ]] || fail "pacote nao encontrado: $package_path"
+  require_command gh
+  require_command git-monitor-promote-artifacts
 
   ensure_layout
   assert_repo
@@ -195,7 +266,7 @@ apply_package() {
   run git commit -m "chore: publica Git Monitor v$next_version"
   run git tag -a "v$next_version" -m "Git Monitor v$next_version"
   run git push --atomic origin master "v$next_version"
-  echo "Git Monitor v$next_version enviado; GitHub Actions fara build e upload para a VPS."
+  wait_for_release_artifact "v$next_version" "$(git rev-parse HEAD)"
 }
 
 plan_only() {
@@ -204,6 +275,7 @@ plan_only() {
   require_command npm
   require_command tar
   require_command flock
+  require_command gh
   ensure_layout
   assert_repo
   cd "$REPO_DIR"
