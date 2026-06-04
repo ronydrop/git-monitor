@@ -83,7 +83,17 @@ test('runner remoto tem lock, validacoes e push atomico', () => {
   assert.match(runner, /gh run list/);
   assert.match(runner, /gh run download/);
   assert.match(runner, /git-monitor-promote-artifacts/);
+  assert.match(runner, /publish_github_bridge_release\(\)/);
+  assert.match(runner, /gh release create "\$tag_name"/);
+  assert.match(runner, /gh release upload "\$tag_name"/);
+  assert.match(runner, /gh release edit "\$tag_name"/);
+  assert.match(runner, /--latest/);
+  assert.match(runner, /GitMonitor-Setup-\$version\.exe/);
   assert.match(runner, /git rm -r --cached --ignore-unmatch dist/);
+  assert.match(runner, /rm -rf dist/);
+  assert.match(runner, /next_patch_version_from_ref\(\)/);
+  assert.match(runner, /git show "\$ref:package\.json"/);
+  assert.match(runner, /next_patch_version_from_ref refs\/remotes\/origin\/master/);
   assert.match(runner, /--validate-package <package\.tgz>/);
   assert.match(runner, /validate_package\(\)/);
 });

@@ -55,6 +55,50 @@ release_run_status() {
     --jq '.status + " " + (.conclusion // "")'
 }
 
+publish_github_bridge_release() {
+  local tag_name="$1"
+  local artifact_dir="$2"
+  local version="${tag_name#v}"
+  local latest_yml="$artifact_dir/latest.yml"
+  local setup_exe="$artifact_dir/GitMonitor-Setup-$version.exe"
+  local setup_blockmap="$artifact_dir/GitMonitor-Setup-$version.exe.blockmap"
+  local portable_exe="$artifact_dir/GitMonitor-portable.exe"
+  local notes="Release ponte para clientes antigos do Git Monitor que ainda consultam GitHub Releases. Versoes novas usam https://updates.botjarvis.com.br/git-monitor/."
+
+  [[ -f "$latest_yml" ]] || fail "latest.yml ausente no artifact: $latest_yml"
+  [[ -f "$setup_exe" ]] || fail "setup NSIS ausente no artifact: $setup_exe"
+  [[ -f "$setup_blockmap" ]] || fail "blockmap ausente no artifact: $setup_blockmap"
+  [[ -f "$portable_exe" ]] || fail "portable ausente no artifact: $portable_exe"
+
+  if gh release view "$tag_name" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
+    run gh release upload "$tag_name" \
+      "$latest_yml" \
+      "$setup_exe" \
+      "$setup_blockmap" \
+      "$portable_exe" \
+      --repo "$GITHUB_REPO" \
+      --clobber
+    run gh release edit "$tag_name" \
+      --repo "$GITHUB_REPO" \
+      --title "$version" \
+      --notes "$notes" \
+      --draft=false \
+      --prerelease=false \
+      --latest
+  else
+    run gh release create "$tag_name" \
+      "$latest_yml" \
+      "$setup_exe" \
+      "$setup_blockmap" \
+      "$portable_exe" \
+      --repo "$GITHUB_REPO" \
+      --title "$version" \
+      --notes "$notes" \
+      --verify-tag \
+      --latest
+  fi
+}
+
 wait_for_release_artifact() {
   local tag_name="$1"
   local commit_sha="$2"
@@ -85,9 +129,10 @@ wait_for_release_artifact() {
         package_path="$INCOMING_DIR/git-monitor-$tag_name-artifacts.tgz"
         run gh run download "$run_id" --repo "$GITHUB_REPO" --name "$artifact_name" --dir "$artifact_dir"
         run tar -czf "$package_path" -C "$artifact_dir" .
-        rm -rf "$artifact_dir"
         run git-monitor-promote-artifacts "$package_path" "$tag_name"
-        echo "Git Monitor $tag_name publicado no feed da VPS."
+        run publish_github_bridge_release "$tag_name" "$artifact_dir"
+        rm -rf "$artifact_dir"
+        echo "Git Monitor $tag_name publicado no feed da VPS e no GitHub Releases."
         return 0
       fi
     else
@@ -166,6 +211,21 @@ next_patch_version() {
   '
 }
 
+next_patch_version_from_ref() {
+  local ref="$1"
+  git show "$ref:package.json" | node -e '
+    let input = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", chunk => input += chunk);
+    process.stdin.on("end", () => {
+      const pkg = JSON.parse(input.replace(/^\uFEFF/, ""));
+      const m = String(pkg.version || "").match(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
+      if (!m) throw new Error(`versao invalida: ${pkg.version}`);
+      console.log(`${m[1]}.${m[2]}.${Number(m[3]) + 1}`);
+    });
+  '
+}
+
 validate_manifest_paths() {
   local manifest="$1"
   mapfile -t manifest_paths < <(read_json "$manifest" '
@@ -241,6 +301,7 @@ apply_package() {
   fi
 
   run git rm -r --cached --ignore-unmatch dist
+  rm -rf dist
 
   if [[ -z "$(git status --porcelain=v1)" ]]; then
     fail "pacote nao gerou mudancas no clone remoto"
@@ -285,8 +346,8 @@ plan_only() {
   echo "repo=$REPO_DIR"
   echo "incoming=$INCOMING_DIR"
   echo "public=/var/www/local-dev-watcher-updates/git-monitor"
-  echo "current=$(git rev-parse --short HEAD)"
-  echo "next=$(next_patch_version)"
+  echo "current=$(git rev-parse --short refs/remotes/origin/master)"
+  echo "next=$(next_patch_version_from_ref refs/remotes/origin/master)"
 }
 
 main() {
