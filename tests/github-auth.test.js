@@ -84,3 +84,36 @@ test('remove token especifico quando config envia remocao explicita', () => {
     { name: 'App', path: 'C:/repo/app' }
   ]);
 });
+
+test('parseia remote HTTPS sem .git', () => {
+  const parsed = parseGithubRemote('https://github.com/Aprovei-Hub/trustfy-white-label-new');
+
+  assert.deepStrictEqual(parsed, {
+    owner: 'Aprovei-Hub',
+    repo: 'trustfy-white-label-new',
+    host: 'github.com',
+    webUrl: 'https://github.com/Aprovei-Hub/trustfy-white-label-new'
+  });
+});
+
+test('parseia remote HTTPS com .git', () => {
+  const parsed = parseGithubRemote('https://github.com/Aprovei-Hub/trustfy-white-label-new.git');
+
+  assert.deepStrictEqual(parsed, {
+    owner: 'Aprovei-Hub',
+    repo: 'trustfy-white-label-new',
+    host: 'github.com',
+    webUrl: 'https://github.com/Aprovei-Hub/trustfy-white-label-new'
+  });
+});
+
+test('parseia remote ssh:// explicito', () => {
+  const parsed = parseGithubRemote('ssh://git@github.com/owner/repo.git');
+
+  assert.deepStrictEqual(parsed, {
+    owner: 'owner',
+    repo: 'repo',
+    host: 'github.com',
+    webUrl: 'https://github.com/owner/repo'
+  });
+});

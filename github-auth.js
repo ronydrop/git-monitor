@@ -36,6 +36,21 @@ function parseGithubRemote(remoteUrl) {
   const raw = typeof remoteUrl === 'string' ? remoteUrl.trim() : '';
   if (!raw) return null;
 
+  // URLs com esquema explicito (https://, ssh://, git://, http://) -> parser de URL
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw)) {
+    try {
+      const url = new URL(raw);
+      const host = url.hostname;
+      if (!isGithubHost(host)) return null;
+      const parsed = parseOwnerRepoPath(url.pathname);
+      if (!parsed) return null;
+      return { ...parsed, host, webUrl: githubWebUrl(parsed.owner, parsed.repo) };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // scp-like: [user@]host:path (sem esquema)
   const scpLike = raw.match(/^(?:[^@\s/]+@)?([^:\s/]+):(.+)$/);
   if (scpLike) {
     const host = scpLike[1];
@@ -45,16 +60,7 @@ function parseGithubRemote(remoteUrl) {
     return { ...parsed, host, webUrl: githubWebUrl(parsed.owner, parsed.repo) };
   }
 
-  try {
-    const url = new URL(raw);
-    const host = url.hostname;
-    if (!isGithubHost(host)) return null;
-    const parsed = parseOwnerRepoPath(url.pathname);
-    if (!parsed) return null;
-    return { ...parsed, host, webUrl: githubWebUrl(parsed.owner, parsed.repo) };
-  } catch (_) {
-    return null;
-  }
+  return null;
 }
 
 function resolveGithubToken(repoConfig, remoteUrl, config) {
