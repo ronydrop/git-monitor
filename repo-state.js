@@ -39,6 +39,12 @@ function repoAttentionRank(repo) {
   return order[(repo && repo.status) || 'clean'] ?? 99;
 }
 
+function repoVisualStatus(repo, isDeploying = false) {
+  if (repo && repo.deployError) return 'deploy-error';
+  if (isDeploying || (repo && repo.deployPending)) return 'deploying';
+  return (repo && repo.status) || 'clean';
+}
+
 function sortReposByAttention(repos) {
   return [...(repos || [])]
     .map((repo, index) => ({ repo, index }))
@@ -262,6 +268,7 @@ module.exports = {
   pruneDeployErrorsForRepos,
   pruneDeployStatesForRepos,
   repoKey,
+  repoVisualStatus,
   sanitizeDeployErrors,
   sanitizeDeployStates,
   sortReposByAttention

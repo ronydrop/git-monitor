@@ -76,6 +76,25 @@ test('floating renderer removes stale deploy buttons after backend refresh', () 
   assert.match(index, /const results = await ipcRenderer\.invoke\('check-repos'\);[\s\S]*reconcileActiveDeployButtons\(lastResults\);[\s\S]*renderRepos\(lastResults\)/);
 });
 
+test('renderers let pending deploy dominate clean git visual status', () => {
+  const index = read('index.html');
+  const notch = read('notch.html');
+
+  assert.match(index, /const \{ repoVisualStatus \} = require\('\.\/repo-state'\)/);
+  assert.match(index, /function displayStatus\s*\(\s*r,\s*isDeploying\s*\)\s*{[\s\S]*repoVisualStatus\(r,\s*!!isDeploying\)/);
+  assert.match(index, /const visualStatus = displayStatus\(r,\s*isDeploying\);[\s\S]*dot\.className = 'repo-dot ' \+ visualStatus/);
+  assert.match(index, /badge\.className = 'repo-badge badge-' \+ visualStatus/);
+  assert.match(index, /detailEl\.textContent = detailText\(r,\s*isDeploying\)/);
+  assert.match(index, /'Deploy em andamento' : 'Deploy pendente'/);
+
+  assert.match(notch, /const \{ repoVisualStatus \} = require\('\.\/repo-state'\)/);
+  assert.match(notch, /\.dot\.deploying/);
+  assert.match(notch, /function isDeployingRepo\s*\(r\)\s*{[\s\S]*r\.deployPending[\s\S]*deployingRows\[r\.path\]/);
+  assert.match(notch, /function displayStatus\s*\(r\)\s*{[\s\S]*repoVisualStatus\(r,\s*isDeployingRepo\(r\)\)/);
+  assert.match(notch, /const isDeploying = isDeployingRepo\(r\)/);
+  assert.match(notch, /repos\.filter\(r => r\.needsAttention \|\| r\.pending \|\| r\.deployPending \|\| r\.deployError\)/);
+});
+
 test('startup revalidates persisted pending deploys before resuming watchers', () => {
   const main = read('main.js');
 

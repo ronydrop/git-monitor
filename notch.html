@@ -218,6 +218,7 @@
   .dot.diverged  { color: var(--red);    background: var(--red); }
   .dot.busy      { color: var(--yellow); background: var(--yellow); opacity: 0.6; }
   .dot.error     { color: var(--red);    background: var(--red);    opacity: 0.7; }
+  .dot.deploying { color: var(--blue);   background: var(--blue); }
   .dot.deploy-error { color: var(--red); background: var(--red); box-shadow: 0 0 0 3px rgba(248,81,73,0.16); }
 
   #countText {
@@ -476,6 +477,7 @@
 <script>
   const { ipcRenderer } = require('electron');
   const { isTerminalDeployPhase } = require('./deploy-status');
+  const { repoVisualStatus } = require('./repo-state');
 
   const ICONS = {
     'refresh-cw':   '<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>',
@@ -662,16 +664,26 @@
 
   const STATUS_ORDER = {
     'deploy-error': -1,
-    diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3,
-    dirty: 4, busy: 5, error: 6, clean: 7
+    deploying: 0,
+    diverged: 1, behind: 2, ahead: 3, 'dirty-ahead': 4,
+    dirty: 5, busy: 6, error: 7, clean: 8
   };
 
+  function isDeployingRepo(r) {
+    return !!(r && (r.deployPending || (r.path && deployingRows[r.path])));
+  }
+
   function displayStatus(r) {
-    return r && r.deployError ? 'deploy-error' : (r.status || 'clean');
+    return repoVisualStatus(r, isDeployingRepo(r));
   }
 
   function detailText(r) {
-    const gitDetail = r.detail || (r.status === 'clean' ? 'limpo' : '');
+    const gitDetail = r.status === 'clean' ? '' : (r.detail || '');
+    if (isDeployingRepo(r)) {
+      const label = r.deployPhase === 'running' ? 'Deploy em andamento' : 'Deploy pendente';
+      const deployDetail = r.deployDetail ? ': ' + r.deployDetail : '';
+      return label + deployDetail + (gitDetail ? ' · ' + gitDetail : '');
+    }
     if (!r.deployError) return gitDetail;
     const deployDetail = r.deployDetail ? ': ' + r.deployDetail : '';
     return 'Deploy falhou' + deployDetail + (gitDetail ? ' · ' + gitDetail : '');
@@ -705,7 +717,7 @@
   }
 
   function effectivePending() {
-    const pending = repos.filter(r => r.needsAttention || r.pending || r.deployError);
+    const pending = repos.filter(r => r.needsAttention || r.pending || r.deployPending || r.deployError);
     const seen = new Set(pending.map(r => r.path));
     for (const p of runningActions) {
       if (!seen.has(p)) {
@@ -757,6 +769,7 @@
         behind: 'pull pendente',
         diverged: 'diverged',
         error: 'erro',
+        deploying: 'deploy pendente',
         'deploy-error': 'erro de deploy',
         busy: 'enviando…'
       }[dom] || 'pendente';
@@ -828,7 +841,7 @@
     }
 
     const needsPull   = r.status === 'behind';
-    const isDeploying = !!(deployingRows && deployingRows[r.path]);
+    const isDeploying = isDeployingRepo(r);
     if (hasChanges || needsPull || isDeploying) {
       const isPull = needsPull && !isDeploying;
       const actBtn = makeEl('button', {
@@ -938,7 +951,7 @@
     if (!repos.length) return;
     const depErr   = repos.some(r => r.deployError);
     const hasDivg  = repos.some(r => r.status === 'diverged');
-    const depRun   = Object.values(deployPhases).some(p => p === 'running' || p === 'waiting');
+    const depRun   = repos.some(r => r.deployPending) || Object.values(deployPhases).some(p => p === 'running' || p === 'waiting');
     const hasDirty = repos.some(r => ['dirty','dirty-ahead','ahead'].includes(r.status));
     if (depErr)               pill.classList.add('glow-deploy-error');
     else if (hasDivg)         pill.classList.add('glow-diverged');

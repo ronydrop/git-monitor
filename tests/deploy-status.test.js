@@ -12,6 +12,7 @@ const {
   markDeployError,
   markDeployState,
   repoKey,
+  repoVisualStatus,
   sortReposByAttention
 } = require('../repo-state');
 
@@ -217,6 +218,13 @@ test('push bem-sucedido entra em deploy pendente e nao vira sucesso final automa
   assert.strictEqual(repo.deployPending, true);
   assert.strictEqual(repo.deployPhase, 'waiting');
   assert.strictEqual(repo.deployDetail, 'Aguardando CI iniciar');
+});
+
+test('status visual de deploy pendente domina git limpo', () => {
+  assert.strictEqual(repoVisualStatus({ status: 'clean', deployPending: true }), 'deploying');
+  assert.strictEqual(repoVisualStatus({ status: 'clean' }, true), 'deploying');
+  assert.strictEqual(repoVisualStatus({ status: 'clean', deployPending: false }), 'clean');
+  assert.strictEqual(repoVisualStatus({ status: 'clean', deployError: true }), 'deploy-error');
 });
 
 test('timeout do watcher aparece como erro claro de deploy', () => {

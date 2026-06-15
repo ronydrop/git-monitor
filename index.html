@@ -374,8 +374,10 @@
   .badge-dirty-ahead { background: var(--orange-bg); color: var(--orange); }
   .badge-ahead { background: var(--blue-bg); color: var(--blue); }
   .badge-behind { background: var(--blue-bg); color: var(--blue); }
+  .badge-deploying { background: var(--blue-bg); color: var(--blue); }
   .badge-error { background: var(--red-bg); color: var(--red); }
   .badge-diverged { background: var(--red-bg); color: var(--red); }
+  .badge-deploy-error { background: var(--red-bg); color: var(--red); }
   .repo-dot.diverged { background: var(--red); }
 
   /* ---- Deploy indicator ---- */
@@ -818,6 +820,7 @@
 <script src="themes.js"></script>
 <script>
   const { ipcRenderer } = require('electron');
+  const { repoVisualStatus } = require('./repo-state');
 
   const ICONS = {
     'refresh-cw':   '<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>',
@@ -881,24 +884,30 @@
     'behind': 'PULL',
     'diverged': 'DIVERGIDO',
     'error': 'ERRO',
-    'busy': '...'
+    'busy': '...',
+    'deploying': 'DEPLOY',
+    'deploy-error': 'DEPLOY'
   };
 
-  function displayStatus(r) {
-    if (r && r.deployError) return 'deploy-error';
-    if (r && r.deployPending) return 'deploying';
-    return r.status || 'clean';
+  function displayStatus(r, isDeploying) {
+    return repoVisualStatus(r, !!isDeploying);
   }
 
-  function detailText(r) {
+  function gitDetailSuffix(r) {
+    if (!r || r.status === 'clean') return '';
+    return r.detail ? ' · ' + r.detail : '';
+  }
+
+  function detailText(r, isDeploying) {
     const gitDetail = (r.branch ? r.branch + ' · ' : '') + (r.detail || '');
-    if (r.deployPending) {
+    if (isDeploying || r.deployPending) {
+      const label = r.deployPhase === 'running' ? 'Deploy em andamento' : 'Deploy pendente';
       const deployDetail = r.deployDetail ? ': ' + r.deployDetail : '';
-      return 'Aguardando deploy' + deployDetail + (gitDetail ? ' · ' + gitDetail : '');
+      return label + deployDetail + gitDetailSuffix(r);
     }
     if (!r.deployError) return gitDetail;
     const deployDetail = r.deployDetail ? ': ' + r.deployDetail : '';
-    return 'Deploy falhou' + deployDetail + (gitDetail ? ' · ' + gitDetail : '');
+    return 'Deploy falhou' + deployDetail + gitDetailSuffix(r);
   }
 
   function isGitPendingStatus(status) {
@@ -967,6 +976,7 @@
       const hasChanges = r.status === 'dirty' || r.status === 'dirty-ahead' || r.status === 'ahead';
       const needsPull  = r.status === 'behind';
       const isDeploying = !!(r.deployPending || activeDeployBtns[r.path]);
+      const visualStatus = displayStatus(r, isDeploying);
       const esc = s => (s || '').replace(/'/g, "\\'");
 
       const item = document.createElement('div');
@@ -986,7 +996,7 @@
       }
 
       const dot = document.createElement('div');
-      dot.className = 'repo-dot ' + (isDeploying && !hasChanges ? 'deploying' : displayStatus(r));
+      dot.className = 'repo-dot ' + visualStatus;
       item.appendChild(dot);
 
       const info = document.createElement('div');
@@ -996,7 +1006,7 @@
       nameEl.textContent = r.name || '';
       const detailEl = document.createElement('div');
       detailEl.className = 'repo-detail';
-      detailEl.textContent = detailText(r);
+      detailEl.textContent = detailText(r, isDeploying);
       const repoDeployId = deployId(r.path);
       const deployLabel = document.createElement('div');
       deployLabel.className = 'deploy-label';
@@ -1004,7 +1014,7 @@
       if (r.deployError) {
         deployLabel.className = 'deploy-label failure';
         deployLabel.textContent = 'Deploy falhou' + (r.deployDetail ? ': ' + r.deployDetail : '');
-      } else if (r.deployPending) {
+      } else if (isDeploying) {
         deployLabel.className = 'deploy-label ' + (r.deployPhase === 'running' ? 'running' : 'waiting');
         deployLabel.textContent = r.deployDetail || 'Aguardando CI...';
       }
@@ -1014,12 +1024,12 @@
       item.appendChild(info);
 
       const badge = document.createElement('span');
-      badge.className = 'repo-badge badge-' + (r.status || 'clean');
-      badge.textContent = BADGE_LABELS[r.status] || '?';
+      badge.className = 'repo-badge badge-' + visualStatus;
+      badge.textContent = BADGE_LABELS[visualStatus] || '?';
       item.appendChild(badge);
 
       const actions = document.createElement('div');
-      actions.className = 'repo-actions status-' + (r.status || 'clean');
+      actions.className = 'repo-actions status-' + visualStatus;
 
       if (r.remoteUrl) {
         const gitBtn = document.createElement('button');
@@ -1088,7 +1098,7 @@
       if (r.deployError) {
         deployBar.className = 'deploy-bar failure';
         deployBar.style.display = '';
-      } else if (r.deployPending) {
+      } else if (isDeploying) {
         deployBar.className = 'deploy-bar ' + (r.deployPhase === 'running' ? 'running' : 'waiting');
         deployBar.style.display = '';
       } else {
@@ -1170,11 +1180,13 @@
       return;
     }
     pending.forEach(r => {
+      const isDeploying = !!(r.deployPending || activeDeployBtns[r.path]);
+      const visualStatus = displayStatus(r, isDeploying);
       const item = document.createElement('div');
       item.className = 'repo-item';
 
       const dot = document.createElement('div');
-      dot.className = 'repo-dot ' + displayStatus(r);
+      dot.className = 'repo-dot ' + visualStatus;
       item.appendChild(dot);
 
       const info = document.createElement('div');
@@ -1184,14 +1196,14 @@
       nameEl.textContent = r.name || '';
       const detailEl = document.createElement('div');
       detailEl.className = 'repo-detail';
-      detailEl.textContent = detailText(r);
+      detailEl.textContent = detailText(r, isDeploying);
       info.appendChild(nameEl);
       info.appendChild(detailEl);
       item.appendChild(info);
 
       if (r.remoteUrl) {
         const actions = document.createElement('div');
-        actions.className = 'repo-actions status-' + (r.status || 'clean');
+        actions.className = 'repo-actions status-' + visualStatus;
         const gitBtn = document.createElement('button');
         gitBtn.className = 'btn-repo-action';
         gitBtn.title = 'Abrir no GitHub';
