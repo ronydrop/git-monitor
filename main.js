@@ -18,7 +18,8 @@ const {
   pruneDeployStatesForRepos,
   repoKey,
   sanitizeDeployErrors,
-  sanitizeDeployStates
+  sanitizeDeployStates,
+  sortReposByAttention
 } = require('./repo-state');
 const {
   formatGitError,
@@ -382,9 +383,6 @@ function mapReposForNotch(results) {
     branch: r.branch, ahead: r.ahead, behind: r.behind,
     changedFiles: r.changedFiles, remoteUrl: r.remoteUrl, headSha: r.headSha,
   }, config.deployStates));
-  const order = { 'deploy-error': -1, diverged: 0, behind: 1, ahead: 2, 'dirty-ahead': 3, dirty: 4, busy: 5, error: 6, clean: 7 };
-  const sortStatus = r => r.deployError ? 'deploy-error' : r.status;
-  mapped.sort((a, b) => (order[sortStatus(a)] ?? 99) - (order[sortStatus(b)] ?? 99));
   return mapped;
 }
 
@@ -398,15 +396,19 @@ const THEME_BG = {
 };
 function themeBg(name) { return THEME_BG[name] || '#000000'; }
 
+const FLOATING_WIDGET_WIDTH = 316;
+const FLOATING_SHADOW_PAD = 16;
+const FLOATING_WINDOW_WIDTH = FLOATING_WIDGET_WIDTH + FLOATING_SHADOW_PAD;
+
 function createFloatingWindow() {
   const { width: screenW } = screen.getPrimaryDisplay().workAreaSize;
 
-  const rawX = config.windowX !== null ? config.windowX : screenW - 326;
+  const rawX = config.windowX !== null ? config.windowX : screenW - FLOATING_WINDOW_WIDTH - 10;
   const rawY = config.windowY !== null ? config.windowY : 10;
-  const { x: winX, y: winY } = clampWindowPos(rawX, rawY, 316, config.windowHeight || 420);
+  const { x: winX, y: winY } = clampWindowPos(rawX, rawY, FLOATING_WINDOW_WIDTH, config.windowHeight || 420);
 
   mainWindow = new BrowserWindow({
-    width: 316,
+    width: FLOATING_WINDOW_WIDTH,
     height: config.windowHeight || 420,
     x: winX,
     y: winY,
@@ -535,7 +537,8 @@ function createFloatingWindow() {
 
 // Último rect reportado pelo renderer via IPC notch-rect.
 // Fallback = baseline 310x38 top-right da janela.
-let notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, right: 28 };
+const NOTCH_COMPACT_LEFT = 102;
+let notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, left: NOTCH_COMPACT_LEFT };
 
 function createNotchWindow() {
   const display = screen.getPrimaryDisplay();
@@ -576,7 +579,7 @@ function createNotchWindow() {
   mainWindow.loadFile('notch.html');
 
   // Reset do rect pra baseline — o renderer vai notificar via notch-rect.
-  notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, left: 65 };
+  notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, left: NOTCH_COMPACT_LEFT };
 
   // Passthrough com bbox dinâmico do pill real (não da window inteira).
   // O renderer envia `notch-rect` sempre que o state muda.
@@ -944,7 +947,7 @@ async function reconcileDeployStatesForRepos(results) {
 // ============================================================
 ipcMain.handle('check-repos', async () => {
   const results = await checkAllRepos();
-  return results.map(r => applyDeployState(r, config.deployStates));
+  return sortReposByAttention(results.map(r => applyDeployState(r, config.deployStates)));
 });
 ipcMain.handle('get-config', () => config);
 
@@ -957,8 +960,8 @@ ipcMain.handle('get-cached-repos', () => {
     .filter(r => activePaths.has(path.resolve(r.path)))
     .map(r => applyDeployState(r, config.deployStates));
   return {
-    repos: filtered,
-    notch: { repos: mapReposForNotch(filtered), total: filtered.length }
+    repos: sortReposByAttention(filtered),
+    notch: { repos: sortReposByAttention(mapReposForNotch(filtered)), total: filtered.length }
   };
 });
 
@@ -1158,6 +1161,34 @@ function openConfigWindow() {
 
 ipcMain.handle('open-config-window', () => openConfigWindow());
 
+function sendNotchReveal() {
+  if (!mainWindow || mainWindow.isDestroyed() || config.widgetMode !== 'notch') return;
+  const wc = mainWindow.webContents;
+  const reveal = () => {
+    if (mainWindow && !mainWindow.isDestroyed() && wc && !wc.isDestroyed()) {
+      wc.send('notch-reveal');
+    }
+  };
+  if (wc.isLoading()) wc.once('did-finish-load', reveal);
+  else reveal();
+}
+
+function showOrFocusWidget() {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindowForMode();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  try { mainWindow.show(); } catch (_) {}
+  try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+  try { mainWindow.moveTop(); } catch (_) {}
+
+  if (config.widgetMode === 'notch') {
+    sendNotchReveal();
+    return;
+  }
+
+  try { mainWindow.focus(); } catch (_) {}
+}
+
 function notifyConfigSaved() {
   const targets = [mainWindow, configWindow].filter(w => w && !w.isDestroyed());
   for (const win of targets) {
@@ -1242,7 +1273,7 @@ function toggleCollapseApp() {
   saveConfig(config);
   const [x, y] = mainWindow.getPosition();
   const newH = config.collapsed ? 38 : (config.windowHeight || 420);
-  mainWindow.setBounds({ x, y, width: 316, height: newH }, false);
+  mainWindow.setBounds({ x, y, width: FLOATING_WINDOW_WIDTH, height: newH }, false);
   if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
     mainWindow.webContents.send('collapse-changed', config.collapsed);
   }
@@ -1302,7 +1333,7 @@ ipcMain.on('resize-start', () => {
     const cursorY = screen.getCursorScreenPoint().y;
     const delta = (cursorY - startCursorY) / scaleFactor;
     const newH = Math.max(150, Math.min(900, Math.round(startHeight + delta)));
-    mainWindow.setBounds({ x: fixedX, y: fixedY, width: 316, height: newH });
+    mainWindow.setBounds({ x: fixedX, y: fixedY, width: FLOATING_WINDOW_WIDTH, height: newH });
   }, 16);
 });
 
@@ -2011,13 +2042,42 @@ function startDeployWatcher(context = {}) {
   deployWatchers[key] = { timer: setTimeout(check, DEPLOY_INITIAL_DELAY_MS), watchId };
 }
 
-function resumePendingDeployWatchers() {
+async function resumePendingDeployWatchers() {
   for (const repo of config.repos || []) {
     if (repo.enabled === false) continue;
     const state = getDeployStateForRepo(repo.path);
     if (!isDeployStatePending(state)) continue;
+
+    const snapshot = {
+      name: repo.name,
+      path: repo.path,
+      ...await checkRepo(repo.path)
+    };
+    const deployPhase = await resolveDeployPhaseForRepoSnapshot(snapshot, state);
+    if (deployPhase) {
+      if (deployPhase.phase === 'success') {
+        config.deployStates = clearDeployState(config.deployStates, repo.path);
+        saveConfig(config);
+        continue;
+      }
+
+      const update = applyDeployWatchUpdate(config.deployStates, repo.path, {
+        ...deployPhase,
+        detail: deployPhase.failedDetail || deployPhase.detail || deployPhase.job || '',
+        watchId: state.watchId || '',
+        sha: deployPhase.sha,
+        branch: deployPhase.branch,
+        remoteUrl: deployPhase.remoteUrl,
+        owner: deployPhase.owner,
+        repo: deployPhase.repo
+      }, Date.now());
+      config.deployStates = update.deployStates;
+      if (update.applied) saveConfig(config);
+      if (!isDeployStatePending(getDeployStateForRepo(repo.path))) continue;
+    }
+
     startDeployWatcher({
-      ...state,
+      ...getDeployStateForRepo(repo.path),
       repoPath: repo.path,
       repoName: repo.name
     });
@@ -2122,7 +2182,7 @@ function githubApiGet(apiPath, token) {
 // ============================================================
 // App
 // ============================================================
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   migrateConfigIfNeeded();
   config = loadConfig();
 
@@ -2136,7 +2196,7 @@ app.whenReady().then(() => {
 
   if (config.widgetMode !== 'notch' && config.collapsed) {
     const [x, y] = mainWindow.getPosition();
-    mainWindow.setBounds({ x, y, width: 316, height: 38 }, false);
+    mainWindow.setBounds({ x, y, width: FLOATING_WINDOW_WIDTH, height: 38 }, false);
   }
 
   if (config.widgetMode !== 'notch' && isStartupHidden()) {
@@ -2144,20 +2204,12 @@ app.whenReady().then(() => {
   }
 
   applyAutoStart(config.autoStart !== false);
-  resumePendingDeployWatchers();
+  await resumePendingDeployWatchers();
 
   const icon = nativeImage.createFromPath(getIconPath());
   tray = new Tray(icon);
   tray.setToolTip('Git Monitor');
-  tray.on('click', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (config.widgetMode === 'notch') {
-      openConfigWindow();
-      return;
-    }
-    if (mainWindow.isVisible()) mainWindow.focus();
-    else { mainWindow.show(); mainWindow.focus(); }
-  });
+  tray.on('click', showOrFocusWidget);
 
   let _pendingUpdateVersion = null;
 
@@ -2165,16 +2217,13 @@ app.whenReady().then(() => {
     const items = [
       {
         label: 'Mostrar widget',
-        click: () => {
-          if (!mainWindow || mainWindow.isDestroyed()) return;
-          if (config.widgetMode === 'notch') {
-            switchWidgetMode('floating');
-          } else {
-            mainWindow.show();
-            mainWindow.focus();
-          }
-        }
+        click: showOrFocusWidget
       },
+      {
+        label: 'Abrir configurações',
+        click: () => openConfigWindow()
+      },
+      { type: 'separator' },
       {
         label: 'Alternar modo (flutuante/notch)',
         click: () => switchWidgetMode(config.widgetMode === 'notch' ? 'floating' : 'notch')
@@ -2337,9 +2386,9 @@ ipcMain.handle('set-auto-start', (_, enabled) => {
 
 ipcMain.handle('notch-pending-repos', async () => {
   const results = await checkAllRepos();
-  const pending = results
+  const pending = sortReposByAttention(results
     .map(r => applyDeployState(r, config.deployStates))
-    .filter(r => needsAttentionRepo(r))
+    .filter(r => needsAttentionRepo(r)))
     .map(r => ({
       name: r.name,
       path: r.path,
@@ -2362,7 +2411,7 @@ ipcMain.handle('notch-pending-repos', async () => {
 
 ipcMain.handle('notch-all-repos', async () => {
   const results = await checkAllRepos();
-  const mapped = mapReposForNotch(results);
+  const mapped = sortReposByAttention(mapReposForNotch(results));
   return { repos: mapped, total: mapped.length };
 });
 
@@ -2382,7 +2431,7 @@ ipcMain.on('notch-rect', (_, rect) => {
     h: Math.max(8, N(rect.h, 38)),
     offsetY: N(rect.offsetY, 0),
     hotzone,
-    left: N(rect.left, 65)
+    left: N(rect.left, NOTCH_COMPACT_LEFT)
   };
 });
 

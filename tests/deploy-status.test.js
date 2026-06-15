@@ -11,7 +11,8 @@ const {
   clearDeployState,
   markDeployError,
   markDeployState,
-  repoKey
+  repoKey,
+  sortReposByAttention
 } = require('../repo-state');
 
 function test(name, fn) {
@@ -366,4 +367,54 @@ test('erro de deploy salvo nao domina status quando remoto avancou', () => {
   assert.strictEqual(repo.needsAttention, true);
   assert.strictEqual(repo.deployError, false);
   assert.strictEqual(repo.deployDetail, '');
+});
+
+test('sucesso do watcher limpa estado pendente persistido', () => {
+  const deployStates = markDeployState({}, 'C:/repo/app', 'running', 'Deploy em andamento', Date.now(), {
+    sha: 'abc123',
+    branch: 'main',
+    watchId: 'watch-1'
+  });
+
+  const result = applyDeployWatchUpdate(deployStates, 'C:/repo/app', {
+    phase: 'success',
+    detail: 'Deploy concluido',
+    watchId: 'watch-1'
+  }, Date.now());
+
+  const repo = applyDeployState({
+    name: 'App',
+    path: 'C:/repo/app',
+    status: 'clean',
+    detail: 'Sincronizado',
+    headSha: 'abc123',
+    branch: 'main'
+  }, result.deployStates);
+
+  assert.strictEqual(result.applied, true);
+  assert.deepStrictEqual(result.deployStates, {});
+  assert.strictEqual(repo.deployPending, false);
+  assert.strictEqual(repo.needsAttention, false);
+});
+
+test('ordena pendencias de deploy e git no topo mantendo ordem estavel por prioridade', () => {
+  const sorted = sortReposByAttention([
+    { name: 'Clean', status: 'clean' },
+    { name: 'Dirty B', status: 'dirty' },
+    { name: 'Deploying', status: 'clean', deployPending: true },
+    { name: 'Behind', status: 'behind' },
+    { name: 'Dirty A', status: 'dirty' },
+    { name: 'Deploy Error', status: 'clean', deployError: true },
+    { name: 'Ahead', status: 'ahead' }
+  ]);
+
+  assert.deepStrictEqual(sorted.map(r => r.name), [
+    'Deploying',
+    'Deploy Error',
+    'Behind',
+    'Ahead',
+    'Dirty B',
+    'Dirty A',
+    'Clean'
+  ]);
 });

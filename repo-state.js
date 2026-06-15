@@ -23,6 +23,32 @@ function needsAttentionRepo(repo) {
   return !!(repo && (isPendingRepo(repo) || repo.deployPending || repo.deployError));
 }
 
+function repoAttentionRank(repo) {
+  if (repo && repo.deployPending) return 0;
+  if (repo && repo.deployError) return 1;
+  const order = {
+    diverged: 2,
+    behind: 3,
+    ahead: 4,
+    'dirty-ahead': 5,
+    dirty: 6,
+    error: 7,
+    busy: 8,
+    clean: 9
+  };
+  return order[(repo && repo.status) || 'clean'] ?? 99;
+}
+
+function sortReposByAttention(repos) {
+  return [...(repos || [])]
+    .map((repo, index) => ({ repo, index }))
+    .sort((a, b) => {
+      const rankDiff = repoAttentionRank(a.repo) - repoAttentionRank(b.repo);
+      return rankDiff || a.index - b.index;
+    })
+    .map(entry => entry.repo);
+}
+
 function isDeployPendingEntry(entry) {
   return !!(entry && DEPLOY_PENDING_PHASES.has(entry.phase));
 }
@@ -237,5 +263,6 @@ module.exports = {
   pruneDeployStatesForRepos,
   repoKey,
   sanitizeDeployErrors,
-  sanitizeDeployStates
+  sanitizeDeployStates,
+  sortReposByAttention
 };

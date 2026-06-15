@@ -5,6 +5,7 @@
 <title>Git Monitor — Notch</title>
 <style>
   :root {
+    --notch-shadow-pad: 28px;
     --bg: #000000;
     --notch-bg: #000000;
     --border: #2a2a2a;
@@ -27,7 +28,7 @@
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
     font-size: 12px;
-    overflow: visible;
+    overflow: hidden;
     user-select: none;
     cursor: default;
   }
@@ -45,7 +46,7 @@
   #pill {
     position: absolute;
     top: 0;
-    left: 50%;
+    right: var(--notch-shadow-pad);
     width: 310px;
     height: 38px;
     background: var(--notch-bg);
@@ -113,6 +114,62 @@
   #pill.alert:not(.expanded) #mini-list {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .notch-alerts {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .notch-alerts.show { display: flex; }
+  #miniAlerts {
+    padding: 2px 10px 6px;
+  }
+  #pill.alert:not(.expanded) #miniAlerts {
+    display: flex;
+  }
+  #expandedAlerts {
+    flex-shrink: 0;
+    padding: 6px 10px 0;
+  }
+  .notch-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    max-height: 42px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(248,81,73,0.55);
+    background: rgba(248,81,73,0.16);
+    color: var(--red);
+    font-size: 11px;
+    line-height: 1.35;
+    overflow: hidden;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .notch-alert.info {
+    border-color: rgba(88,166,255,0.45);
+    background: rgba(88,166,255,0.12);
+    color: var(--blue);
+  }
+  .notch-alert.ok {
+    border-color: rgba(63,185,80,0.50);
+    background: rgba(63,185,80,0.13);
+    color: var(--green);
+  }
+  .notch-alert svg { flex-shrink: 0; margin-top: 1px; }
+  .notch-alert span {
+    min-width: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .notch-alert-more {
+    padding: 0 8px;
+    color: var(--text-dim);
+    font-size: 10px;
   }
 
 
@@ -388,7 +445,9 @@
     </div>
 
     <!-- Mini-list colapsada: só pendentes -->
-    <div id="mini-list"></div>
+    <div id="mini-list">
+      <div class="notch-alerts" id="miniAlerts"></div>
+    </div>
 
     <!-- Expanded panel -->
     <div id="expanded">
@@ -405,6 +464,7 @@
           <button class="hdr-btn" id="btnMin" title="Minimizar (Ctrl+Shift+H)"></button>
         </div>
       </div>
+      <div class="notch-alerts" id="expandedAlerts"></div>
       <div id="list">
         <div id="empty" style="display:none;">Nenhum repositório configurado.</div>
       </div>
@@ -454,6 +514,8 @@
   const expandedEl = document.getElementById('expanded');
   const listEl = document.getElementById('list');
   const miniListEl = document.getElementById('mini-list');
+  const miniAlertsEl = document.getElementById('miniAlerts');
+  const expandedAlertsEl = document.getElementById('expandedAlerts');
   const emptyEl = document.getElementById('empty');
 
   const countText = document.getElementById('countText');
@@ -484,6 +546,7 @@
   let leaveTimer = null;
   let pollTimer = null;
   const runningActions = new Set();
+  const widgetAlerts = [];
   const deployPhases = {};
   let recentDeploySuccess = false;
   let deploySuccessTimer = null;
@@ -588,7 +651,7 @@
     damping: SPRING_MINIMIZE.damping,
     initial: 0,
     onUpdate: v => {
-      pill.style.transform = `translateX(-50%) translateY(${v}px)`;
+      pill.style.transform = `translateY(${v}px)`;
       schedulePushNotchRectFromDom();
     }
   });
@@ -806,7 +869,8 @@
   }
 
   function renderMiniList() {
-    miniListEl.replaceChildren(...effectivePending().map(r => renderRow(r)));
+    miniListEl.replaceChildren(miniAlertsEl, ...effectivePending().map(r => renderRow(r)));
+    renderNotchAlerts();
   }
 
   function measureExpandedHeight() {
@@ -816,8 +880,56 @@
     }
     const cs = getComputedStyle(listEl);
     contentH += parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-    const total = 42 + Math.min(contentH, 320);
+    const alertH = expandedAlertsEl && expandedAlertsEl.classList.contains('show') ? expandedAlertsEl.offsetHeight : 0;
+    const total = 42 + alertH + Math.min(contentH, 320);
     return Math.min(Math.max(total, 60), 390);
+  }
+
+  function renderAlertContainer(target) {
+    if (!target) return;
+    target.replaceChildren();
+    target.classList.toggle('show', widgetAlerts.length > 0);
+    const visible = widgetAlerts.slice(0, 3);
+    visible.forEach(alert => {
+      const row = document.createElement('div');
+      row.className = 'notch-alert ' + (alert.type === 'ok' ? 'ok' : alert.type === 'info' ? 'info' : 'err');
+      row.title = alert.text;
+      const iconName = alert.type === 'ok' ? 'check' : alert.type === 'info' ? 'timer' : 'alert';
+      row.appendChild(icon(iconName, { size: 13 }));
+      const span = document.createElement('span');
+      span.textContent = alert.text;
+      row.appendChild(span);
+      target.appendChild(row);
+    });
+    if (widgetAlerts.length > visible.length) {
+      const more = document.createElement('div');
+      more.className = 'notch-alert-more';
+      more.textContent = '+' + (widgetAlerts.length - visible.length) + ' alerta(s)';
+      target.appendChild(more);
+    }
+  }
+
+  function renderNotchAlerts() {
+    renderAlertContainer(miniAlertsEl);
+    renderAlertContainer(expandedAlertsEl);
+  }
+
+  function showNotchAlert(text, type = 'err', duration) {
+    const msg = String(text || '').trim();
+    if (!msg) return;
+    const alert = { id: Date.now() + Math.random(), text: msg.substring(0, 240), type };
+    widgetAlerts.unshift(alert);
+    widgetAlerts.splice(4);
+    renderNotchAlerts();
+    updateShape();
+    setTimeout(() => {
+      const idx = widgetAlerts.findIndex(item => item.id === alert.id);
+      if (idx >= 0) {
+        widgetAlerts.splice(idx, 1);
+        renderNotchAlerts();
+        updateShape();
+      }
+    }, duration || (type === 'err' ? 7000 : 3500));
   }
 
   function applyGlowClass() {
@@ -837,7 +949,7 @@
 
   function updateShape() {
     const exp = isExpanded();
-    const alert = isPendingList();
+    const alert = isPendingList() || widgetAlerts.length > 0;
     const isMin = minimized && !hovered;
 
     pill.classList.toggle('expanded', exp);
@@ -1062,6 +1174,13 @@
     updateShape();
   });
 
+  ipcRenderer.on('notch-reveal', () => {
+    minimized = false;
+    hovered = false;
+    if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+    updateShape();
+  });
+
   async function onRowAction(ev) {
     ev.stopPropagation();
     const btn = ev.currentTarget;
@@ -1148,8 +1267,12 @@
     });
   }
 
+  function showCommitToast(type, text, duration) {
+    showNotchAlert(String(text).substring(0, 200), type, duration || (type === 'err' ? 6000 : 3000));
+  }
+
   function rowToast(type, text, duration) {
-    ipcRenderer.send('show-toast', { text: String(text).substring(0, 200), type, duration: duration || (type === 'err' ? 6000 : 3000) });
+    showCommitToast(type, text, duration);
   }
 
   async function refresh() {

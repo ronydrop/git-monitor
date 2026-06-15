@@ -9,6 +9,7 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   :root {
+    --shadow-pad: 16px;
     --bg: #000000;
     --bg-card: #0a0a0a;
     --bg-hover: #141414;
@@ -32,14 +33,25 @@
     --purple: #a371f7;
   }
 
+  html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+  }
+
   body {
     font-family: 'JetBrains Mono', monospace;
-    background: transparent;
     color: var(--text);
     font-size: 11px;
-    overflow: visible;
-    padding: 0 16px 0 0;
     user-select: none;
+  }
+
+  .widget-shell {
+    width: 100%;
+    height: 100%;
+    padding: 0 var(--shadow-pad) 0 0;
   }
 
   .container {
@@ -50,7 +62,8 @@
     box-shadow: 0 8px 16px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.05);
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
   }
 
   /* ---- Update banner ---- */
@@ -81,6 +94,56 @@
     transition: all 0.15s;
   }
   .update-banner button:hover { background: var(--blue); color: var(--bg); }
+
+  /* ---- Widget alerts ---- */
+  .widget-alerts {
+    display: none;
+    flex-shrink: 0;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    gap: 5px;
+    flex-direction: column;
+  }
+  .widget-alerts.show { display: flex; }
+  .widget-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    max-height: 42px;
+    padding: 7px 8px;
+    border: 1px solid rgba(248,81,73,0.55);
+    border-radius: 7px;
+    background: rgba(248,81,73,0.16);
+    color: var(--red);
+    line-height: 1.35;
+    overflow: hidden;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .widget-alert.info {
+    border-color: rgba(88,166,255,0.45);
+    background: rgba(88,166,255,0.12);
+    color: var(--blue);
+  }
+  .widget-alert.ok {
+    border-color: rgba(63,185,80,0.50);
+    background: rgba(63,185,80,0.13);
+    color: var(--green);
+  }
+  .widget-alert svg { flex-shrink: 0; margin-top: 1px; }
+  .widget-alert span {
+    min-width: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .widget-alert-more {
+    padding: 0 8px;
+    color: var(--text-dim);
+    font-size: 9px;
+  }
 
   /* ---- Title bar ---- */
   .titlebar {
@@ -176,6 +239,7 @@
   .repo-list {
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
   }
@@ -666,6 +730,7 @@
 </head>
 <body>
 
+<div class="widget-shell">
 <div class="container" id="container">
   <!-- Title bar -->
   <div class="titlebar">
@@ -693,6 +758,8 @@
     <span id="updateMsg">Nova versão disponível!</span>
     <button id="updateBtn" onclick="installUpdate()">Instalar</button>
   </div>
+
+  <div class="widget-alerts" id="widgetAlerts"></div>
 
   <!-- Controls bar -->
   <div class="controls-bar">
@@ -744,6 +811,7 @@
   <div style="text-align:center; padding: 3px 0 4px; font-size: 8px; color: var(--text-dim); letter-spacing: 0.3px; flex-shrink:0; -webkit-app-region: no-drag;">
     by <a href="#" onclick="ipcRenderer.invoke('open-git-url','https://github.com/ronydrop')" style="color:var(--text-dim); text-decoration:none;">@rony_drop</a>
   </div>
+</div>
 </div>
 
 
@@ -803,6 +871,7 @@
   let intervalId = null;
   let config = {};
   let lastResults = [];
+  const widgetAlerts = [];
 
   const BADGE_LABELS = {
     'clean': 'OK',
@@ -1038,7 +1107,8 @@
     try {
       const results = await ipcRenderer.invoke('check-repos');
       lastResults = results || [];
-      renderRepos(results);
+      reconcileActiveDeployButtons(lastResults);
+      renderRepos(lastResults);
       if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
       document.getElementById('lastCheck').textContent = `Último: ${new Date().toLocaleTimeString('pt-BR')}`;
     } finally {
@@ -1279,6 +1349,16 @@
   // Mapa de commits em andamento: repoPath → btn element
   const activeDeployBtns = {};
 
+  function reconcileActiveDeployButtons(results) {
+    const byPath = new Map((results || []).map(r => [r.path, r]));
+    for (const repoPath of Object.keys(activeDeployBtns)) {
+      const repo = byPath.get(repoPath);
+      if (repo && (!repo.deployPending || repo.deployError)) {
+        delete activeDeployBtns[repoPath];
+      }
+    }
+  }
+
   function deployId(repoPath) {
     return encodeURIComponent(repoPath || '').replace(/[^a-zA-Z0-9]/g, '_');
   }
@@ -1368,9 +1448,50 @@
     }
   });
 
+  function renderWidgetAlerts() {
+    const box = document.getElementById('widgetAlerts');
+    if (!box) return;
+    box.replaceChildren();
+    box.classList.toggle('show', widgetAlerts.length > 0);
+    const visible = widgetAlerts.slice(0, 3);
+    visible.forEach(alert => {
+      const row = document.createElement('div');
+      row.className = 'widget-alert ' + (alert.type === 'ok' ? 'ok' : alert.type === 'info' ? 'info' : 'err');
+      row.title = alert.text;
+      const iconName = alert.type === 'ok' ? 'check' : alert.type === 'info' ? 'timer' : 'alert';
+      row.appendChild(icon(iconName, { size: 13 }));
+      const span = document.createElement('span');
+      span.textContent = alert.text;
+      row.appendChild(span);
+      box.appendChild(row);
+    });
+    if (widgetAlerts.length > visible.length) {
+      const more = document.createElement('div');
+      more.className = 'widget-alert-more';
+      more.textContent = '+' + (widgetAlerts.length - visible.length) + ' alerta(s)';
+      box.appendChild(more);
+    }
+  }
+
+  function showWidgetAlert(text, type = 'err', duration) {
+    const msg = String(text || '').trim();
+    if (!msg) return;
+    const alert = { id: Date.now() + Math.random(), text: msg.substring(0, 240), type };
+    widgetAlerts.unshift(alert);
+    widgetAlerts.splice(4);
+    renderWidgetAlerts();
+    setTimeout(() => {
+      const idx = widgetAlerts.findIndex(item => item.id === alert.id);
+      if (idx >= 0) {
+        widgetAlerts.splice(idx, 1);
+        renderWidgetAlerts();
+      }
+    }, duration || (type === 'err' ? 7000 : 3500));
+  }
+
   function showCommitToast(type, msg) {
     const duration = type === 'err' ? 6000 : 3500;
-    ipcRenderer.send('show-toast', { text: (msg || '').trim().substring(0, 200), type, duration });
+    showWidgetAlert((msg || '').trim().substring(0, 200), type, duration);
   }
 
   // ---- Lock position ----
