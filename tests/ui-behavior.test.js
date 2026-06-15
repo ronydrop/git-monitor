@@ -95,6 +95,17 @@ test('renderers let pending deploy dominate clean git visual status', () => {
   assert.match(notch, /repos\.filter\(r => r\.needsAttention \|\| r\.pending \|\| r\.deployPending \|\| r\.deployError\)/);
 });
 
+test('error alerts stay visible for at least ten seconds', () => {
+  const index = read('index.html');
+  const notch = read('notch.html');
+
+  assert.match(index, /type === 'err'[\s\S]*Math\.max\(Number\(duration\) \|\| 0,\s*10000\)/);
+  assert.match(index, /const duration = type === 'err' \? 10000 : 3500/);
+
+  assert.match(notch, /type === 'err'[\s\S]*Math\.max\(Number\(duration\) \|\| 0,\s*10000\)/);
+  assert.match(notch, /const displayDuration = type === 'err'[\s\S]*Math\.max\(Number\(duration\) \|\| 0,\s*10000\)/);
+});
+
 test('startup revalidates persisted pending deploys before resuming watchers', () => {
   const main = read('main.js');
 

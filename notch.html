@@ -930,6 +930,9 @@
   function showNotchAlert(text, type = 'err', duration) {
     const msg = String(text || '').trim();
     if (!msg) return;
+    const displayDuration = type === 'err'
+      ? Math.max(Number(duration) || 0, 10000)
+      : (duration || 3500);
     const alert = { id: Date.now() + Math.random(), text: msg.substring(0, 240), type };
     widgetAlerts.unshift(alert);
     widgetAlerts.splice(4);
@@ -942,7 +945,7 @@
         renderNotchAlerts();
         updateShape();
       }
-    }, duration || (type === 'err' ? 7000 : 3500));
+    }, displayDuration);
   }
 
   function applyGlowClass() {
@@ -1281,7 +1284,10 @@
   }
 
   function showCommitToast(type, text, duration) {
-    showNotchAlert(String(text).substring(0, 200), type, duration || (type === 'err' ? 6000 : 3000));
+    const displayDuration = type === 'err'
+      ? Math.max(Number(duration) || 0, 10000)
+      : (duration || 3000);
+    showNotchAlert(String(text).substring(0, 200), type, displayDuration);
   }
 
   function rowToast(type, text, duration) {

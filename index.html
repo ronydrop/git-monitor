@@ -1488,6 +1488,9 @@
   function showWidgetAlert(text, type = 'err', duration) {
     const msg = String(text || '').trim();
     if (!msg) return;
+    const displayDuration = type === 'err'
+      ? Math.max(Number(duration) || 0, 10000)
+      : (duration || 3500);
     const alert = { id: Date.now() + Math.random(), text: msg.substring(0, 240), type };
     widgetAlerts.unshift(alert);
     widgetAlerts.splice(4);
@@ -1498,11 +1501,11 @@
         widgetAlerts.splice(idx, 1);
         renderWidgetAlerts();
       }
-    }, duration || (type === 'err' ? 7000 : 3500));
+    }, displayDuration);
   }
 
   function showCommitToast(type, msg) {
-    const duration = type === 'err' ? 6000 : 3500;
+    const duration = type === 'err' ? 10000 : 3500;
     showWidgetAlert((msg || '').trim().substring(0, 200), type, duration);
   }
 
