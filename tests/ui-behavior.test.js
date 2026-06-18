@@ -26,6 +26,23 @@ test('tray left click focuses widget instead of opening config in notch mode', (
   assert.doesNotMatch(main, /tray\.on\('click'[\s\S]*?if\s*\(config\.widgetMode\s*===\s*'notch'\)\s*{[\s\S]*?openConfigWindow\(\)/);
 });
 
+test('widget topmost state is reinforced through one helper', () => {
+  const main = read('main.js');
+
+  assert.match(main, /powerMonitor/);
+  assert.match(main, /function ensureWidgetOnTop\s*\(\s*reason,\s*options\s*=\s*\{\s*\}\s*\)/);
+  assert.match(main, /function ensureWidgetOnTop[\s\S]*setAlwaysOnTop\(true,\s*'screen-saver'\)[\s\S]*setVisibleOnAllWorkspaces\(true,\s*\{\s*visibleOnFullScreen:\s*true\s*\}\)[\s\S]*moveTop\(\)/);
+  assert.match(main, /function createFloatingWindow[\s\S]*ensureWidgetOnTop\('floating-created'\)/);
+  assert.match(main, /mainWindow\.on\('show'[\s\S]*ensureWidgetOnTop\('floating-show'\)/);
+  assert.match(main, /function createNotchWindow[\s\S]*ensureWidgetOnTop\('notch-created'\)/);
+  assert.match(main, /const repositionNotch = \(\) => \{[\s\S]*setBounds\(\{ x: nx, y: ny, width, height \}\)[\s\S]*ensureWidgetOnTop\('notch-display-change'\)/);
+  assert.match(main, /function showOrFocusWidget\(\)[\s\S]*ensureWidgetOnTop\('show-or-focus', \{ show: true, focus: config\.widgetMode !== 'notch' \}\)/);
+  assert.match(main, /const restoreMain = \(\) => \{[\s\S]*ensureWidgetOnTop\('zone-select-restore', \{ show: true \}\)/);
+  assert.match(main, /else \{ ensureWidgetOnTop\('shortcut-toggle', \{ show: true, focus: config\.widgetMode !== 'notch' \}\); \}/);
+  assert.match(main, /powerMonitor\.on\('resume'[\s\S]*ensureWidgetOnTop\('power-resume'\)/);
+  assert.match(main, /powerMonitor\.on\('unlock-screen'[\s\S]*ensureWidgetOnTop\('power-unlock'\)/);
+});
+
 test('widget roots hide overflow and use internal shadow padding', () => {
   const index = read('index.html');
   const notch = read('notch.html');
@@ -83,6 +100,7 @@ test('notch ghost zone is automatic around reported notch geometry', () => {
   const notch = read('notch.html');
 
   assert.match(main, /const NOTCH_GHOST_ZONE_PAD_X\s*=\s*\d+/);
+  assert.match(main, /const NOTCH_GHOST_ZONE_PAD_Y\s*=\s*\d+/);
   assert.match(main, /function getNotchInteractionGeometry\s*\(bounds,\s*rect\)/);
   assert.match(main, /ghostZone:\s*inflateRect\(hitRect,\s*NOTCH_GHOST_ZONE_PAD_X,\s*NOTCH_GHOST_ZONE_PAD_Y\)/);
   assert.match(main, /const shouldGhost\s*=\s*pointInRect\(c,\s*ghostZone\)\s*&&\s*!inside/);

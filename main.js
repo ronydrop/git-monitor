@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage, shell, dialog, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage, shell, dialog, globalShortcut, powerMonitor } = require('electron');
 const path = require('path');
 const { exec, execFile } = require('child_process');
 const fs = require('fs');
@@ -372,6 +372,31 @@ let configWindow;
 let tray;
 let config;
 
+function ensureWidgetOnTop(reason, options = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+
+  const shouldShow = !!options.show;
+  const shouldFocus = !!options.focus && config && config.widgetMode !== 'notch';
+  const showInactive = options.inactive || (config && config.widgetMode === 'notch');
+
+  if (shouldShow) {
+    try {
+      if (showInactive && typeof mainWindow.showInactive === 'function') mainWindow.showInactive();
+      else mainWindow.show();
+    } catch (_) {}
+  }
+
+  try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+  try { mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (_) {}
+  try { mainWindow.moveTop(); } catch (_) {}
+
+  if (shouldFocus) {
+    try { mainWindow.focus(); } catch (_) {}
+  }
+
+  return true;
+}
+
 function clampWindowPos(x, y, w = 300, h = 420) {
   // Garante que (x,y) fica dentro de algum display — evita janela fora da tela
   const displays = screen.getAllDisplays();
@@ -445,8 +470,7 @@ function createFloatingWindow() {
     }
   });
 
-  try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
-  try { mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (_) {}
+  ensureWidgetOnTop('floating-created');
 
   mainWindow.loadFile('index.html');
 
@@ -472,7 +496,7 @@ function createFloatingWindow() {
     if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
     isGhost = false;
     try { mainWindow.setOpacity(config.opacity || 1.0); } catch (_) {}
-    try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+    ensureWidgetOnTop('floating-show');
   });
 
   function fadeOpacity(from, to, durationMs) {
@@ -647,8 +671,7 @@ function createNotchWindow() {
     }
   });
 
-  try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
-  try { mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (_) {}
+  ensureWidgetOnTop('notch-created');
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
   mainWindow.loadFile('notch.html');
 
@@ -682,6 +705,7 @@ function createNotchWindow() {
     const nx = d.bounds.x + d.bounds.width - width - (config.notchOffsetX ?? 40) + 28;
     const ny = d.bounds.y;
     try { mainWindow.setBounds({ x: nx, y: ny, width, height }); } catch (_) {}
+    ensureWidgetOnTop('notch-display-change');
   };
   screen.on('display-metrics-changed', repositionNotch);
   screen.on('display-added', repositionNotch);
@@ -726,6 +750,7 @@ function switchWidgetMode(mode) {
     try { mainWindow.destroy(); } catch (_) {}
   }
   createWindowForMode();
+  ensureWidgetOnTop('mode-switch');
   if (configWindow && !configWindow.isDestroyed() && mainWindow && !mainWindow.isDestroyed()) {
     try { configWindow.setParentWindow(mainWindow); } catch (_) {}
   }
@@ -1094,9 +1119,7 @@ ipcMain.handle('start-zone-select', () => {
 
   // Recovery: se renderer crashar ou travar, força restore do mainWindow
   const restoreMain = () => {
-    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
-      mainWindow.show();
-    }
+    ensureWidgetOnTop('zone-select-restore', { show: true });
   };
   zoneWindow.webContents.on('render-process-gone', restoreMain);
   zoneWindow.webContents.on('unresponsive', restoreMain);
@@ -1220,9 +1243,7 @@ function openConfigWindow() {
   configWindow.loadFile('config.html');
   configWindow.on('closed', () => {
     configWindow = null;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
-    }
+    ensureWidgetOnTop('config-closed');
   });
 }
 
@@ -1244,16 +1265,12 @@ function showOrFocusWidget() {
   if (!mainWindow || mainWindow.isDestroyed()) createWindowForMode();
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  try { mainWindow.show(); } catch (_) {}
-  try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
-  try { mainWindow.moveTop(); } catch (_) {}
+  ensureWidgetOnTop('show-or-focus', { show: true, focus: config.widgetMode !== 'notch' });
 
   if (config.widgetMode === 'notch') {
     sendNotchReveal();
     return;
   }
-
-  try { mainWindow.focus(); } catch (_) {}
 }
 
 function notifyConfigSaved() {
@@ -1275,9 +1292,7 @@ ipcMain.handle('close-config-window', () => {
     configWindow.once('closed', () => {
       if (pending !== null) switchWidgetMode(pending);
       notifyConfigSaved();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
-      }
+      ensureWidgetOnTop('config-save-closed');
     });
     configWindow.close();
   } else {
@@ -1846,9 +1861,7 @@ ipcMain.handle('open-diff-window', (_, repoPath, repoName) => {
   diffWindows.set(repoPath, w);
   w.on('closed', () => {
     diffWindows.delete(repoPath);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
-    }
+    ensureWidgetOnTop('diff-closed');
   });
 });
 
@@ -2275,6 +2288,13 @@ app.whenReady().then(async () => {
     try { mainWindow.hide(); } catch (_) {}
   }
 
+  powerMonitor.on('resume', () => {
+    setTimeout(() => ensureWidgetOnTop('power-resume'), 250);
+  });
+  powerMonitor.on('unlock-screen', () => {
+    setTimeout(() => ensureWidgetOnTop('power-unlock'), 250);
+  });
+
   applyAutoStart(config.autoStart !== false);
   await resumePendingDeployWatchers();
 
@@ -2393,7 +2413,7 @@ function registerShortcuts() {
     const ok = globalShortcut.register(toggleAccel, () => {
       if (!mainWindow || mainWindow.isDestroyed()) return;
       if (mainWindow.isVisible()) mainWindow.hide();
-      else { mainWindow.show(); mainWindow.focus(); }
+      else { ensureWidgetOnTop('shortcut-toggle', { show: true, focus: config.widgetMode !== 'notch' }); }
     });
     result.toggle = ok ? toggleAccel : null;
   } catch (e) { console.warn('[GitMonitor] shortcut toggle falhou:', e.message); }
