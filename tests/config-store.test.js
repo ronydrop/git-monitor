@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
+  atomicWriteFile,
   loadConfigFile,
   readJsonFile,
   saveConfigFile
@@ -46,16 +47,20 @@ test('cria config default quando nao existe config nem backup', () => {
   assert.strictEqual(fs.existsSync(backupFile), false);
 });
 
-test('salva config de forma atomica e preserva backup anterior valido', () => {
+test('salva config de forma atomica com backup antes e depois', () => {
   const dir = makeTempDir();
   const configFile = path.join(dir, 'config.json');
   const backupFile = path.join(dir, 'config.backup.json');
-  fs.writeFileSync(configFile, JSON.stringify({ repos: [{ name: 'Atual' }], version: 1 }, null, 2));
+  const current = { repos: [{ name: 'Atual' }], version: 1 };
+  const next = { repos: [{ name: 'Nova' }], version: 2 };
+  fs.writeFileSync(configFile, JSON.stringify(current, null, 2));
 
-  saveConfigFile(configFile, { repos: [{ name: 'Nova' }], version: 2 }, { backupFile });
+  saveConfigFile(configFile, next, { backupFile, now: fixedNow });
 
-  assert.deepStrictEqual(readJson(configFile), { repos: [{ name: 'Nova' }], version: 2 });
-  assert.deepStrictEqual(readJson(backupFile), { repos: [{ name: 'Atual' }], version: 1 });
+  assert.deepStrictEqual(readJson(configFile), next);
+  assert.deepStrictEqual(readJson(backupFile), next);
+  assert.deepStrictEqual(readJson(path.join(dir, 'config.backup-before-save.20260102-030405.json')), current);
+  assert.deepStrictEqual(readJson(path.join(dir, 'config.backup-after-save.20260102-030405.json')), next);
   assert.deepStrictEqual(fs.readdirSync(dir).filter(name => name.endsWith('.tmp')), []);
 });
 
@@ -78,6 +83,31 @@ test('restaura backup quando config principal esta truncado', () => {
   assert.strictEqual(
     fs.readFileSync(path.join(dir, 'config.invalid.20260102-030405.json'), 'utf8'),
     '{"repos": ['
+  );
+});
+
+test('restaura backup historico quando config principal e backup fixo estao invalidos', () => {
+  const dir = makeTempDir();
+  const configFile = path.join(dir, 'config.json');
+  const backupFile = path.join(dir, 'config.backup.json');
+  const historicalBackup = path.join(dir, 'config.backup-after-save.20260102-020304.json');
+  fs.writeFileSync(configFile, '\u0000'.repeat(128));
+  fs.writeFileSync(backupFile, '{"repos": [');
+  fs.writeFileSync(historicalBackup, JSON.stringify({ repos: [{ name: 'Historico' }], version: 7 }, null, 2));
+
+  const loaded = loadConfigFile(configFile, () => ({ repos: [] }), {
+    backupFile,
+    now: fixedNow
+  });
+
+  assert.strictEqual(loaded.source, 'backup-history');
+  assert.strictEqual(loaded.recovered, true);
+  assert.deepStrictEqual(loaded.config, { repos: [{ name: 'Historico' }], version: 7 });
+  assert.deepStrictEqual(readJson(configFile), { repos: [{ name: 'Historico' }], version: 7 });
+  assert.deepStrictEqual(readJson(backupFile), { repos: [{ name: 'Historico' }], version: 7 });
+  assert.strictEqual(
+    fs.readFileSync(path.join(dir, 'config.invalid.20260102-030405.json'), 'utf8'),
+    '\u0000'.repeat(128)
   );
 });
 
@@ -104,4 +134,55 @@ test('identifica JSON vazio como config invalida', () => {
   assert.strictEqual(result.ok, false);
   assert.strictEqual(result.exists, true);
   assert.match(result.error.message, /vazio/);
+});
+
+test('identifica JSON com bytes NUL como config invalida', () => {
+  const dir = makeTempDir();
+  const configFile = path.join(dir, 'config.json');
+  fs.writeFileSync(configFile, Buffer.alloc(64));
+
+  const result = readJsonFile(configFile);
+
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.exists, true);
+  assert.match(result.error.message, /NUL/);
+});
+
+test('escrita atomica faz fsync antes do rename', () => {
+  const dir = makeTempDir();
+  const configFile = path.join(dir, 'config.json');
+  const originalFsyncSync = fs.fsyncSync;
+  const fsyncCalls = [];
+  fs.fsyncSync = (fd) => {
+    fsyncCalls.push(fd);
+    return originalFsyncSync(fd);
+  };
+
+  try {
+    atomicWriteFile(configFile, '{"ok":true}');
+  } finally {
+    fs.fsyncSync = originalFsyncSync;
+  }
+
+  assert.ok(fsyncCalls.length >= 1);
+  assert.deepStrictEqual(readJson(configFile), { ok: true });
+});
+
+test('falha no rename preserva arquivo alvo e remove temporario', () => {
+  const dir = makeTempDir();
+  const configFile = path.join(dir, 'config.json');
+  fs.writeFileSync(configFile, '{"ok":"old"}');
+  const originalRenameSync = fs.renameSync;
+  fs.renameSync = () => {
+    throw new Error('rename failed');
+  };
+
+  try {
+    assert.throws(() => atomicWriteFile(configFile, '{"ok":"new"}'), /rename failed/);
+  } finally {
+    fs.renameSync = originalRenameSync;
+  }
+
+  assert.deepStrictEqual(readJson(configFile), { ok: 'old' });
+  assert.deepStrictEqual(fs.readdirSync(dir).filter(name => name.endsWith('.tmp')), []);
 });
