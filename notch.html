@@ -71,8 +71,8 @@
   #pill.glow-deploy-error:not(.expanded) {
     box-shadow:
       0 4px 24px rgba(0,0,0,0.9),
-      0 0 16px 4px rgba(248,81,73,0.4),
-      0 0 7px 1px rgba(248,81,73,0.22),
+      0 0 16px 4px rgba(219,109,40,0.42),
+      0 0 7px 1px rgba(219,109,40,0.24),
       0 1px 0 rgba(255,255,255,0.06) inset;
   }
   #pill.glow-diverged:not(.expanded) {
@@ -538,6 +538,7 @@
   setIcon(btnMin, 'minus', { size: 14 });
 
   const CLOSE_DELAY_MS = 300;
+  const LOCAL_DEPLOY_RECONCILE_GRACE_MS = 15000;
 
   let repos = [];
   let loaded = false;
@@ -734,6 +735,52 @@
     }
     return pending;
   }
+
+  function settlePushAllDeploy(repoPath, phase) {
+    const entry = deployingRows[repoPath];
+    if (!entry || !entry.fromPushAll) return;
+
+    if (phase !== 'success') pushAllFailures++;
+    pushAllPending = Math.max(0, pushAllPending - 1);
+    const deployedCount = Math.max(0, pushAllTotal - pushAllPending);
+
+    if (pushAllPending > 0) {
+      setIconLabel(btnPushAll, 'refresh-cw', `Deploy ${deployedCount}/${pushAllTotal}`, { size: 14, spin: true });
+      return;
+    }
+
+    if (pushAllFailures === 0) {
+      setIconLabel(btnPushAll, 'check', 'Feito!', { size: 14 });
+    } else {
+      setIconLabel(btnPushAll, 'x', 'Deploy falhou', { size: 14 });
+    }
+
+    setTimeout(() => {
+      setIconLabel(btnPushAll, 'arrow-up', 'Push All', { size: 14 });
+      btnPushAll.disabled = false;
+      startPolling();
+    }, pushAllFailures === 0 ? 3000 : 4000);
+  }
+
+  function reconcileDeployingRows(results) {
+    const byPath = new Map((results || []).map(r => [r.path, r]));
+    const repoPaths = new Set([
+      ...Object.keys(deployingRows),
+      ...Object.keys(deployPhases)
+    ]);
+
+    for (const repoPath of repoPaths) {
+      const repo = byPath.get(repoPath);
+      const entry = deployingRows[repoPath];
+      if (entry && Date.now() - (entry.startedAt || 0) < LOCAL_DEPLOY_RECONCILE_GRACE_MS) continue;
+      if (repo && (!repo.deployPending || repo.deployError)) {
+        settlePushAllDeploy(repoPath, repo.deployError ? 'failure' : 'success');
+        delete deployingRows[repoPath];
+        delete deployPhases[repoPath];
+      }
+    }
+  }
+
   function isPendingList() {
     return effectivePending().length > 0;
   }
@@ -1011,6 +1058,7 @@
 
   pill.addEventListener('mouseenter', () => {
     if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+    setGhostActive(false);
     hovered = true;
     updateShape();
   });
@@ -1022,20 +1070,18 @@
       hovered = false;
       updateShape();
     }, CLOSE_DELAY_MS);
-    if (ghostActive) {
-      ghostActive = false;
-      pill.classList.remove('ghost');
-      ipcRenderer.send('notch-ghost', false);
-    }
   });
 
   let ghostActive = false;
-  pill.addEventListener('mousemove', (ev) => {
-    const want = ev.ctrlKey;
+  function setGhostActive(on) {
+    const want = !!on;
     if (want === ghostActive) return;
     ghostActive = want;
     pill.classList.toggle('ghost', ghostActive);
-    ipcRenderer.send('notch-ghost', ghostActive);
+  }
+
+  ipcRenderer.on('notch-ghost', (_, on) => {
+    setGhostActive(on);
   });
 
   pill.addEventListener('click', (ev) => {
@@ -1148,7 +1194,7 @@
         runningActions.delete(r.path);
         if (ok) {
           markRowDeploying(r.path);
-          deployingRows[r.path] = { repoName: r.name || r.path, fromPushAll: true };
+          deployingRows[r.path] = { repoName: r.name || r.path, fromPushAll: true, startedAt: Date.now() };
           ipcRenderer.send('watch-deploy-start', { repoPath: r.path, repoName: r.name || r.path });
           pushAllPending++;
           pushAllTotal++;
@@ -1238,7 +1284,7 @@
         rowToast('ok', rname + ': Pull concluído!');
       } else {
         markRowDeploying(p);
-        deployingRows[p] = { repoName: rname, fromPushAll: false };
+        deployingRows[p] = { repoName: rname, fromPushAll: false, startedAt: Date.now() };
         ipcRenderer.send('watch-deploy-start', { repoPath: p, repoName: rname });
       }
       setTimeout(() => refresh(), 900);
@@ -1298,6 +1344,7 @@
     try {
       const res = await ipcRenderer.invoke('notch-all-repos');
       repos = (res && res.repos) || [];
+      reconcileDeployingRows(repos);
       renderList();
       updateSummary();
       updateShape();
@@ -1382,28 +1429,9 @@
     }
 
     if (terminal) {
-      const wasPushAll = entry.fromPushAll;
+      settlePushAllDeploy(repoPath, phase);
       delete deployingRows[repoPath];
       renderList(); updateSummary(); updateShape();
-      if (wasPushAll) {
-        if (phase !== 'success') pushAllFailures++;
-        pushAllPending--;
-        const deployedCount = pushAllTotal - pushAllPending;
-        if (pushAllPending > 0) {
-          setIconLabel(btnPushAll, 'refresh-cw', `Deploy ${deployedCount}/${pushAllTotal}`, { size: 14, spin: true });
-        } else {
-          if (pushAllFailures === 0) {
-            setIconLabel(btnPushAll, 'check', 'Feito!', { size: 14 });
-          } else {
-            setIconLabel(btnPushAll, 'x', 'Deploy falhou', { size: 14 });
-          }
-          setTimeout(() => {
-            setIconLabel(btnPushAll, 'arrow-up', 'Push All', { size: 14 });
-            btnPushAll.disabled = false;
-            startPolling();
-          }, pushAllFailures === 0 ? 3000 : 4000);
-        }
-      }
     }
   });
 

@@ -2,6 +2,7 @@ const assert = require('assert');
 const {
   assertSafeBranchName,
   formatGitError,
+  isGitAuthError,
   isRebaseConflictError,
   pullRebaseCommand,
   pushCommand
@@ -37,6 +38,27 @@ test('classifica conflito real no pull rebase', () => {
   };
 
   assert.strictEqual(isRebaseConflictError(error), true);
+  assert.strictEqual(isGitAuthError(error), false);
+});
+
+test('classifica HTTP 401 como erro de autenticacao Git', () => {
+  const error = {
+    stderr: [
+      'error: RPC failed; HTTP 401 curl 22 The requested URL returned error: 401',
+      'fatal: Authentication failed for https://github.com/Aprovei-Hub/aprovei-shadow.git/'
+    ].join('\n')
+  };
+
+  assert.strictEqual(isGitAuthError(error), true);
+  assert.strictEqual(isRebaseConflictError(error), false);
+});
+
+test('classifica falta de usuario e prompt desabilitado como erro de auth Git', () => {
+  const error = {
+    stderr: 'fatal: could not read Username for https://github.com: terminal prompts disabled'
+  };
+
+  assert.strictEqual(isGitAuthError(error), true);
 });
 
 test('monta pull e push explicitos sem depender de upstream local', () => {

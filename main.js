@@ -23,6 +23,7 @@ const {
 } = require('./repo-state');
 const {
   formatGitError,
+  isGitAuthError,
   isRebaseConflictError,
   pullRebaseCommand,
   pushCommand
@@ -225,6 +226,22 @@ async function gitExecFile(args, opts) {
       }
       throw err;
     }
+  }
+}
+
+const GIT_AUTH_ERROR_MESSAGE = 'Credencial GitHub invalida/expirada para Git HTTPS. Rode gh auth refresh -h github.com -s repo -s workflow e gh auth setup-git, ou configure SSH.';
+
+async function verifyGitRemoteAccess(repoPath, branch) {
+  try {
+    await gitExecFile(['ls-remote', '--heads', 'origin', branch], {
+      cwd: repoPath,
+      timeout: 15000
+    });
+  } catch (e) {
+    if (isGitAuthError(e)) {
+      throw new Error(GIT_AUTH_ERROR_MESSAGE);
+    }
+    throw new Error(`Nao foi possivel validar o Git remoto antes de criar commit: ${formatGitError(e)}`);
   }
 }
 
@@ -538,7 +555,64 @@ function createFloatingWindow() {
 // Último rect reportado pelo renderer via IPC notch-rect.
 // Fallback = baseline 310x38 top-right da janela.
 const NOTCH_COMPACT_LEFT = 102;
+const NOTCH_GHOST_ZONE_PAD_X = 28;
+const NOTCH_GHOST_ZONE_PAD_Y = 18;
 let notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, left: NOTCH_COMPACT_LEFT };
+let _notchGhost = false;
+
+function pointInRect(point, rect) {
+  return point.x >= rect.x && point.x < rect.x + rect.width
+      && point.y >= rect.y && point.y < rect.y + rect.height;
+}
+
+function inflateRect(rect, padX, padY) {
+  return {
+    x: rect.x - padX,
+    y: rect.y - padY,
+    width: rect.width + (padX * 2),
+    height: rect.height + (padY * 2)
+  };
+}
+
+function getNotchInteractionGeometry(bounds, rect) {
+  const pillLeft = bounds.x + rect.left;
+  const pillTop = bounds.y + (rect.offsetY || 0);
+  const hitTop = rect.hotzone != null ? bounds.y : pillTop;
+  const hitHeight = Math.max(1, rect.hotzone != null ? rect.hotzone : rect.h);
+  const hitRect = {
+    x: pillLeft,
+    y: hitTop,
+    width: Math.max(1, rect.w),
+    height: hitHeight
+  };
+
+  return {
+    hitRect,
+    ghostZone: inflateRect(hitRect, NOTCH_GHOST_ZONE_PAD_X, NOTCH_GHOST_ZONE_PAD_Y)
+  };
+}
+
+function setNotchGhostState(on, notifyRenderer = true) {
+  const next = !!on;
+  if (_notchGhost === next) return;
+  _notchGhost = next;
+  if (!notifyRenderer || !mainWindow || mainWindow.isDestroyed()) return;
+
+  try {
+    const wc = mainWindow.webContents;
+    const send = () => {
+      if (mainWindow && !mainWindow.isDestroyed() && wc && !wc.isDestroyed()) {
+        wc.send('notch-ghost', next);
+      }
+    };
+    if (wc.isLoading()) wc.once('did-finish-load', send);
+    else send();
+  } catch (_) {}
+}
+
+function sendNotchGhostState(on) {
+  setNotchGhostState(on, true);
+}
 
 function createNotchWindow() {
   const display = screen.getPrimaryDisplay();
@@ -580,6 +654,7 @@ function createNotchWindow() {
 
   // Reset do rect pra baseline — o renderer vai notificar via notch-rect.
   notchRect = { w: 310, h: 38, offsetY: 0, hotzone: null, left: NOTCH_COMPACT_LEFT };
+  setNotchGhostState(false, false);
 
   // Passthrough com bbox dinâmico do pill real (não da window inteira).
   // O renderer envia `notch-rect` sempre que o state muda.
@@ -589,21 +664,13 @@ function createNotchWindow() {
       return;
     }
     if (_notchDragging) return;
-    if (_notchGhost) { mainWindow.setIgnoreMouseEvents(true, { forward: true }); return; }
     try {
       const c = screen.getCursorScreenPoint();
       const b = mainWindow.getBounds();
-      const r = notchRect;
-      const pillLeft  = b.x + r.left;
-      const pillRight = pillLeft + r.w;
-      const pillTop   = b.y + (r.offsetY || 0);
-      const effectiveH = r.hotzone != null ? r.hotzone : r.h;
-      // Quando minimized com hotzone, o pill real está fora da tela (-34) mas
-      // queremos detectar mouse na faixa dos primeiros 8px pra peek.
-      const detectTop = r.hotzone != null ? b.y : pillTop;
-      const detectBot = r.hotzone != null ? b.y + r.hotzone : pillTop + r.h;
-      const inside = c.x >= pillLeft && c.x < pillRight
-                  && c.y >= detectTop && c.y < detectBot;
+      const { hitRect, ghostZone } = getNotchInteractionGeometry(b, notchRect);
+      const inside = pointInRect(c, hitRect);
+      const shouldGhost = pointInRect(c, ghostZone) && !inside;
+      sendNotchGhostState(shouldGhost);
       mainWindow.setIgnoreMouseEvents(!inside, { forward: true });
     } catch (_) {}
   }, 100);
@@ -1672,6 +1739,8 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
     let body = '';
 
     if (hasUncommitted) {
+      await verifyGitRemoteAccess(repoPath, initialBranch);
+
       let diff = '';
       try {
         const staged   = await gitExec('git diff --cached', { cwd: repoPath, timeout: 8000 });
@@ -1697,6 +1766,9 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
     try {
       await gitExec(pullRebaseCommand(branch), { cwd: repoPath, timeout: 30000 });
     } catch (e) {
+      if (isGitAuthError(e)) {
+        throw new Error(GIT_AUTH_ERROR_MESSAGE);
+      }
       if (isRebaseConflictError(e)) {
         await gitExec('git rebase --abort', { cwd: repoPath, timeout: 10000 }).catch(() => {});
         throw new Error('Conflito no pull --rebase. Resolva manualmente antes de fazer push.');
@@ -2436,7 +2508,6 @@ ipcMain.on('notch-rect', (_, rect) => {
 });
 
 let _notchSaveTimer = null;
-let _notchGhost = false;
 let _notchDragging = false;
 let _notchDragPoll = null;
 let _notchDragTimeout = null;
@@ -2450,7 +2521,7 @@ function endNotchDrag() {
 }
 
 ipcMain.on('notch-ghost', (_, on) => {
-  _notchGhost = !!on;
+  setNotchGhostState(on, false);
   if (!on && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.setIgnoreMouseEvents(false);
   }

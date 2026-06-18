@@ -53,6 +53,16 @@ test('commit errors render as inline widget alerts instead of external toast win
   assert.match(notch, /function showCommitToast\s*\([\s\S]*showNotchAlert/);
 });
 
+test('commit-and-push valida acesso remoto antes de criar commit local', () => {
+  const main = read('main.js');
+  const commitAndPush = main.match(/ipcMain\.handle\('commit-and-push'[\s\S]*?ipcMain\.handle\('open-folder'/);
+
+  assert.ok(commitAndPush, 'commit-and-push handler should exist');
+  assert.match(main, /async function verifyGitRemoteAccess\s*\(repoPath,\s*branch\)/);
+  assert.match(main, /gitExecFile\(\['ls-remote', '--heads', 'origin', branch\]/);
+  assert.match(commitAndPush[0], /if \(hasUncommitted\) \{\s*await verifyGitRemoteAccess\(repoPath, initialBranch\);[\s\S]*await gitExec\('git add \.'/);
+});
+
 test('notch reveal does not force hover expansion and uses shared geometry fallback', () => {
   const main = read('main.js');
   const notch = read('notch.html');
@@ -68,12 +78,43 @@ test('notch reveal does not force hover expansion and uses shared geometry fallb
   assert.doesNotMatch(main, /N\(rect\.left,\s*65\)/);
 });
 
+test('notch ghost zone is automatic around reported notch geometry', () => {
+  const main = read('main.js');
+  const notch = read('notch.html');
+
+  assert.match(main, /const NOTCH_GHOST_ZONE_PAD_X\s*=\s*\d+/);
+  assert.match(main, /function getNotchInteractionGeometry\s*\(bounds,\s*rect\)/);
+  assert.match(main, /ghostZone:\s*inflateRect\(hitRect,\s*NOTCH_GHOST_ZONE_PAD_X,\s*NOTCH_GHOST_ZONE_PAD_Y\)/);
+  assert.match(main, /const shouldGhost\s*=\s*pointInRect\(c,\s*ghostZone\)\s*&&\s*!inside/);
+  assert.match(main, /sendNotchGhostState\(shouldGhost\)/);
+  assert.match(main, /ipcMain\.handle\('start-zone-select'[\s\S]*config\.widgetMode === 'notch'[\s\S]*return/);
+
+  assert.match(notch, /ipcRenderer\.on\('notch-ghost',\s*\(_,\s*on\)\s*=>\s*{/);
+  assert.match(notch, /pill\.classList\.toggle\('ghost',\s*ghostActive\)/);
+  assert.doesNotMatch(notch, /const want = ev\.ctrlKey/);
+});
+
 test('floating renderer removes stale deploy buttons after backend refresh', () => {
   const index = read('index.html');
 
   assert.match(index, /function reconcileActiveDeployButtons\s*\(\s*results\s*\)/);
   assert.match(index, /delete activeDeployBtns\[repoPath\]/);
   assert.match(index, /const results = await ipcRenderer\.invoke\('check-repos'\);[\s\S]*reconcileActiveDeployButtons\(lastResults\);[\s\S]*renderRepos\(lastResults\)/);
+});
+
+test('notch renderer removes stale deploy rows after backend refresh', () => {
+  const notch = read('notch.html');
+
+  assert.match(notch, /const LOCAL_DEPLOY_RECONCILE_GRACE_MS\s*=\s*15000/);
+  assert.match(notch, /function reconcileDeployingRows\s*\(\s*results\s*\)/);
+  assert.match(notch, /Date\.now\(\) - \(entry\.startedAt \|\| 0\) < LOCAL_DEPLOY_RECONCILE_GRACE_MS/);
+  assert.match(notch, /function settlePushAllDeploy\s*\(\s*repoPath,\s*phase\s*\)/);
+  assert.match(notch, /settlePushAllDeploy\(repoPath,\s*repo\.deployError \? 'failure' : 'success'\)/);
+  assert.match(notch, /delete deployingRows\[repoPath\]/);
+  assert.match(notch, /delete deployPhases\[repoPath\]/);
+  assert.match(notch, /deployingRows\[r\.path\]\s*=\s*\{ repoName: r\.name \|\| r\.path, fromPushAll: true, startedAt: Date\.now\(\) \}/);
+  assert.match(notch, /deployingRows\[p\]\s*=\s*\{ repoName: rname, fromPushAll: false, startedAt: Date\.now\(\) \}/);
+  assert.match(notch, /const res = await ipcRenderer\.invoke\('notch-all-repos'\);[\s\S]*repos = \(res && res\.repos\) \|\| \[\];[\s\S]*reconcileDeployingRows\(repos\);[\s\S]*renderList\(\)/);
 });
 
 test('renderers let pending deploy dominate clean git visual status', () => {

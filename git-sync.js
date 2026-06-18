@@ -16,6 +16,17 @@ function isRebaseConflictError(error) {
   );
 }
 
+function isGitAuthError(error) {
+  const text = gitErrorText(error);
+  return (
+    /HTTP\s+401/i.test(text) ||
+    /Authentication failed/i.test(text) ||
+    /could not read Username/i.test(text) ||
+    /terminal prompts disabled/i.test(text) ||
+    /GCM_INTERACTIVE\s*=\s*never/i.test(text)
+  );
+}
+
 function formatGitError(error) {
   const text = gitErrorText(error) || String(error || 'Erro Git desconhecido');
   return text.replace(/\s+/g, ' ').trim();
@@ -49,6 +60,7 @@ module.exports = {
   assertSafeBranchName,
   formatGitError,
   gitErrorText,
+  isGitAuthError,
   isRebaseConflictError,
   pullRebaseCommand,
   pushCommand
