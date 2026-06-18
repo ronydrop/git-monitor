@@ -371,6 +371,8 @@ let mainWindow;
 let configWindow;
 let tray;
 let config;
+const WIDGET_TOPMOST_WATCHDOG_MS = 3000;
+let widgetTopmostWatchdog = null;
 
 function ensureWidgetOnTop(reason, options = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -395,6 +397,40 @@ function ensureWidgetOnTop(reason, options = {}) {
   }
 
   return true;
+}
+
+function shouldRunWidgetTopmostWatchdog() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+
+  try {
+    if (!mainWindow.isVisible()) return false;
+  } catch (_) {
+    return false;
+  }
+
+  if (configWindow && !configWindow.isDestroyed()) return false;
+  if (zoneWindow && !zoneWindow.isDestroyed()) return false;
+
+  try {
+    for (const win of diffWindows.values()) {
+      if (win && !win.isDestroyed()) return false;
+    }
+  } catch (_) {}
+
+  return true;
+}
+
+function startWidgetTopmostWatchdog() {
+  if (widgetTopmostWatchdog) return;
+
+  widgetTopmostWatchdog = setInterval(() => {
+    if (!shouldRunWidgetTopmostWatchdog()) return;
+    ensureWidgetOnTop('topmost-watchdog');
+  }, WIDGET_TOPMOST_WATCHDOG_MS);
+
+  if (typeof widgetTopmostWatchdog.unref === 'function') {
+    widgetTopmostWatchdog.unref();
+  }
 }
 
 function clampWindowPos(x, y, w = 300, h = 420) {
@@ -2278,6 +2314,7 @@ app.whenReady().then(async () => {
   }
 
   createWindowForMode();
+  startWidgetTopmostWatchdog();
 
   if (config.widgetMode !== 'notch' && config.collapsed) {
     const [x, y] = mainWindow.getPosition();

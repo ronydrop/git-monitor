@@ -43,6 +43,25 @@ test('widget topmost state is reinforced through one helper', () => {
   assert.match(main, /powerMonitor\.on\('unlock-screen'[\s\S]*ensureWidgetOnTop\('power-unlock'\)/);
 });
 
+test('visible widget has a lightweight topmost watchdog without stealing focus', () => {
+  const main = read('main.js');
+
+  assert.match(main, /const WIDGET_TOPMOST_WATCHDOG_MS\s*=\s*3000/);
+  assert.match(main, /let widgetTopmostWatchdog\s*=\s*null/);
+  assert.match(main, /function shouldRunWidgetTopmostWatchdog\s*\(\s*\)/);
+
+  const guard = main.match(/function shouldRunWidgetTopmostWatchdog\s*\(\s*\)\s*{[\s\S]*?return true;\s*\n}/);
+  assert.ok(guard, 'watchdog guard should exist');
+  assert.match(guard[0], /mainWindow\.isVisible\(\)/);
+  assert.match(guard[0], /configWindow[\s\S]*isDestroyed\(\)/);
+  assert.match(guard[0], /zoneWindow[\s\S]*isDestroyed\(\)/);
+  assert.match(guard[0], /diffWindows\.values\(\)/);
+
+  assert.match(main, /setInterval\(\s*\(\)\s*=>\s*{[\s\S]*shouldRunWidgetTopmostWatchdog\(\)[\s\S]*ensureWidgetOnTop\('topmost-watchdog'\)/);
+  assert.doesNotMatch(main, /ensureWidgetOnTop\('topmost-watchdog',\s*\{[\s\S]*(show|focus):/);
+  assert.match(main, /createWindowForMode\(\);[\s\S]*startWidgetTopmostWatchdog\(\);/);
+});
+
 test('widget roots hide overflow and use internal shadow padding', () => {
   const index = read('index.html');
   const notch = read('notch.html');
