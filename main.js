@@ -457,6 +457,41 @@ let config;
 const WIDGET_TOPMOST_WATCHDOG_MS = 3000;
 let widgetTopmostWatchdog = null;
 
+function sendUpdateStatus(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-status', payload);
+  if (configWindow && !configWindow.isDestroyed()) configWindow.webContents.send('update-check-result', payload);
+}
+
+function hasAutoUpdateMetadata() {
+  if (!app.isPackaged) return false;
+  try {
+    return fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'));
+  } catch (_) {
+    return false;
+  }
+}
+
+function localBuildUpdateStatus() {
+  return {
+    type: 'local-build',
+    msg: 'Build local sem auto-update; use instalador/portable publicado'
+  };
+}
+
+function checkForUpdatesSafely() {
+  if (!app.isPackaged) {
+    const status = { type: 'dev' };
+    sendUpdateStatus(status);
+    return status;
+  }
+  if (!hasAutoUpdateMetadata()) {
+    const status = localBuildUpdateStatus();
+    sendUpdateStatus(status);
+    return status;
+  }
+  return autoUpdater.checkForUpdates();
+}
+
 function ensureWidgetOnTop(reason, options = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
 
@@ -1197,14 +1232,7 @@ ipcMain.handle('close-app', () => app.quit());
 ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
 ipcMain.handle('check-for-updates', () => {
-  if (app.isPackaged) {
-    autoUpdater.checkForUpdates();
-  } else {
-    // Em dev mode, simula resposta
-    if (configWindow && !configWindow.isDestroyed()) {
-      configWindow.webContents.send('update-check-result', { type: 'dev' });
-    }
-  }
+  return checkForUpdatesSafely();
 });
 
 // ---- Zone select ----
@@ -2497,26 +2525,21 @@ app.whenReady().then(async () => {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 
-    const sendUpdate = (payload) => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-status', payload);
-      if (configWindow && !configWindow.isDestroyed()) configWindow.webContents.send('update-check-result', payload);
-    };
-
     let _lastToastPct = -1;
 
     autoUpdater.on('update-available', (info) => {
-      sendUpdate({ type: 'available', version: info.version });
+      sendUpdateStatus({ type: 'available', version: info.version });
       _lastToastPct = 0;
       showToastWindow('Atualização ' + info.version + ' disponível — baixando...', 'info', 60000);
     });
 
     autoUpdater.on('update-not-available', () => {
-      sendUpdate({ type: 'latest' });
+      sendUpdateStatus({ type: 'latest' });
     });
 
     autoUpdater.on('download-progress', (info) => {
       const pct = Math.round(info.percent);
-      sendUpdate({ type: 'downloading', version: info.version, percent: pct });
+      sendUpdateStatus({ type: 'downloading', version: info.version, percent: pct });
       if (pct !== _lastToastPct && (pct % 10 === 0 || pct >= 99)) {
         _lastToastPct = pct;
         showToastWindow('Baixando v' + info.version + ' — ' + pct + '%', 'info', 60000);
@@ -2524,7 +2547,7 @@ app.whenReady().then(async () => {
     });
 
     autoUpdater.on('update-downloaded', (info) => {
-      sendUpdate({ type: 'ready', version: info.version });
+      sendUpdateStatus({ type: 'ready', version: info.version });
       _lastToastPct = -1;
       _pendingUpdateVersion = info.version;
       rebuildTrayMenu();
@@ -2533,14 +2556,16 @@ app.whenReady().then(async () => {
     });
 
     autoUpdater.on('error', (err) => {
-      sendUpdate({ type: 'error', msg: err.message });
+      sendUpdateStatus({ type: 'error', msg: err.message });
       _lastToastPct = -1;
       showToastWindow('Erro ao atualizar: ' + err.message.slice(0, 80), 'err', 6000);
     });
 
     // Checa ao iniciar e a cada 4 horas
-    autoUpdater.checkForUpdates();
-    setInterval(() => autoUpdater.checkForUpdates(), 4 * 60 * 60 * 1000);
+    if (hasAutoUpdateMetadata()) {
+      checkForUpdatesSafely();
+      setInterval(() => checkForUpdatesSafely(), 4 * 60 * 60 * 1000);
+    }
   }
 
   registerShortcuts();

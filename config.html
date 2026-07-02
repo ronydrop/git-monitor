@@ -2062,6 +2062,14 @@
     ipcRenderer.invoke('close-config-window');
   }
 
+  function updateErrorLabel(status) {
+    const msg = (status && status.msg) ? String(status.msg) : '';
+    if (status && status.type === 'local-build') return 'Build local sem auto-update';
+    if (/ENOENT|app-update\.yml|dist[\\/].*latest\.yml/i.test(msg)) return 'Build local sem auto-update';
+    if (/404|sem release|latest\.yml/i.test(msg)) return 'Erro: sem release publicado';
+    return msg ? 'Erro: ' + msg.substring(0, 80) : 'Erro ao atualizar';
+  }
+
   async function checkUpdate() {
     const btn = document.getElementById('btnCheckUpdate');
     setIconLabel(btn, 'hourglass', 'Verificando...', { spin: true });
@@ -2080,8 +2088,10 @@
         return;
       } else if (status.type === 'dev') {
         setIconLabel(btn, 'alert', 'Indispon\u00EDvel em dev mode'); btn.style.color = 'var(--yellow)';
+      } else if (status.type === 'local-build') {
+        setIconLabel(btn, 'alert', updateErrorLabel(status)); btn.style.color = 'var(--yellow)';
       } else if (status.type === 'error') {
-        setIconLabel(btn, 'x', 'Erro: sem release publicado'); btn.style.color = 'var(--red)';
+        setIconLabel(btn, 'x', updateErrorLabel(status)); btn.style.color = 'var(--red)';
       }
       setTimeout(() => { setIconLabel(btn, 'refresh-cw', 'Verificar atualiza\u00E7\u00F5es'); btn.style.color = ''; btn.disabled = false; }, 4000);
     };

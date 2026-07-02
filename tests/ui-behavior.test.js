@@ -213,3 +213,28 @@ test('repo lists are sorted with deploy and git pending items first', () => {
   assert.match(main, /const pending = sortReposByAttention\(results/);
   assert.match(main, /const mapped = sortReposByAttention\(mapReposForNotch\(results\)\)/);
 });
+
+test('local packaged builds without update metadata do not call autoUpdater', () => {
+  const main = read('main.js');
+  const checkForUpdates = main.match(/function checkForUpdatesSafely\s*\(\s*\)\s*{[\s\S]*?\n}/);
+
+  assert.ok(checkForUpdates, 'safe update checker should exist');
+  assert.match(main, /function hasAutoUpdateMetadata\s*\(\s*\)/);
+  assert.match(main, /path\.join\(process\.resourcesPath,\s*'app-update\.yml'\)/);
+  assert.match(main, /function localBuildUpdateStatus\s*\(\s*\)[\s\S]*type:\s*'local-build'/);
+  assert.match(checkForUpdates[0], /!hasAutoUpdateMetadata\(\)[\s\S]*localBuildUpdateStatus\(\)/);
+  assert.match(checkForUpdates[0], /return\s+autoUpdater\.checkForUpdates\(\)/);
+  assert.match(main, /ipcMain\.handle\('check-for-updates',\s*\(\)\s*=>\s*{[\s\S]*checkForUpdatesSafely\(\)/);
+});
+
+test('update errors display the real message instead of assuming missing release', () => {
+  const config = read('config.html');
+
+  assert.match(config, /function updateErrorLabel\s*\(\s*status\s*\)/);
+  assert.match(config, /Build local sem auto-update/);
+  assert.match(config, /sem release publicado/);
+  assert.match(config, /status\.msg/);
+  assert.match(config, /status\.type === 'local-build'/);
+  assert.match(config, /setIconLabel\(btn,\s*'x',\s*updateErrorLabel\(status\)\)/);
+  assert.doesNotMatch(config, /status\.type === 'error'\)[\s\S]*setIconLabel\(btn,\s*'x',\s*'Erro: sem release publicado'/);
+});
