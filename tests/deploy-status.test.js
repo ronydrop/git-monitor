@@ -11,6 +11,8 @@ const {
   clearDeployState,
   markDeployError,
   markDeployState,
+  pruneDeployErrorsForRepos,
+  pruneDeployStatesForRepos,
   repoKey,
   repoVisualStatus,
   sortReposByAttention
@@ -267,6 +269,58 @@ test('repo sem CI detectavel aparece como erro de deploy verificavel', () => {
   assert.strictEqual(repo.needsAttention, true);
   assert.strictEqual(repo.deployError, true);
   assert.strictEqual(repo.deployPhase, 'no-ci');
+});
+
+test('repo sem deploy configurado ignora estado antigo de deploy ausente', () => {
+  const deployStates = markDeployState({}, 'C:/repo/brain', 'no-ci', 'Nenhum workflow, check-run ou commit status encontrado', Date.now(), {
+    sha: 'abc123',
+    branch: 'main',
+    watchId: 'watch-1'
+  });
+  const repo = applyDeployState({
+    name: 'Brain',
+    path: 'C:/repo/brain',
+    status: 'clean',
+    detail: 'Sincronizado',
+    headSha: 'abc123',
+    branch: 'main',
+    deployEnabled: false
+  }, deployStates);
+
+  assert.strictEqual(repo.pending, false);
+  assert.strictEqual(repo.needsAttention, false);
+  assert.strictEqual(repo.deployEnabled, false);
+  assert.strictEqual(repo.deployPending, false);
+  assert.strictEqual(repo.deployError, false);
+  assert.strictEqual(repo.deployPhase, 'none');
+  assert.strictEqual(repo.deployDetail, 'Sem deploy');
+  assert.strictEqual(repoVisualStatus(repo), 'clean');
+});
+
+test('repo sem deploy configurado remove estado de deploy persistido no prune', () => {
+  const deployStates = markDeployState({}, 'C:/repo/brain', 'no-ci', 'Nenhum workflow, check-run ou commit status encontrado', Date.now(), {
+    sha: 'abc123',
+    branch: 'main',
+    watchId: 'watch-1'
+  });
+  const pruned = pruneDeployStatesForRepos(deployStates, [
+    { name: 'Brain', path: 'C:/repo/brain', deployEnabled: false }
+  ]);
+
+  assert.deepStrictEqual(pruned, {});
+});
+
+test('repo sem deploy configurado remove erro legado persistido no prune', () => {
+  const deployErrors = markDeployError({}, 'C:/repo/brain', 'no-ci', 'Nenhum workflow, check-run ou commit status encontrado', Date.now(), {
+    sha: 'abc123',
+    branch: 'main',
+    watchId: 'watch-1'
+  });
+  const pruned = pruneDeployErrorsForRepos(deployErrors, [
+    { name: 'Brain', path: 'C:/repo/brain', deployEnabled: false }
+  ]);
+
+  assert.deepStrictEqual(pruned, {});
 });
 
 test('timeout legado salvo no config agora permanece visivel', () => {

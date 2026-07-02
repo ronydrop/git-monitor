@@ -905,6 +905,9 @@
       const deployDetail = r.deployDetail ? ': ' + r.deployDetail : '';
       return label + deployDetail + gitDetailSuffix(r);
     }
+    if (r.deployEnabled === false) {
+      return 'Sem deploy' + (gitDetail ? ' · ' + gitDetail : '');
+    }
     if (!r.deployError) return gitDetail;
     const deployDetail = r.deployDetail ? ': ' + r.deployDetail : '';
     return 'Deploy falhou' + deployDetail + gitDetailSuffix(r);
@@ -1268,17 +1271,20 @@
 
     const ok = results2.filter(r => r.ok);
     const fail = results2.filter(r => !r.ok);
-    ok.forEach(r => startDeployWatch(null, r.path, r.name, r.deploy));
+    const waitingDeploy = ok.filter(r => r.deploy);
+    waitingDeploy.forEach(r => startDeployWatch(null, r.path, r.name, r.deploy));
     if (ok.length > 0) setTimeout(() => checkRepos(), 500);
 
-    btn.className = ok.length > 0 ? 'btn-push-all running' : 'btn-push-all done';
-    setIconLabel(btn, ok.length > 0 ? 'refresh-cw' : 'check', ok.length + '/' + modified.length, ok.length > 0 ? { spin: true } : {});
+    btn.className = waitingDeploy.length > 0 ? 'btn-push-all running' : 'btn-push-all done';
+    setIconLabel(btn, waitingDeploy.length > 0 ? 'refresh-cw' : 'check', ok.length + '/' + modified.length, waitingDeploy.length > 0 ? { spin: true } : {});
 
     if (fail.length > 0) {
       showCommitToast('err', fail.length + ' falharam: ' + fail.map(r => r.error).join('; ').substring(0, 120));
     }
-    if (ok.length > 0) {
-      showCommitToast('info', ok.length + ' push enviado(s); aguardando deploy');
+    if (waitingDeploy.length > 0) {
+      showCommitToast('info', waitingDeploy.length + ' push enviado(s); aguardando deploy');
+    } else if (ok.length > 0) {
+      showCommitToast('ok', ok.length + ' push enviado(s); sem deploy');
     }
 
     setTimeout(() => {
@@ -1346,10 +1352,17 @@
     const result = await ipcRenderer.invoke('commit-and-push', repoPath);
 
     if (result.ok) {
-      showCommitToast('info', repoName + ': push enviado; aguardando deploy');
-      btn.className = 'btn-commit deploying';
-      setIcon(btn, 'refresh-cw', { spin: true });
-      startDeployWatch(btn, repoPath, repoName, result.deploy);
+      if (result.deploy) {
+        showCommitToast('info', repoName + ': push enviado; aguardando deploy');
+        btn.className = 'btn-commit deploying';
+        setIcon(btn, 'refresh-cw', { spin: true });
+        startDeployWatch(btn, repoPath, repoName, result.deploy);
+      } else {
+        showCommitToast('ok', repoName + ': push enviado; sem deploy');
+        btn.className = 'btn-commit deployed';
+        setIcon(btn, 'check');
+        setTimeout(() => checkRepos(), 900);
+      }
     } else {
       btn.className = 'btn-commit fail';
       setIcon(btn, 'x');
@@ -1376,6 +1389,7 @@
   }
 
   function startDeployWatch(btn, repoPath, repoName, deploy) {
+    if (!deploy) return;
     activeDeployBtns[repoPath] = { btn, repoName, watchId: deploy ? deploy.watchId : '' };
     setLocalDeployState(repoPath, {
       phase: 'waiting',

@@ -1221,7 +1221,7 @@
     renderThemeSelector(rawConfig.theme || 'obsidian');
     document.getElementById('activeRepos').textContent   = '';
     document.getElementById('inactiveRepos').textContent = '';
-    (rawConfig.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false, r.githubToken || ''));
+    (rawConfig.repos || []).forEach(r => addRepo(r.name, r.path, r.enabled !== false, r.githubToken || '', r.deployEnabled === true));
     if (!rawConfig.repos || rawConfig.repos.length === 0) addRepo();
     updateInactiveDivider();
     loadShortcuts();
@@ -1793,11 +1793,12 @@
     return row;
   }
 
-  function addRepo(name, repoPath, enabled, githubToken) {
+  function addRepo(name, repoPath, enabled, githubToken, deployEnabled) {
     name     = name     || '';
     repoPath = repoPath || '';
     enabled  = enabled  !== false;
     githubToken = githubToken || '';
+    deployEnabled = deployEnabled === true;
 
     const activeGroup   = document.getElementById('activeRepos');
     const inactiveGroup = document.getElementById('inactiveRepos');
@@ -1847,12 +1848,30 @@
     const githubControl = buildRepoGithubTokenControl(githubToken);
     const githubRow = makeEl('div', { className: 'repo-github-row' }, [githubLabel, githubControl]);
 
+    const deployCheckbox = makeEl('input', { type: 'checkbox', className: 'deploy-enabled-toggle' });
+    deployCheckbox.checked = deployEnabled;
+    const deployToggle = makeEl('label', { className: 'toggle-switch', title: 'Monitorar deploy/CI apos push' }, [
+      deployCheckbox,
+      makeEl('span', { className: 'toggle-slider' })
+    ]);
+    const deployLabel = makeEl('span', {
+      className: 'repo-github-label',
+      textContent: 'Deploy/CI'
+    });
+    const deployText = makeEl('span', {
+      style: { color: 'var(--text-dim)', fontSize: '12px' },
+      textContent: 'Monitorar status apos push'
+    });
+    const deployControl = makeEl('div', { className: 'key-row-new' }, [deployToggle, deployText]);
+    const deployRow = makeEl('div', { className: 'repo-github-row' }, [deployLabel, deployControl]);
+
     // card
     const card = makeEl('div', { className: 'repo-card' + (enabled ? '' : ' disabled') });
     card.draggable = true;
     card.dataset.originalPath = repoPath;
     card.appendChild(header);
     card.appendChild(pathRow);
+    card.appendChild(deployRow);
     card.appendChild(githubRow);
 
     // events
@@ -1988,6 +2007,7 @@
       const enabled = card.querySelector('.enabled-toggle').checked;
       if (name && path) {
         const repo = { name, path, enabled };
+        repo.deployEnabled = !!(card.querySelector('.deploy-enabled-toggle') && card.querySelector('.deploy-enabled-toggle').checked);
         const tokenInput = card.querySelector('.repo-github-token');
         if (tokenInput) {
           const state = tokenInput.dataset.secretState || 'none';

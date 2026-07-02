@@ -15,7 +15,9 @@ const {
   clearDeployState,
   markDeployState,
   needsAttentionRepo,
+  pruneDeployErrorsForRepos,
   pruneDeployStatesForRepos,
+  repoDeployEnabled,
   repoKey,
   sanitizeDeployErrors,
   sanitizeDeployStates,
@@ -285,6 +287,69 @@ function normalizeAiModel(provider, model) {
     : DEFAULT_AI_MODELS[provider];
 }
 
+function isDeployModeDisabled(mode) {
+  return ['none', 'monitor', 'monitoring', 'disabled', 'off', 'no-deploy'].includes(String(mode || '').toLowerCase());
+}
+
+function isDeployModeEnabled(mode) {
+  return ['enabled', 'deploy', 'ci', 'cicd', 'actions'].includes(String(mode || '').toLowerCase());
+}
+
+function hasValue(value) {
+  if (value === true) return true;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return !!(value && typeof value === 'object' && Object.keys(value).length > 0);
+}
+
+function hasDeployFieldEvidence(repo = {}) {
+  if (repo.hasDeploy === true) return true;
+  return [
+    'deploy',
+    'deployment',
+    'deployCommand',
+    'deployProvider',
+    'deployUrl',
+    'deployWorkflow',
+    'deployWorkflowName',
+    'deployWorkflowFile'
+  ].some(field => hasValue(repo[field]));
+}
+
+function hasLocalWorkflow(repoPath) {
+  if (!repoPath) return false;
+  try {
+    const workflowsDir = path.join(repoPath, '.github', 'workflows');
+    if (!fs.existsSync(workflowsDir)) return false;
+    return fs.readdirSync(workflowsDir).some(name => /\.ya?ml$/i.test(name));
+  } catch (_) {
+    return false;
+  }
+}
+
+function normalizeRepoDeployConfig(repo = {}) {
+  const next = { ...repo };
+  if (next.deployEnabled === false || next.hasDeploy === false || isDeployModeDisabled(next.deployMode)) {
+    next.deployEnabled = false;
+    return next;
+  }
+  if (
+    next.deployEnabled === true ||
+    isDeployModeEnabled(next.deployMode) ||
+    hasDeployFieldEvidence(next) ||
+    hasLocalWorkflow(next.path)
+  ) {
+    next.deployEnabled = true;
+    return next;
+  }
+  next.deployEnabled = false;
+  return next;
+}
+
+function normalizeReposDeployConfig(repos) {
+  return (repos || []).map(repo => normalizeRepoDeployConfig(repo));
+}
+
 function migrateConfigIfNeeded() {
   if (!app.isPackaged) return;
   const oldPath = path.join(path.dirname(process.execPath), 'config.json');
@@ -299,7 +364,7 @@ function migrateConfigIfNeeded() {
 function getDefaultConfig() {
   return {
     repos: [
-      { name: "Meu Projeto", path: "C:\\caminho\\do\\repositorio" },
+      { name: "Meu Projeto", path: "C:\\caminho\\do\\repositorio", deployEnabled: false },
     ],
     intervalSeconds: 30,
     collapsed: false,
@@ -335,6 +400,13 @@ function loadConfig() {
     logger: console
   });
   const cfg = loaded.config;
+  const originalDeployConfig = JSON.stringify({
+    repos: cfg.repos || [],
+    deployErrors: cfg.deployErrors || {},
+    deployStates: cfg.deployStates || {}
+  });
+
+  cfg.repos = normalizeReposDeployConfig(cfg.repos);
 
   // migração: novos campos de authMode
   if (!cfg.anthropicAuthMode) cfg.anthropicAuthMode = 'oauth';
@@ -351,6 +423,17 @@ function loadConfig() {
   cfg.deployStates = sanitizeDeployStates(
     cfg.deployStates && typeof cfg.deployStates === 'object' ? cfg.deployStates : cfg.deployErrors
   );
+  cfg.deployStates = pruneDeployStatesForRepos(cfg.deployStates, cfg.repos);
+  cfg.deployErrors = pruneDeployErrorsForRepos(cfg.deployErrors, cfg.repos);
+
+  const normalizedDeployConfig = JSON.stringify({
+    repos: cfg.repos || [],
+    deployErrors: cfg.deployErrors || {},
+    deployStates: cfg.deployStates || {}
+  });
+  if (normalizedDeployConfig !== originalDeployConfig) {
+    saveConfig(cfg);
+  }
   return cfg;
 }
 
@@ -460,6 +543,7 @@ function mapReposForNotch(results) {
     name: r.name, path: r.path, status: r.status, detail: r.detail,
     branch: r.branch, ahead: r.ahead, behind: r.behind,
     changedFiles: r.changedFiles, remoteUrl: r.remoteUrl, headSha: r.headSha,
+    deployEnabled: r.deployEnabled,
   }, config.deployStates));
   return mapped;
 }
@@ -911,6 +995,7 @@ async function checkAllRepos() {
     const batchResults = await Promise.all(batch.map(async repo => ({
       name: repo.name,
       path: repo.path,
+      deployEnabled: repoDeployEnabled(repo),
       ...await checkRepo(repo.path)
     })));
     results.push(...batchResults);
@@ -1094,7 +1179,9 @@ ipcMain.handle('get-cached-repos', () => {
 });
 
 ipcMain.handle('save-repos', (_, repos) => {
-  config.repos = mergeRepoGithubSecrets(config.repos, repos);
+  config.repos = normalizeReposDeployConfig(mergeRepoGithubSecrets(config.repos, repos));
+  config.deployStates = pruneDeployStatesForRepos(config.deployStates, config.repos);
+  config.deployErrors = pruneDeployErrorsForRepos(config.deployErrors, config.repos);
   saveConfig(config);
   lastRepoResults = null;
   return true;
@@ -1765,8 +1852,10 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
       gitExec('git rev-parse --abbrev-ref HEAD', { cwd: repoPath, timeout: 5000 }).then(o => o.trim()),
       gitExec('git rev-parse HEAD', { cwd: repoPath, timeout: 5000 }).then(o => o.trim())
     ]);
+    const repoConfig = findConfiguredRepo(repoPath);
+    const deployConfigured = repoDeployEnabled(repoConfig);
     const pendingDeploy = getDeployStateForRepo(repoPath);
-    if (!hasUncommitted && isDeployStatePending(pendingDeploy) &&
+    if (deployConfigured && !hasUncommitted && isDeployStatePending(pendingDeploy) &&
         pendingDeploy.sha === initialHeadSha &&
         (!pendingDeploy.branch || pendingDeploy.branch === initialBranch)) {
       return {
@@ -1832,12 +1921,16 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
     ]);
     await gitExec(pushCommand(branch), { cwd: repoPath, timeout: 30000 });
 
+    if (!deployConfigured) {
+      return { ok: true, title, body, deploy: null, deploySkipped: true, deployDetail: 'Sem deploy' };
+    }
+
     const gh = parseGithubRemote(remoteUrl);
     const deploy = {
       phase: 'waiting',
       detail: 'Aguardando CI iniciar',
       repoPath,
-      repoName: (findConfiguredRepo(repoPath) || {}).name || '',
+      repoName: (repoConfig || {}).name || '',
       sha,
       branch,
       remoteUrl,
@@ -2064,6 +2157,14 @@ function startDeployWatcher(context = {}) {
   const repoPath = context.repoPath;
   if (!repoPath) return;
 
+  const repoConfig = findConfiguredRepo(repoPath);
+  if (!repoDeployEnabled(repoConfig)) {
+    config.deployStates = clearDeployState(config.deployStates, repoPath);
+    config.deployErrors = clearDeployState(config.deployErrors, repoPath);
+    saveConfig(config);
+    return;
+  }
+
   const key = deployWatcherKey(repoPath);
   const current = getDeployStateForRepo(repoPath);
   const watchId = context.watchId || (current && current.watchId) || createDeployWatchId(repoPath, context.sha || '');
@@ -2071,7 +2172,6 @@ function startDeployWatcher(context = {}) {
 
   if (deployWatchers[key]) clearTimeout(deployWatchers[key].timer);
 
-  const repoConfig = findConfiguredRepo(repoPath);
   const repoName = context.repoName || (repoConfig && repoConfig.name) || repoPath;
   const startedAt = context.startedAt || (current && current.startedAt) || Date.now();
   let attempts = Number(context.attempts || 0) || 0;
@@ -2166,6 +2266,12 @@ function startDeployWatcher(context = {}) {
 async function resumePendingDeployWatchers() {
   for (const repo of config.repos || []) {
     if (repo.enabled === false) continue;
+    if (!repoDeployEnabled(repo)) {
+      config.deployStates = clearDeployState(config.deployStates, repo.path);
+      config.deployErrors = clearDeployState(config.deployErrors, repo.path);
+      saveConfig(config);
+      continue;
+    }
     const state = getDeployStateForRepo(repo.path);
     if (!isDeployStatePending(state)) continue;
 
@@ -2209,6 +2315,7 @@ ipcMain.on('watch-deploy-start', (event, payload = {}) => {
   const deploy = payload.deploy || {};
   const repoPath = payload.repoPath || deploy.repoPath;
   if (!repoPath) return;
+  if (!repoDeployEnabled(findConfiguredRepo(repoPath))) return;
 
   const current = getDeployStateForRepo(repoPath);
   if (deploy.watchId && current && current.watchId && current.watchId !== deploy.watchId) return;

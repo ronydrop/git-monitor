@@ -685,6 +685,9 @@
       const deployDetail = r.deployDetail ? ': ' + r.deployDetail : '';
       return label + deployDetail + (gitDetail ? ' · ' + gitDetail : '');
     }
+    if (r.deployEnabled === false) {
+      return 'Sem deploy' + (gitDetail ? ' · ' + gitDetail : '');
+    }
     if (!r.deployError) return gitDetail;
     const deployDetail = r.deployDetail ? ': ' + r.deployDetail : '';
     return 'Deploy falhou' + deployDetail + (gitDetail ? ' · ' + gitDetail : '');
@@ -1180,25 +1183,31 @@
     pushAllPending = 0;
     pushAllTotal = 0;
     pushAllFailures = 0;
+    let pushFailures = 0;
 
     await Promise.all(pushable.map((r, i) =>
       new Promise(resolve => setTimeout(async () => {
-        let ok = false, errMsg = '';
+        let ok = false, errMsg = '', deploy = null;
         try {
           const res = await ipcRenderer.invoke('commit-and-push', r.path);
           ok = !!(res && res.ok);
           errMsg = (res && res.error) || '';
+          deploy = res && res.deploy ? res.deploy : null;
         } catch (e) {
           errMsg = e.message || String(e);
         }
         runningActions.delete(r.path);
-        if (ok) {
+        if (ok && deploy) {
           markRowDeploying(r.path);
           deployingRows[r.path] = { repoName: r.name || r.path, fromPushAll: true, startedAt: Date.now() };
-          ipcRenderer.send('watch-deploy-start', { repoPath: r.path, repoName: r.name || r.path });
+          ipcRenderer.send('watch-deploy-start', { repoPath: r.path, repoName: r.name || r.path, deploy });
           pushAllPending++;
           pushAllTotal++;
+        } else if (ok) {
+          markRowResult(r.path, 'done', '');
         } else {
+          pushFailures++;
+          pushAllFailures++;
           markRowResult(r.path, 'fail', errMsg);
         }
         done++;
@@ -1208,7 +1217,7 @@
     ));
 
     if (pushAllTotal === 0) {
-      setIconLabel(btnPushAll, 'x', 'Push falhou', { size: 14 });
+      setIconLabel(btnPushAll, pushFailures === 0 ? 'check' : 'x', pushFailures === 0 ? 'Feito!' : `${pushFailures} falharam`, { size: 14 });
       setTimeout(() => {
         setIconLabel(btnPushAll, 'arrow-up', 'Push All', { size: 14 });
         btnPushAll.disabled = false;
@@ -1262,12 +1271,13 @@
       runningActions.add(p);
       if (act === 'push') setLocalDeployError(p, null);
       renderList(); updateSummary(); updateShape();
-      let ok = false, errMsg = '';
+      let ok = false, errMsg = '', deploy = null;
       try {
         const channel = act === 'push' ? 'commit-and-push' : 'git-pull';
         const res = await ipcRenderer.invoke(channel, p);
         ok = !!(res && res.ok);
         errMsg = (res && res.error) || '';
+        deploy = res && res.deploy ? res.deploy : null;
       } catch (e) {
         ok = false;
         errMsg = e.message || String(e);
@@ -1282,10 +1292,13 @@
       } else if (act === 'pull') {
         markRowResult(p, 'done', '');
         rowToast('ok', rname + ': Pull concluído!');
-      } else {
+      } else if (deploy) {
         markRowDeploying(p);
         deployingRows[p] = { repoName: rname, fromPushAll: false, startedAt: Date.now() };
-        ipcRenderer.send('watch-deploy-start', { repoPath: p, repoName: rname });
+        ipcRenderer.send('watch-deploy-start', { repoPath: p, repoName: rname, deploy });
+      } else {
+        markRowResult(p, 'done', '');
+        rowToast('ok', rname + ': Push enviado; sem deploy');
       }
       setTimeout(() => refresh(), 900);
     }

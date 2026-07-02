@@ -193,6 +193,16 @@ test('startup revalidates persisted pending deploys before resuming watchers', (
   assert.match(main, /await resumePendingDeployWatchers\s*\(\s*\)/);
 });
 
+test('startup prunes persisted deploy state for repos without deploy', () => {
+  const main = read('main.js');
+
+  assert.match(main, /pruneDeployErrorsForRepos/);
+  assert.match(main, /function loadConfig\s*\(\s*\)[\s\S]*cfg\.repos = normalizeReposDeployConfig\(cfg\.repos\)/);
+  assert.match(main, /function loadConfig\s*\(\s*\)[\s\S]*cfg\.deployStates = pruneDeployStatesForRepos\(cfg\.deployStates,\s*cfg\.repos\)/);
+  assert.match(main, /function loadConfig\s*\(\s*\)[\s\S]*cfg\.deployErrors = pruneDeployErrorsForRepos\(cfg\.deployErrors,\s*cfg\.repos\)/);
+  assert.match(main, /if \(normalizedDeployConfig !== originalDeployConfig\) \{[\s\S]*saveConfig\(cfg\)/);
+});
+
 test('repo lists are sorted with deploy and git pending items first', () => {
   const main = read('main.js');
   const repoState = read('repo-state.js');

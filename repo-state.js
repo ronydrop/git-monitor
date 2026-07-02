@@ -23,6 +23,10 @@ function needsAttentionRepo(repo) {
   return !!(repo && (isPendingRepo(repo) || repo.deployPending || repo.deployError));
 }
 
+function repoDeployEnabled(repo) {
+  return !(repo && repo.deployEnabled === false);
+}
+
 function repoAttentionRank(repo) {
   if (repo && repo.deployPending) return 0;
   if (repo && repo.deployError) return 1;
@@ -40,8 +44,9 @@ function repoAttentionRank(repo) {
 }
 
 function repoVisualStatus(repo, isDeploying = false) {
-  if (repo && repo.deployError) return 'deploy-error';
-  if (isDeploying || (repo && repo.deployPending)) return 'deploying';
+  const deployEnabled = repoDeployEnabled(repo);
+  if (deployEnabled && repo && repo.deployError) return 'deploy-error';
+  if (deployEnabled && (isDeploying || (repo && repo.deployPending))) return 'deploying';
   return (repo && repo.status) || 'clean';
 }
 
@@ -146,16 +151,18 @@ function sanitizeDeployErrors(deployErrors) {
 }
 
 function applyDeployState(repo, deployStates) {
+  const deployEnabled = repoDeployEnabled(repo);
   const rawEntry = deployStates && deployStates[repoKey(repo.path)];
-  const entry = isDeployStateEntry(rawEntry) && !isDeployStateStaleForRepo(repo, rawEntry)
+  const entry = deployEnabled && isDeployStateEntry(rawEntry) && !isDeployStateStaleForRepo(repo, rawEntry)
     ? rawEntry
     : null;
   const next = {
     ...repo,
+    deployEnabled,
     deployPending: isDeployPendingEntry(entry),
     deployError: isDeployErrorEntry(entry),
-    deployPhase: entry ? entry.phase : '',
-    deployDetail: entry ? entry.detail : '',
+    deployPhase: deployEnabled ? (entry ? entry.phase : '') : 'none',
+    deployDetail: deployEnabled ? (entry ? entry.detail : '') : 'Sem deploy',
     deployFailedAt: entry ? entry.failedAt : null
   };
   next.pending = isPendingRepo(next);
@@ -203,7 +210,7 @@ function pruneDeployStatesForRepos(deployStates, repos) {
   let next = sanitizeDeployStates(deployStates);
   for (const repo of repos || []) {
     const key = repoKey(repo.path);
-    if (next[key] && isDeployStateStaleForRepo(repo, next[key])) {
+    if (next[key] && (!repoDeployEnabled(repo) || isDeployStateStaleForRepo(repo, next[key]))) {
       delete next[key];
     }
   }
@@ -267,6 +274,7 @@ module.exports = {
   needsAttentionRepo,
   pruneDeployErrorsForRepos,
   pruneDeployStatesForRepos,
+  repoDeployEnabled,
   repoKey,
   repoVisualStatus,
   sanitizeDeployErrors,

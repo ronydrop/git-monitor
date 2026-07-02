@@ -1,6 +1,6 @@
 {
   "name": "git-monitor",
-  "version": "1.2.63",
+  "version": "1.2.64",
   "description": "Mini widget desktop para monitorar repositórios Git em tempo real",
   "main": "main.js",
   "author": {
@@ -14,7 +14,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "test": "node tests/commit-message.test.js && node tests/deploy-status.test.js && node tests/git-sync.test.js && node tests/config-store.test.js && node tests/github-auth.test.js && node tests/release-pipeline.test.js && node tests/ui-behavior.test.js",
+    "test": "node tests/syntax.test.js && node tests/commit-message.test.js && node tests/deploy-status.test.js && node tests/git-sync.test.js && node tests/config-store.test.js && node tests/github-auth.test.js && node tests/release-pipeline.test.js && node tests/ui-behavior.test.js",
     "build": "electron-builder --win portable",
     "build-installer": "electron-builder --win nsis",
     "release": "electron-builder --win portable nsis --publish always",
