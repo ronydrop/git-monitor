@@ -2,6 +2,8 @@ const assert = require('assert');
 const {
   findGithubApiProblem,
   githubApiFailureDetail,
+  githubApiRetryDetail,
+  isTransientGithubApiProblem,
   resolveDeployPhase,
   isTerminalDeployPhase
 } = require('../deploy-status');
@@ -164,6 +166,28 @@ test('erro de parse da GitHub API com HTTP 200 nao vira ausencia de CI', () => {
     githubApiFailureDetail(apiProblem, {}, {}, { owner: 'ronydrop', repo: 'git-monitor' }),
     /Resposta invalida/
   );
+  assert.strictEqual(isTransientGithubApiProblem([apiProblem]), true);
+});
+
+test('HTTP 503 com HTML da GitHub API e transitorio e informa nova tentativa', () => {
+  const responses = [
+    { statusCode: 503, data: {}, error: "Resposta invalida da API GitHub: Unexpected token '<'" },
+    { statusCode: 503, data: {}, error: "Resposta invalida da API GitHub: Unexpected token '<'" },
+    { statusCode: 503, data: {}, error: "Resposta invalida da API GitHub: Unexpected token '<'" }
+  ];
+
+  assert.strictEqual(isTransientGithubApiProblem(responses), true);
+  assert.match(githubApiRetryDetail(responses), /HTTP 503/);
+  assert.match(githubApiRetryDetail(responses), /nova tentativa autom.tica/i);
+});
+
+test('erro definitivo de autenticacao nao e tratado como indisponibilidade transitoria', () => {
+  const responses = [
+    { statusCode: 401, data: { message: 'Bad credentials' }, error: '' },
+    { statusCode: 503, data: {}, error: 'Service unavailable' }
+  ];
+
+  assert.strictEqual(isTransientGithubApiProblem(responses), false);
 });
 
 test('mantem erro de deploy separado do status git pendente', () => {

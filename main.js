@@ -7,6 +7,8 @@ const https = require('https');
 const {
   findGithubApiProblem,
   githubApiFailureDetail,
+  githubApiRetryDetail,
+  isTransientGithubApiProblem,
   resolveDeployPhase
 } = require('./deploy-status');
 const {
@@ -1086,7 +1088,19 @@ async function resolveDeployPhaseForRepoSnapshot(repo, deployState = null) {
   const hasWorkflowAccess = workflowRes.statusCode === 200;
   const hasCheckAccess  = checkRes.statusCode === 200;
   const hasStatusAccess = statusRes.statusCode === 200;
+  const apiResponses = [workflowRes, checkRes, statusRes];
   if (!hasWorkflowAccess && !hasCheckAccess && !hasStatusAccess) {
+    if (isTransientGithubApiProblem(apiResponses)) {
+      return {
+        phase: 'waiting',
+        detail: githubApiRetryDetail(apiResponses),
+        sha,
+        branch,
+        remoteUrl,
+        owner: gh.owner,
+        repo: gh.repo
+      };
+    }
     return {
       phase: 'error',
       detail: githubApiFailureDetail(workflowRes, checkRes, statusRes, gh),
@@ -1120,6 +1134,17 @@ async function resolveDeployPhaseForRepoSnapshot(repo, deployState = null) {
     }
     const apiProblem = findGithubApiProblem([workflowRes, checkRes, statusRes]);
     if (apiProblem) {
+      if (isTransientGithubApiProblem(apiResponses)) {
+        return {
+          phase: 'waiting',
+          detail: githubApiRetryDetail(apiResponses),
+          sha,
+          branch,
+          remoteUrl,
+          owner: gh.owner,
+          repo: gh.repo
+        };
+      }
       return {
         phase: 'error',
         detail: githubApiFailureDetail(workflowRes, checkRes, statusRes, gh),
@@ -2089,8 +2114,20 @@ async function resolveDeployWatchPhase(context, attempts) {
   const hasWorkflowAccess = workflowRes.statusCode === 200;
   const hasCheckAccess  = checkRes.statusCode === 200;
   const hasStatusAccess = statusRes.statusCode === 200;
+  const apiResponses = [workflowRes, checkRes, statusRes];
 
   if (!hasWorkflowAccess && !hasCheckAccess && !hasStatusAccess) {
+    if (isTransientGithubApiProblem(apiResponses)) {
+      return {
+        phase: 'waiting',
+        detail: githubApiRetryDetail(apiResponses),
+        sha,
+        branch,
+        remoteUrl,
+        owner: parsed.owner,
+        repo: parsed.repo
+      };
+    }
     return {
       phase: 'error',
       detail: githubApiFailureDetail(workflowRes, checkRes, statusRes, parsed),
@@ -2134,6 +2171,18 @@ async function resolveDeployWatchPhase(context, attempts) {
     if (attempts >= DEPLOY_NO_CI_ATTEMPTS) {
       const apiProblem = findGithubApiProblem([workflowRes, checkRes, statusRes]);
       if (apiProblem) {
+        if (isTransientGithubApiProblem(apiResponses)) {
+          return {
+            phase: 'waiting',
+            detail: githubApiRetryDetail(apiResponses),
+            sha,
+            branch,
+            remoteUrl,
+            owner: parsed.owner,
+            repo: parsed.repo,
+            _diag: diag
+          };
+        }
         return {
           phase: 'error',
           detail: githubApiFailureDetail(workflowRes, checkRes, statusRes, parsed),

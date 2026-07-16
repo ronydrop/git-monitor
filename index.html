@@ -1009,7 +1009,9 @@
       nameEl.textContent = r.name || '';
       const detailEl = document.createElement('div');
       detailEl.className = 'repo-detail';
-      detailEl.textContent = detailText(r, isDeploying);
+      const fullDetailText = detailText(r, isDeploying);
+      detailEl.textContent = fullDetailText;
+      if (r.deployDetail) detailEl.title = fullDetailText;
       const repoDeployId = deployId(r.path);
       const deployLabel = document.createElement('div');
       deployLabel.className = 'deploy-label';

@@ -122,6 +122,31 @@ function findGithubApiProblem(responses = []) {
     null;
 }
 
+function isTransientGithubApiResponse(response) {
+  if (!response) return false;
+  const code = Number(response.statusCode) || 0;
+
+  if (code === 0) return !!response.error;
+  if (code === 408 || code === 429 || code >= 500) return true;
+  return code >= 200 && code < 300 && !!response.error;
+}
+
+function isTransientGithubApiProblem(responses = []) {
+  const problems = asList(responses).filter(response => {
+    if (!response) return false;
+    return !!response.error || Number(response.statusCode) !== 200;
+  });
+
+  return problems.length > 0 && problems.every(isTransientGithubApiResponse);
+}
+
+function githubApiRetryDetail(responses = []) {
+  const transient = asList(responses).find(isTransientGithubApiResponse) || {};
+  const code = Number(transient.statusCode) || 0;
+  const httpDetail = code ? ` (HTTP ${code})` : '';
+  return `API do GitHub temporariamente indisponível${httpDetail}; nova tentativa automática`;
+}
+
 function githubApiFailureDetail(workflowRes = {}, checkRes = {}, statusRes = {}, gh = {}) {
   const responses = [workflowRes, checkRes, statusRes].filter(Boolean);
   const failed = responses.find(res => res.error) ||
@@ -237,6 +262,8 @@ function resolveDeployPhase(input = {}) {
 module.exports = {
   findGithubApiProblem,
   githubApiFailureDetail,
+  githubApiRetryDetail,
+  isTransientGithubApiProblem,
   resolveDeployPhase,
   isTerminalDeployPhase
 };

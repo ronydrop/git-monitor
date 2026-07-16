@@ -173,6 +173,26 @@ test('renderers let pending deploy dominate clean git visual status', () => {
   assert.match(notch, /repos\.filter\(r => r\.needsAttention \|\| r\.pending \|\| r\.deployPending \|\| r\.deployError\)/);
 });
 
+test('transient GitHub API failures stay pending instead of becoming deploy errors', () => {
+  const main = read('main.js');
+
+  assert.match(main, /isTransientGithubApiProblem/);
+  assert.match(main, /githubApiRetryDetail/);
+  assert.ok(
+    (main.match(/if \(isTransientGithubApiProblem\(apiResponses\)\)/g) || []).length >= 2,
+    'snapshot reconciliation and active watcher must both handle transient API failures'
+  );
+  assert.match(main, /isTransientGithubApiProblem\(apiResponses\)[\s\S]*phase:\s*'waiting'[\s\S]*githubApiRetryDetail\(apiResponses\)/);
+});
+
+test('deploy status details expose the complete reason in native hover tooltips', () => {
+  const index = read('index.html');
+  const notch = read('notch.html');
+
+  assert.match(index, /const fullDetailText = detailText\(r,\s*isDeploying\);[\s\S]*detailEl\.textContent = fullDetailText;[\s\S]*if \(r\.deployDetail\) detailEl\.title = fullDetailText;/);
+  assert.match(notch, /const fullDetailText = detailText\(r\);[\s\S]*className:\s*'detail',[\s\S]*textContent:\s*fullDetailText,[\s\S]*title:\s*r\.deployDetail \? fullDetailText : ''/);
+});
+
 test('error alerts stay visible for at least ten seconds', () => {
   const index = read('index.html');
   const notch = read('notch.html');

@@ -849,7 +849,12 @@
     const nameGroup = makeEl('div', { className: 'name-group' });
     nameGroup.appendChild(makeEl('span', { className: 'name', textContent: r.name || '(sem nome)' }));
     if (r.path) nameGroup.appendChild(makeEl('span', { className: 'path', textContent: r.path }));
-    const detail = makeEl('span', { className: 'detail', textContent: detailText(r) });
+    const fullDetailText = detailText(r);
+    const detail = makeEl('span', {
+      className: 'detail',
+      textContent: fullDetailText,
+      title: r.deployDetail ? fullDetailText : ''
+    });
 
     const actions = makeEl('div', { className: 'actions' });
 
