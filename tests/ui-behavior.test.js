@@ -185,6 +185,22 @@ test('transient GitHub API failures stay pending instead of becoming deploy erro
   assert.match(main, /isTransientGithubApiProblem\(apiResponses\)[\s\S]*phase:\s*'waiting'[\s\S]*githubApiRetryDetail\(apiResponses\)/);
 });
 
+test('deploy reconciliation uses persisted deadline and phase-aware detail', () => {
+  const main = read('main.js');
+
+  assert.match(main, /applyDeployWatchDeadline/);
+  assert.ok(
+    (main.match(/applyDeployWatchDeadline\(/g) || []).length >= 2,
+    'snapshot reconciliation and active watcher must share the persisted deadline'
+  );
+  assert.match(main, /deployPhaseDetail/);
+  assert.ok(
+    (main.match(/detail:\s*deployPhaseDetail\(/g) || []).length >= 3,
+    'every persisted deploy update must use phase-aware detail'
+  );
+  assert.doesNotMatch(main, /DEPLOY_MAX_ATTEMPTS/);
+});
+
 test('deploy status details expose the complete reason in native hover tooltips', () => {
   const index = read('index.html');
   const notch = read('notch.html');

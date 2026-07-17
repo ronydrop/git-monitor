@@ -1,4 +1,5 @@
 const assert = require('assert');
+const deployStatus = require('../deploy-status');
 const {
   findGithubApiProblem,
   githubApiFailureDetail,
@@ -6,7 +7,7 @@ const {
   isTransientGithubApiProblem,
   resolveDeployPhase,
   isTerminalDeployPhase
-} = require('../deploy-status');
+} = deployStatus;
 const {
   applyDeployState,
   applyDeployWatchUpdate,
@@ -47,6 +48,121 @@ test('mantem pendente quando um workflow falhou e outro ainda esta rodando', () 
   assert.match(result.failedDetail, /Deploy Production/);
   assert.match(result.job, /falhou/);
   assert.match(result.job, /Gateway Portal Vercel Guard/);
+});
+
+test('falha terminal domina quando somente commit status externo continua pendente', () => {
+  const result = resolveDeployPhase({
+    workflowRuns: [
+      { name: 'CI Quality Gate', status: 'completed', conclusion: 'failure' }
+    ],
+    checkRuns: [
+      { name: 'Smoke test production /login + /register', status: 'completed', conclusion: 'failure' }
+    ],
+    statuses: [
+      { context: 'Vercel', state: 'pending' }
+    ],
+    combinedState: 'pending',
+    statusTotal: 1
+  });
+
+  assert.strictEqual(result.phase, 'failure');
+  assert.match(result.detail, /CI Quality Gate/);
+  assert.match(result.detail, /Smoke test production/);
+});
+
+test('commit status externo pendente sem falha permanece em andamento', () => {
+  const result = resolveDeployPhase({
+    workflowRuns: [],
+    checkRuns: [],
+    statuses: [
+      { context: 'Vercel', state: 'pending', created_at: '2026-07-16T23:52:23Z' }
+    ],
+    combinedState: 'pending',
+    statusTotal: 1
+  });
+
+  assert.strictEqual(result.phase, 'running');
+  assert.strictEqual(result.job, 'Vercel');
+});
+
+test('detalhe persistido acompanha a fase em vez de esconder o job ativo', () => {
+  assert.strictEqual(typeof deployStatus.deployPhaseDetail, 'function');
+  if (typeof deployStatus.deployPhaseDetail !== 'function') return;
+
+  assert.strictEqual(deployStatus.deployPhaseDetail({
+    phase: 'running',
+    job: '1 falhou, Vercel',
+    failedDetail: 'CI Quality Gate'
+  }), '1 falhou, Vercel');
+  assert.strictEqual(deployStatus.deployPhaseDetail({
+    phase: 'failure',
+    detail: 'CI Quality Gate',
+    failedDetail: 'CI Quality Gate, Smoke test production'
+  }), 'CI Quality Gate, Smoke test production');
+});
+
+test('deadline persistido encerra status pendente mesmo depois de restart', () => {
+  assert.strictEqual(typeof deployStatus.applyDeployWatchDeadline, 'function');
+  assert.strictEqual(typeof deployStatus.DEPLOY_WATCH_MAX_AGE_MS, 'number');
+  if (typeof deployStatus.applyDeployWatchDeadline !== 'function') return;
+
+  const startedAt = 1_000_000;
+  const result = deployStatus.applyDeployWatchDeadline(
+    { phase: 'running', job: 'Vercel' },
+    { phase: 'running', startedAt, updatedAt: startedAt + 1000 },
+    startedAt + deployStatus.DEPLOY_WATCH_MAX_AGE_MS + 1
+  );
+
+  assert.strictEqual(result.phase, 'timeout');
+  assert.match(result.detail, /45 minutos/);
+});
+
+test('timeout nao reabre com sinal antigo mas rerun real inicia novo prazo', () => {
+  assert.strictEqual(typeof deployStatus.applyDeployWatchDeadline, 'function');
+  if (typeof deployStatus.applyDeployWatchDeadline !== 'function') return;
+
+  const state = {
+    phase: 'timeout',
+    detail: 'Monitoramento expirou apos 45 minutos',
+    startedAt: 1000,
+    updatedAt: 5000,
+    failedAt: 5000
+  };
+  const stale = deployStatus.applyDeployWatchDeadline(
+    { phase: 'running', job: 'Vercel', activeRunStartedAt: 4000 },
+    state,
+    6000
+  );
+  const rerun = deployStatus.applyDeployWatchDeadline(
+    { phase: 'running', job: 'CI Quality Gate', activeRunStartedAt: 7000 },
+    state,
+    8000
+  );
+
+  assert.strictEqual(stale.phase, 'timeout');
+  assert.strictEqual(stale.detail, state.detail);
+  assert.strictEqual(rerun.phase, 'running');
+  assert.strictEqual(rerun.resetStartedAt, true);
+  assert.strictEqual(rerun.startedAt, 7000);
+});
+
+test('novo run ativo substitui startedAt antigo no estado persistido', () => {
+  const repoPath = 'C:/repo/app';
+  const initial = markDeployState({}, repoPath, 'timeout', 'Monitoramento expirou', 5000, {
+    startedAt: 1000,
+    watchId: 'watch-1'
+  });
+  const update = applyDeployWatchUpdate(initial, repoPath, {
+    phase: 'running',
+    detail: 'CI Quality Gate',
+    watchId: 'watch-1',
+    resetStartedAt: true,
+    startedAt: 7000
+  }, 8000);
+  const entry = update.deployStates[repoKey(repoPath)];
+
+  assert.strictEqual(entry.phase, 'running');
+  assert.strictEqual(entry.startedAt, 7000);
 });
 
 test('marca falha quando workflow terminou com erro', () => {

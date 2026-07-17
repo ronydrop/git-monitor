@@ -5,6 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const {
+  applyDeployWatchDeadline,
+  deployPhaseDetail,
   findGithubApiProblem,
   githubApiFailureDetail,
   githubApiRetryDetail,
@@ -1166,14 +1168,15 @@ async function resolveDeployPhaseForRepoSnapshot(repo, deployState = null) {
     };
   }
 
+  const resolvedPhase = resolveDeployPhase({
+    checkRuns,
+    workflowRuns,
+    statuses,
+    combinedState: hasStatusAccess ? statusRes.data.state : null,
+    statusTotal
+  });
   return {
-    ...resolveDeployPhase({
-      checkRuns,
-      workflowRuns,
-      statuses,
-      combinedState: hasStatusAccess ? statusRes.data.state : null,
-      statusTotal
-    }),
+    ...applyDeployWatchDeadline(resolvedPhase, deployState),
     sha,
     branch,
     remoteUrl,
@@ -1197,7 +1200,7 @@ async function reconcileDeployStatesForRepos(results) {
     } else {
       const update = applyDeployWatchUpdate(next, repo.path, {
         ...deployPhase,
-        detail: deployPhase.failedDetail || deployPhase.detail || deployPhase.job || '',
+        detail: deployPhaseDetail(deployPhase),
         watchId: current.watchId || '',
         sha: deployPhase.sha,
         branch: deployPhase.branch,
@@ -2059,7 +2062,6 @@ ipcMain.handle('get-diff', async (_, repoPath) => {
 
 // Deploy watchers ativos por repoPath
 const deployWatchers = {};
-const DEPLOY_MAX_ATTEMPTS = 180;
 const DEPLOY_NO_CI_ATTEMPTS = 5;
 const DEPLOY_INITIAL_DELAY_MS = 3000;
 const DEPLOY_POLL_INTERVAL_MS = 4000;
@@ -2208,8 +2210,15 @@ async function resolveDeployWatchPhase(context, attempts) {
     return { phase: 'waiting', detail: 'Aguardando CI iniciar', sha, branch, remoteUrl, owner: parsed.owner, repo: parsed.repo, _diag: diag };
   }
 
+  const resolvedPhase = resolveDeployPhase({
+    checkRuns,
+    workflowRuns,
+    statuses,
+    combinedState,
+    statusTotal
+  });
   return {
-    ...resolveDeployPhase({ checkRuns, workflowRuns, statuses, combinedState, statusTotal }),
+    ...applyDeployWatchDeadline(resolvedPhase, context),
     sha,
     branch,
     remoteUrl,
@@ -2222,7 +2231,7 @@ async function resolveDeployWatchPhase(context, attempts) {
 function updateDeployStateFromWatch(repoPath, res, watchId) {
   const update = applyDeployWatchUpdate(config.deployStates, repoPath, {
     ...res,
-    detail: res.failedDetail || res.detail || res.job || '',
+    detail: deployPhaseDetail(res),
     watchId
   }, Date.now());
   config.deployStates = update.deployStates;
@@ -2305,14 +2314,6 @@ function startDeployWatcher(context = {}) {
       return;
     }
 
-    if ((res.phase === 'waiting' || res.phase === 'running') && attempts >= DEPLOY_MAX_ATTEMPTS) {
-      res = {
-        ...res,
-        phase: 'timeout',
-        detail: 'Monitoramento expirou sem conclusao no GitHub'
-      };
-    }
-
     if (res._diag) console.log('[deploy-watch]', JSON.stringify({ ...res._diag, emittedPhase: res.phase }));
 
     const update = updateDeployStateFromWatch(repoPath, { ...res, watchId }, watchId);
@@ -2367,7 +2368,7 @@ async function resumePendingDeployWatchers() {
 
       const update = applyDeployWatchUpdate(config.deployStates, repo.path, {
         ...deployPhase,
-        detail: deployPhase.failedDetail || deployPhase.detail || deployPhase.job || '',
+        detail: deployPhaseDetail(deployPhase),
         watchId: state.watchId || '',
         sha: deployPhase.sha,
         branch: deployPhase.branch,

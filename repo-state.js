@@ -246,7 +246,9 @@ function applyDeployWatchUpdate(deployStates, repoPath, update = {}, now = Date.
     owner: update.owner || (current && current.owner) || '',
     repo: update.repo || (current && current.repo) || '',
     watchId: watchId || (current && current.watchId) || '',
-    startedAt: (current && current.startedAt) || update.startedAt || now
+    startedAt: update.resetStartedAt
+      ? (update.startedAt || now)
+      : ((current && current.startedAt) || update.startedAt || now)
   };
 
   return {

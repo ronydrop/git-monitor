@@ -17,6 +17,8 @@ const TERMINAL_PHASES = new Set([
   'no-token',
   'no-github'
 ]);
+const DEPLOY_WATCH_MAX_AGE_MS = 45 * 60 * 1000;
+const DEPLOY_WATCH_TIMEOUT_DETAIL = 'Monitoramento expirou após 45 minutos sem conclusão no GitHub';
 
 function asList(value) {
   return Array.isArray(value) ? value : [];
@@ -35,6 +37,13 @@ function latestStatuses(statuses) {
 
 function runTime(run) {
   return Date.parse(run.updated_at || run.run_started_at || run.created_at || '') || 0;
+}
+
+function runStartedAt(run) {
+  if (!run) return 0;
+  return Date.parse(
+    run.run_started_at || run.started_at || run.created_at || run.updated_at || ''
+  ) || 0;
 }
 
 function runNumber(run) {
@@ -111,6 +120,63 @@ function failureCountText(count) {
 
 function isTerminalDeployPhase(phase) {
   return TERMINAL_PHASES.has(phase);
+}
+
+function deployPhaseDetail(result = {}) {
+  if (result.phase === 'running') {
+    return result.job || result.detail || result.failedDetail || '';
+  }
+  if (result.phase === 'failure') {
+    return result.failedDetail || result.detail || result.job || '';
+  }
+  return result.detail || result.job || result.failedDetail || '';
+}
+
+function applyDeployWatchDeadline(
+  result = {},
+  deployState = {},
+  now = Date.now(),
+  maxAgeMs = DEPLOY_WATCH_MAX_AGE_MS
+) {
+  if (result.phase !== 'waiting' && result.phase !== 'running') return result;
+
+  const activeRunStartedAt = Number(result.activeRunStartedAt) || 0;
+  const stateUpdatedAt = Number(
+    deployState.updatedAt || deployState.failedAt || deployState.startedAt
+  ) || 0;
+  const hasNewActiveRun = activeRunStartedAt > stateUpdatedAt;
+  const startedAt = hasNewActiveRun
+    ? activeRunStartedAt
+    : (Number(deployState.startedAt) || 0);
+
+  if (deployState.phase === 'timeout' && !hasNewActiveRun) {
+    return {
+      ...result,
+      phase: 'timeout',
+      detail: deployState.detail || DEPLOY_WATCH_TIMEOUT_DETAIL,
+      job: '',
+      failed: false,
+      failedDetail: ''
+    };
+  }
+
+  if (startedAt && now - startedAt >= maxAgeMs) {
+    return {
+      ...result,
+      phase: 'timeout',
+      detail: DEPLOY_WATCH_TIMEOUT_DETAIL,
+      job: '',
+      failed: false,
+      failedDetail: ''
+    };
+  }
+
+  if (!hasNewActiveRun) return result;
+  return {
+    ...result,
+    resetStartedAt: true,
+    startedAt: activeRunStartedAt
+  };
 }
 
 function findGithubApiProblem(responses = []) {
@@ -213,6 +279,16 @@ function resolveDeployPhase(input = {}) {
   ];
   if (combinedFailed) failedNames.push('commit status');
   const failedDetail = failedNames.length > 0 ? failedNames.join(', ') : 'deploy falhou';
+  const pendingRunCount = pendingCheckRuns.length + pendingWorkflowRuns.length;
+  const failedRunCount = failedCheckRuns.length + failedWorkflowRuns.length;
+
+  if (failedRunCount > 0 && pendingRunCount === 0) {
+    return {
+      phase: 'failure',
+      detail: failedDetail,
+      failedDetail
+    };
+  }
 
   if (pendingCount > 0) {
     const activeWorkflow =
@@ -235,13 +311,19 @@ function resolveDeployPhase(input = {}) {
       job = `${failureCountText(failedCount)}, ${job}`;
     }
 
+    const activeRunStartedAt = Math.max(
+      runStartedAt(activeWorkflow),
+      runStartedAt(activeCheck)
+    );
+
     return {
       phase: 'running',
       job,
       total,
       done: Math.max(0, total - pendingCount),
       failed: failedCount > 0,
-      failedDetail: failedCount > 0 ? failedDetail : ''
+      failedDetail: failedCount > 0 ? failedDetail : '',
+      activeRunStartedAt
     };
   }
 
@@ -260,6 +342,9 @@ function resolveDeployPhase(input = {}) {
 }
 
 module.exports = {
+  applyDeployWatchDeadline,
+  DEPLOY_WATCH_MAX_AGE_MS,
+  deployPhaseDetail,
   findGithubApiProblem,
   githubApiFailureDetail,
   githubApiRetryDetail,
