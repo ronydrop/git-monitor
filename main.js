@@ -460,6 +460,15 @@ let tray;
 let config;
 const WIDGET_TOPMOST_WATCHDOG_MS = 3000;
 let widgetTopmostWatchdog = null;
+// Pollers de cursor pausam com a sessão bloqueada e desaceleram com o cursor longe.
+let inputPollersPaused = false;
+const CURSOR_POLL_FAR_PX = 300;
+function rectDistanceExceeds(cursor, rect, limit) {
+  if (!rect) return true;
+  const dx = Math.max(rect.x - cursor.x, cursor.x - (rect.x + rect.width), 0);
+  const dy = Math.max(rect.y - cursor.y, cursor.y - (rect.y + rect.height), 0);
+  return dx > limit || dy > limit;
+}
 
 function sendUpdateStatus(payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-status', payload);
@@ -681,11 +690,23 @@ function createFloatingWindow() {
     }, stepMs);
   }
 
-  const ghostTimer = setInterval(() => {
+  let ghostDelay = 150;
+  let ghostTimer = null;
+  const ghostTick = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
     const cursor = screen.getCursorScreenPoint();
     const wb = mainWindow.getBounds();
+
+    // Cursor longe do widget e da ghost zone, sem estado ativo → cadência lenta.
+    if (!isHovered && !isGhost
+        && rectDistanceExceeds(cursor, { x: wb.x, y: wb.y, width: wb.width, height: wb.height }, CURSOR_POLL_FAR_PX)
+        && (!config.ghostZone || rectDistanceExceeds(cursor, config.ghostZone, CURSOR_POLL_FAR_PX))) {
+      ghostDelay = 450;
+      return;
+    }
+    ghostDelay = 150;
+
     const onWidget = cursor.x >= wb.x && cursor.x < wb.x + wb.width
                   && cursor.y >= wb.y && cursor.y < wb.y + wb.height;
 
@@ -727,11 +748,17 @@ function createFloatingWindow() {
       isGhost = false;
       fadeOpacity(0.08, config.opacity || 1.0, 180);
     }
-  }, 150);
+  };
+  const ghostLoop = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) { ghostTimer = null; return; }
+    if (!inputPollersPaused) ghostTick();
+    ghostTimer = setTimeout(ghostLoop, inputPollersPaused ? 1000 : ghostDelay);
+  };
+  ghostLoop();
 
   mainWindow.on('closed', () => {
     if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
-    clearInterval(ghostTimer);
+    if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = null; }
   });
 }
 
@@ -840,11 +867,10 @@ function createNotchWindow() {
 
   // Passthrough com bbox dinâmico do pill real (não da window inteira).
   // O renderer envia `notch-rect` sempre que o state muda.
-  let passthroughPoll = setInterval(() => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      clearInterval(passthroughPoll);
-      return;
-    }
+  let passthroughDelay = 100;
+  let passthroughPoll = null;
+  let lastIgnoreMouse = null;
+  const passthroughTick = () => {
     if (_notchDragging) return;
     try {
       const c = screen.getCursorScreenPoint();
@@ -853,9 +879,20 @@ function createNotchWindow() {
       const inside = pointInRect(c, hitRect);
       const shouldGhost = pointInRect(c, ghostZone) && !inside;
       sendNotchGhostState(shouldGhost);
-      mainWindow.setIgnoreMouseEvents(!inside, { forward: true });
+      const ignore = !inside;
+      if (ignore !== lastIgnoreMouse) {
+        lastIgnoreMouse = ignore;
+        mainWindow.setIgnoreMouseEvents(ignore, { forward: true });
+      }
+      passthroughDelay = (!inside && !shouldGhost && rectDistanceExceeds(c, ghostZone, CURSOR_POLL_FAR_PX)) ? 300 : 100;
     } catch (_) {}
-  }, 100);
+  };
+  const passthroughLoop = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) { passthroughPoll = null; return; }
+    if (!inputPollersPaused) passthroughTick();
+    passthroughPoll = setTimeout(passthroughLoop, inputPollersPaused ? 1000 : passthroughDelay);
+  };
+  passthroughLoop();
 
   // Reposiciona se resolução mudar
   const repositionNotch = () => {
@@ -871,7 +908,7 @@ function createNotchWindow() {
   screen.on('display-removed', repositionNotch);
 
   mainWindow.on('closed', () => {
-    clearInterval(passthroughPoll);
+    if (passthroughPoll) { clearTimeout(passthroughPoll); passthroughPoll = null; }
     screen.removeListener('display-metrics-changed', repositionNotch);
     screen.removeListener('display-added', repositionNotch);
     screen.removeListener('display-removed', repositionNotch);
@@ -2511,11 +2548,15 @@ app.whenReady().then(async () => {
   }
 
   powerMonitor.on('resume', () => {
+    inputPollersPaused = false;
     setTimeout(() => ensureWidgetOnTop('power-resume'), 250);
   });
   powerMonitor.on('unlock-screen', () => {
+    inputPollersPaused = false;
     setTimeout(() => ensureWidgetOnTop('power-unlock'), 250);
   });
+  powerMonitor.on('suspend', () => { inputPollersPaused = true; });
+  powerMonitor.on('lock-screen', () => { inputPollersPaused = true; });
 
   applyAutoStart(config.autoStart !== false);
   await resumePendingDeployWatchers();
