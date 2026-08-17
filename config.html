@@ -1041,20 +1041,22 @@
         <span class="key-label">Token GitHub — monitorar status CI/CD após push</span>
         <div id="githubTokenArea"></div>
         <div class="key-hint">
-          Use um token <strong>fine-grained</strong>. Em <em>Repository access</em>, escolha os repositórios monitorados
-          (ou <em>All repositories</em>). Em <em>Permissions &rarr; Repository</em>, adicione acesso
-          <strong>Read-only</strong> em <code>Actions</code> e <code>Commit statuses</code>.
-          <code>Metadata</code> entra sozinho como obrigatório.
+          Use um token <strong>clássico</strong> com o escopo <code>repo</code> marcado. Ele cobre
+          <code>Actions</code>, <code>Checks</code> e <code>Commit statuses</code> em todos os repositórios
+          que você acessa, incluindo os privados.
         </div>
         <div class="key-hint">
-          Não existe permissão <code>Checks</code> em token fine-grained — ela é exclusiva de GitHub App.
-          O monitor funciona sem ela; apenas check runs publicados por apps de CI externo podem não aparecer.
+          <strong>Repo de organização</strong> — o clássico já enxerga repos da org onde você é membro,
+          sem aprovação de admin. Se a org usa SAML SSO, clique em <em>Configure SSO</em> ao lado do token
+          e autorize para a org depois de criar.
         </div>
         <div class="key-hint">
-          <strong>Repo de organização</strong> — selecione a org como <em>Resource owner</em>. O token fica pendente
-          até um admin da org aprovar. Se a org usa SAML SSO, autorize o token para ela depois de criar.
+          Token fine-grained também funciona para repo pessoal (Read-only em <code>Actions</code> e
+          <code>Commit statuses</code>), mas em repo de organização exige <em>Resource owner</em> na org
+          e aprovação de um admin — sem isso a API responde 404 e o monitor acusa falta de acesso.
         </div>
         <div class="key-links">
+          <a href="#" class="key-link" id="githubLink" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/tokens','/new?scopes=repo&amp;description=Git%20Monitor')">criar token clássico</a>
           <a href="#" class="key-link" id="githubFineGrainedLink" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/personal-access-tokens','/new')">criar token fine-grained</a>
         </div>
       </div>
@@ -1269,6 +1271,8 @@
     const warnEl = document.getElementById('autoStartWarnIcon');
     if (warnEl) setIcon(warnEl, 'alert', { size: 11 });
     // GitHub link arrow
+    const ghLink = document.getElementById('githubLink');
+    if (ghLink) ghLink.appendChild(icon('arrow-ur', { size: 10 }));
     const ghFineLink = document.getElementById('githubFineGrainedLink');
     if (ghFineLink) ghFineLink.appendChild(icon('arrow-ur', { size: 10 }));
     // Inactive section initial icon
