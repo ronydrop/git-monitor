@@ -478,6 +478,22 @@
     margin-top: 4px;
   }
   .key-field .key-link:hover { text-decoration: underline; }
+  .key-field .key-hint {
+    font-size: 10px;
+    line-height: 1.5;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+  .key-field .key-hint strong { color: var(--text); font-weight: 600; }
+  .key-field .key-hint code {
+    font-family: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 3px;
+  }
+  .key-field .key-links { display: flex; gap: 12px; flex-wrap: wrap; }
 
   /* ---- Agent cards (IA & Auth) ---- */
   .agent-card {
@@ -1024,7 +1040,22 @@
       <div class="key-field">
         <span class="key-label">Token GitHub — monitorar status CI/CD após push</span>
         <div id="githubTokenArea"></div>
-        <a href="#" class="key-link" id="githubLink" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/tokens')">github.com/settings/tokens (escopo: repo)</a>
+        <div class="key-hint">
+          Precisa de leitura de <strong>Actions</strong>, <strong>Checks</strong> e <strong>Commit statuses</strong>.
+          Sem os três, o monitor não enxerga o resultado do CI.
+        </div>
+        <div class="key-hint">
+          <strong>Repo pessoal</strong> — token clássico com escopo <code>repo</code>, ou fine-grained com owner na sua conta.
+        </div>
+        <div class="key-hint">
+          <strong>Repo de organização</strong> — fine-grained com owner na org e permissões Read em
+          <code>Actions</code>, <code>Checks</code> e <code>Commit statuses</code>.
+          Se a org usa SAML SSO, autorize o token para ela depois de criar.
+        </div>
+        <div class="key-links">
+          <a href="#" class="key-link" id="githubLink" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/tokens','/new?scopes=repo&amp;description=Git%20Monitor')">criar token clássico</a>
+          <a href="#" class="key-link" id="githubFineGrainedLink" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/personal-access-tokens','/new')">criar token fine-grained</a>
+        </div>
       </div>
     </div>
 
@@ -1239,6 +1270,8 @@
     // GitHub link arrow
     const ghLink = document.getElementById('githubLink');
     if (ghLink) ghLink.appendChild(icon('arrow-ur', { size: 10 }));
+    const ghFineLink = document.getElementById('githubFineGrainedLink');
+    if (ghFineLink) ghFineLink.appendChild(icon('arrow-ur', { size: 10 }));
     // Inactive section initial icon
     setIcon(document.getElementById('inactToggleIcon'), 'chevron-right', { size: 12 });
 
