@@ -7,6 +7,7 @@ const https = require('https');
 const {
   applyDeployWatchDeadline,
   deployPhaseDetail,
+  findGithubAccessProblem,
   findGithubApiProblem,
   githubApiFailureDetail,
   githubApiRetryDetail,
@@ -1199,6 +1200,18 @@ async function resolveDeployPhaseForRepoSnapshot(repo, deployState = null) {
         repo: gh.repo
       };
     }
+    const accessProblem = findGithubAccessProblem(workflowRes, checkRes, statusRes, gh);
+    if (accessProblem) {
+      return {
+        phase: 'error',
+        detail: accessProblem,
+        sha,
+        branch,
+        remoteUrl,
+        owner: gh.owner,
+        repo: gh.repo
+      };
+    }
     return {
       phase: 'no-ci',
       detail: 'Nenhum workflow, check-run ou commit status encontrado para este commit',
@@ -2274,6 +2287,19 @@ async function resolveDeployWatchPhase(context, attempts) {
           _diag: diag
         };
       }
+      const accessProblem = findGithubAccessProblem(workflowRes, checkRes, statusRes, parsed);
+      if (accessProblem) {
+        return {
+          phase: 'error',
+          detail: accessProblem,
+          sha,
+          branch,
+          remoteUrl,
+          owner: parsed.owner,
+          repo: parsed.repo,
+          _diag: diag
+        };
+      }
       return {
         phase: 'no-ci',
         detail: 'Nenhum workflow, check-run ou commit status encontrado para este commit',
@@ -2508,13 +2534,15 @@ ipcMain.handle('open-terminal', (_, folderPath, projectName) => {
   exec(`wt ${tab1} ; ${tab2}`, { windowsHide: false });
 });
 
-ipcMain.handle('open-git-url', (_, remoteUrl) => {
+ipcMain.handle('open-git-url', (_, remoteUrl, subPath) => {
   const parsed = parseGithubRemote(remoteUrl);
   let url = parsed ? parsed.webUrl : remoteUrl;
   if (url && url.startsWith('git@')) {
     url = url.replace(':', '/').replace('git@', 'https://');
   }
   url = String(url || '').replace(/\.git$/, '');
+  const suffix = typeof subPath === 'string' ? subPath.trim() : '';
+  if (url && suffix) url += suffix.startsWith('/') ? suffix : '/' + suffix;
   shell.openExternal(url);
 });
 

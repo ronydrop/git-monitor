@@ -2,6 +2,7 @@ const assert = require('assert');
 const deployStatus = require('../deploy-status');
 const {
   CI_PROBE_INTERVAL_MS,
+  findGithubAccessProblem,
   findGithubApiProblem,
   githubApiFailureDetail,
   githubApiRetryDetail,
@@ -395,7 +396,7 @@ test('timeout do watcher aparece como erro claro de deploy', () => {
   assert.match(repo.deployDetail, /expirou/);
 });
 
-test('repo sem CI detectavel aparece como erro de deploy verificavel', () => {
+test('repo sem CI detectavel nao vira erro de deploy', () => {
   const deployStates = markDeployState({}, 'C:/repo/app', 'no-ci', 'Nenhum workflow, check-run ou commit status encontrado', Date.now(), {
     sha: 'abc123',
     branch: 'main',
@@ -410,9 +411,64 @@ test('repo sem CI detectavel aparece como erro de deploy verificavel', () => {
     branch: 'main'
   }, deployStates);
 
-  assert.strictEqual(repo.needsAttention, true);
-  assert.strictEqual(repo.deployError, true);
+  assert.strictEqual(repo.needsAttention, false);
+  assert.strictEqual(repo.deployError, false);
+  assert.strictEqual(repo.deployPending, false);
   assert.strictEqual(repo.deployPhase, 'no-ci');
+  assert.strictEqual(repoVisualStatus(repo), 'clean');
+});
+
+test('estado sem CI nao entra no historico de erros de deploy', () => {
+  const deployErrors = markDeployError({}, 'C:/repo/app', 'no-ci', 'Nenhum workflow, check-run ou commit status encontrado', Date.now(), {
+    sha: 'abc123',
+    branch: 'main'
+  });
+
+  assert.deepStrictEqual(deployErrors, {});
+});
+
+test('404 em Actions com commit acessivel vira problema de permissao de token', () => {
+  const detail = findGithubAccessProblem(
+    { statusCode: 404, data: { message: 'Not Found' } },
+    { statusCode: 404, data: { message: 'Not Found' } },
+    { statusCode: 200, data: { total_count: 0, state: 'pending', statuses: [] } },
+    { owner: 'Aprovei-Hub', repo: 'ghostify' }
+  );
+
+  assert.match(detail, /Token sem permissao de Actions e Checks em Aprovei-Hub\/ghostify/);
+});
+
+test('404 apenas em check-runs aponta permissao de Checks', () => {
+  const detail = findGithubAccessProblem(
+    { statusCode: 200, data: { workflow_runs: [] } },
+    { statusCode: 404, data: { message: 'Not Found' } },
+    { statusCode: 200, data: { total_count: 0, statuses: [] } },
+    { owner: 'acme', repo: 'app' }
+  );
+
+  assert.match(detail, /Token sem permissao de Checks em acme\/app/);
+});
+
+test('commit ausente no remoto nao vira problema de permissao', () => {
+  const detail = findGithubAccessProblem(
+    { statusCode: 200, data: { workflow_runs: [] } },
+    { statusCode: 404, data: { message: 'No commit found for SHA' } },
+    { statusCode: 404, data: { message: 'No commit found for SHA' } },
+    { owner: 'acme', repo: 'app' }
+  );
+
+  assert.strictEqual(detail, null);
+});
+
+test('acesso completo sem CI nao gera problema de permissao', () => {
+  const detail = findGithubAccessProblem(
+    { statusCode: 200, data: { workflow_runs: [] } },
+    { statusCode: 200, data: { check_runs: [] } },
+    { statusCode: 200, data: { total_count: 0, statuses: [] } },
+    { owner: 'acme', repo: 'app' }
+  );
+
+  assert.strictEqual(detail, null);
 });
 
 test('repo sem deploy configurado ignora estado antigo de deploy ausente', () => {

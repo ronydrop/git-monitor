@@ -227,6 +227,19 @@ function isTransientGithubApiResponse(response) {
   return code >= 200 && code < 300 && !!response.error;
 }
 
+// 404 em Actions/Checks com o commit acessivel (status 200) = token sem permissao, nao ausencia de CI
+function findGithubAccessProblem(workflowRes = {}, checkRes = {}, statusRes = {}, gh = {}) {
+  if (Number(statusRes && statusRes.statusCode) !== 200) return null;
+
+  const missing = [];
+  if (Number(workflowRes && workflowRes.statusCode) === 404) missing.push('Actions');
+  if (Number(checkRes && checkRes.statusCode) === 404) missing.push('Checks');
+  if (!missing.length) return null;
+
+  const repoLabel = gh && gh.owner && gh.repo ? `${gh.owner}/${gh.repo}` : 'repositorio';
+  return `Token sem permissao de ${missing.join(' e ')} em ${repoLabel}; atualize o token nas configuracoes`;
+}
+
 function isTransientGithubApiProblem(responses = []) {
   const problems = asList(responses).filter(response => {
     if (!response) return false;
@@ -376,6 +389,7 @@ module.exports = {
   CI_PROBE_INTERVAL_MS,
   DEPLOY_WATCH_MAX_AGE_MS,
   deployPhaseDetail,
+  findGithubAccessProblem,
   findGithubApiProblem,
   githubApiFailureDetail,
   githubApiRetryDetail,

@@ -2,11 +2,14 @@ const path = require('path');
 
 const PENDING_STATES = new Set(['dirty', 'dirty-ahead', 'ahead', 'behind', 'diverged', 'error']);
 const DEPLOY_PENDING_PHASES = new Set(['waiting', 'running']);
-const DEPLOY_ERROR_PHASES = new Set(['failure', 'error', 'timeout', 'no-token', 'no-ci', 'no-github']);
+const DEPLOY_ERROR_PHASES = new Set(['failure', 'error', 'timeout', 'no-token', 'no-github']);
+// Commit sem CI nao e falha de deploy: estado informativo, sem alerta vermelho
+const DEPLOY_INFO_PHASES = new Set(['no-ci']);
 const DEPLOY_SUCCESS_PHASES = new Set(['success']);
 const DEPLOY_STATE_PHASES = new Set([
   ...DEPLOY_PENDING_PHASES,
   ...DEPLOY_ERROR_PHASES,
+  ...DEPLOY_INFO_PHASES,
   ...DEPLOY_SUCCESS_PHASES
 ]);
 

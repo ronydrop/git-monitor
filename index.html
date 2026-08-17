@@ -841,6 +841,7 @@
     'folder':       '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
     'folder-open':  '<path d="M6 14 4 20h16l-2-6"/><path d="M2 14V6a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v5"/>',
     'terminal':     '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+    'circle-play':  '<circle cx="12" cy="12" r="10"/><path d="m10 8 6 4-6 4Z"/>',
     'chevron-up':   '<path d="m18 15-6-6-6 6"/>',
     'chevron-down': '<path d="m6 9 6 6 6-6"/>',
     'chevron-right':'<path d="m9 18 6-6-6-6"/>',
@@ -922,7 +923,7 @@
   }
 
   function isDeployErrorPhase(phase) {
-    return ['failure', 'error', 'timeout', 'no-token', 'no-ci', 'no-github'].includes(phase);
+    return ['failure', 'error', 'timeout', 'no-token', 'no-github'].includes(phase);
   }
 
   function setLocalDeployState(repoPath, entry) {
@@ -1052,6 +1053,15 @@
         gitBtn.appendChild(svg);
         gitBtn.onclick = () => openGitUrl(r.remoteUrl);
         actions.appendChild(gitBtn);
+
+        if (r.deployError) {
+          const actionsBtn = document.createElement('button');
+          actionsBtn.className = 'btn-repo-action';
+          actionsBtn.title = 'Abrir GitHub Actions';
+          actionsBtn.appendChild(icon('circle-play', { size: 12 }));
+          actionsBtn.onclick = () => openGitUrl(r.remoteUrl, '/actions');
+          actions.appendChild(actionsBtn);
+        }
       }
 
       const termBtn = document.createElement('button');
@@ -1302,8 +1312,8 @@
   }
 
   // ---- Repo shortcuts ----
-  function openGitUrl(url) {
-    ipcRenderer.invoke('open-git-url', url);
+  function openGitUrl(url, subPath) {
+    ipcRenderer.invoke('open-git-url', url, subPath);
   }
 
   async function doPull(btn, repoPath, repoName) {
@@ -1454,7 +1464,18 @@
       if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
       renderRepos(lastResults);
 
-    } else if (phase === 'error' || phase === 'no-token' || phase === 'no-github' || phase === 'no-ci') {
+    } else if (phase === 'no-ci') {
+      const msg = detail || 'Nenhum CI configurado para este commit';
+      setLocalDeployState(repoPath, { phase, detail: msg });
+      showBar('success', msg);
+      if (btn) { btn.className = 'btn-commit'; setIcon(btn, 'check'); }
+      showCommitToast('ok', (repoName || '') + ': ' + msg);
+      hideBar();
+      delete activeDeployBtns[repoPath];
+      if (document.getElementById('container').classList.contains('pending-visible')) renderPendingPreview();
+      renderRepos(lastResults);
+
+    } else if (phase === 'error' || phase === 'no-token' || phase === 'no-github') {
       const msg = detail || 'Nao foi possivel confirmar o deploy';
       setLocalDeployState(repoPath, { phase, detail: msg });
       showBar('failure', msg);
