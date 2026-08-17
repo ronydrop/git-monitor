@@ -1041,19 +1041,20 @@
         <span class="key-label">Token GitHub — monitorar status CI/CD após push</span>
         <div id="githubTokenArea"></div>
         <div class="key-hint">
-          Precisa de leitura de <strong>Actions</strong>, <strong>Checks</strong> e <strong>Commit statuses</strong>.
-          Sem os três, o monitor não enxerga o resultado do CI.
+          Use um token <strong>fine-grained</strong>. Em <em>Repository access</em>, escolha os repositórios monitorados
+          (ou <em>All repositories</em>). Em <em>Permissions &rarr; Repository</em>, adicione acesso
+          <strong>Read-only</strong> em <code>Actions</code> e <code>Commit statuses</code>.
+          <code>Metadata</code> entra sozinho como obrigatório.
         </div>
         <div class="key-hint">
-          <strong>Repo pessoal</strong> — token clássico com escopo <code>repo</code>, ou fine-grained com owner na sua conta.
+          Não existe permissão <code>Checks</code> em token fine-grained — ela é exclusiva de GitHub App.
+          O monitor funciona sem ela; apenas check runs publicados por apps de CI externo podem não aparecer.
         </div>
         <div class="key-hint">
-          <strong>Repo de organização</strong> — fine-grained com owner na org e permissões Read em
-          <code>Actions</code>, <code>Checks</code> e <code>Commit statuses</code>.
-          Se a org usa SAML SSO, autorize o token para ela depois de criar.
+          <strong>Repo de organização</strong> — selecione a org como <em>Resource owner</em>. O token fica pendente
+          até um admin da org aprovar. Se a org usa SAML SSO, autorize o token para ela depois de criar.
         </div>
         <div class="key-links">
-          <a href="#" class="key-link" id="githubLink" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/tokens','/new?scopes=repo&amp;description=Git%20Monitor')">criar token clássico</a>
           <a href="#" class="key-link" id="githubFineGrainedLink" onclick="ipcRenderer.invoke('open-git-url','https://github.com/settings/personal-access-tokens','/new')">criar token fine-grained</a>
         </div>
       </div>
@@ -1268,8 +1269,6 @@
     const warnEl = document.getElementById('autoStartWarnIcon');
     if (warnEl) setIcon(warnEl, 'alert', { size: 11 });
     // GitHub link arrow
-    const ghLink = document.getElementById('githubLink');
-    if (ghLink) ghLink.appendChild(icon('arrow-ur', { size: 10 }));
     const ghFineLink = document.getElementById('githubFineGrainedLink');
     if (ghFineLink) ghFineLink.appendChild(icon('arrow-ur', { size: 10 }));
     // Inactive section initial icon
