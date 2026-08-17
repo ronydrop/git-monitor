@@ -19,6 +19,8 @@ const TERMINAL_PHASES = new Set([
 ]);
 const DEPLOY_WATCH_MAX_AGE_MS = 45 * 60 * 1000;
 const DEPLOY_WATCH_TIMEOUT_DETAIL = 'Monitoramento expirou após 45 minutos sem conclusão no GitHub';
+const CI_PROBE_INTERVAL_MS = 5 * 60 * 1000;
+const CI_PROBE_ADOPTED_PHASES = new Set(['failure', 'running', 'waiting']);
 
 function asList(value) {
   return Array.isArray(value) ? value : [];
@@ -120,6 +122,34 @@ function failureCountText(count) {
 
 function isTerminalDeployPhase(phase) {
   return TERMINAL_PHASES.has(phase);
+}
+
+function isProbeableRepo(repo) {
+  if (!repo) return false;
+  if (repo.deployEnabled === false) return false;
+  if (!repo.headSha || !repo.remoteUrl) return false;
+  if (Number(repo.ahead || 0) > 0) return false;
+  if (Number(repo.behind || 0) > 0) return false;
+  return true;
+}
+
+function shouldRefreshRepoCi(
+  repo,
+  state,
+  lastProbe,
+  now = Date.now(),
+  intervalMs = CI_PROBE_INTERVAL_MS
+) {
+  if (state && (state.phase === 'waiting' || state.phase === 'running')) return true;
+  if (!isProbeableRepo(repo)) return false;
+  if (!lastProbe) return true;
+  if (lastProbe.sha !== (repo.headSha || '')) return true;
+  if (lastProbe.branch !== (repo.branch || '')) return true;
+  return now - (Number(lastProbe.checkedAt) || 0) >= intervalMs;
+}
+
+function isAdoptedProbePhase(phase) {
+  return CI_PROBE_ADOPTED_PHASES.has(phase);
 }
 
 function deployPhaseDetail(result = {}) {
@@ -343,12 +373,16 @@ function resolveDeployPhase(input = {}) {
 
 module.exports = {
   applyDeployWatchDeadline,
+  CI_PROBE_INTERVAL_MS,
   DEPLOY_WATCH_MAX_AGE_MS,
   deployPhaseDetail,
   findGithubApiProblem,
   githubApiFailureDetail,
   githubApiRetryDetail,
+  isAdoptedProbePhase,
+  isProbeableRepo,
   isTransientGithubApiProblem,
   resolveDeployPhase,
+  shouldRefreshRepoCi,
   isTerminalDeployPhase
 };

@@ -201,6 +201,15 @@ test('deploy reconciliation uses persisted deadline and phase-aware detail', () 
   assert.doesNotMatch(main, /DEPLOY_MAX_ATTEMPTS/);
 });
 
+test('CI failures from external pushes are detected without a stored deploy state', () => {
+  const main = read('main.js');
+
+  assert.doesNotMatch(main, /if \(!current \|\| current\.phase === 'success'\) continue;/);
+  assert.match(main, /shouldRefreshRepoCi\(repo, current, ciProbeCache\.get\(probeKey\), now\)/);
+  assert.match(main, /if \(!current\) \{\s*next = await probeRepoCiState\(repo, next, now\);/);
+  assert.match(main, /isAdoptedProbePhase\(deployPhase\.phase\)/);
+});
+
 test('deploy status details expose the complete reason in native hover tooltips', () => {
   const index = read('index.html');
   const notch = read('notch.html');

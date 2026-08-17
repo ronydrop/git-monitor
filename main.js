@@ -10,8 +10,10 @@ const {
   findGithubApiProblem,
   githubApiFailureDetail,
   githubApiRetryDetail,
+  isAdoptedProbePhase,
   isTransientGithubApiProblem,
-  resolveDeployPhase
+  resolveDeployPhase,
+  shouldRefreshRepoCi
 } = require('./deploy-status');
 const {
   applyDeployWatchUpdate,
@@ -1086,6 +1088,9 @@ function deployStatesEqual(a, b) {
   return JSON.stringify(a || {}) === JSON.stringify(b || {});
 }
 
+// Ultima consulta de CI por repo — evita consultar o GitHub a cada ciclo de polling
+const ciProbeCache = new Map();
+
 async function resolveDeployPhaseForRepoSnapshot(repo, deployState = null) {
   const sha = (deployState && deployState.sha) || (repo && repo.headSha) || '';
   const branch = (deployState && deployState.branch) || (repo && repo.branch) || '';
@@ -1222,12 +1227,48 @@ async function resolveDeployPhaseForRepoSnapshot(repo, deployState = null) {
   };
 }
 
+async function probeRepoCiState(repo, deployStates, now) {
+  const deployPhase = await resolveDeployPhaseForRepoSnapshot(repo, null);
+  if (!deployPhase || !isAdoptedProbePhase(deployPhase.phase)) return deployStates;
+
+  return markDeployState(
+    deployStates,
+    repo.path,
+    deployPhase.phase,
+    deployPhaseDetail(deployPhase),
+    now,
+    {
+      sha: deployPhase.sha,
+      branch: deployPhase.branch,
+      remoteUrl: deployPhase.remoteUrl,
+      owner: deployPhase.owner,
+      repo: deployPhase.repo,
+      watchId: createDeployWatchId(repo.path, deployPhase.sha),
+      startedAt: Number(deployPhase.activeRunStartedAt) || now
+    }
+  );
+}
+
 async function reconcileDeployStatesForRepos(results) {
   let next = pruneDeployStatesForRepos(config.deployStates, results);
+  const now = Date.now();
 
   for (const repo of results) {
     const current = next[repoKey(repo.path)];
-    if (!current || current.phase === 'success') continue;
+    if (current && current.phase === 'success') continue;
+
+    const probeKey = repoKey(repo.path);
+    if (!shouldRefreshRepoCi(repo, current, ciProbeCache.get(probeKey), now)) continue;
+    ciProbeCache.set(probeKey, {
+      sha: repo.headSha || '',
+      branch: repo.branch || '',
+      checkedAt: now
+    });
+
+    if (!current) {
+      next = await probeRepoCiState(repo, next, now);
+      continue;
+    }
 
     const deployPhase = await resolveDeployPhaseForRepoSnapshot(repo, current);
     if (!deployPhase) continue;

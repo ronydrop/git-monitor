@@ -1,11 +1,15 @@
 const assert = require('assert');
 const deployStatus = require('../deploy-status');
 const {
+  CI_PROBE_INTERVAL_MS,
   findGithubApiProblem,
   githubApiFailureDetail,
   githubApiRetryDetail,
+  isAdoptedProbePhase,
+  isProbeableRepo,
   isTransientGithubApiProblem,
   resolveDeployPhase,
+  shouldRefreshRepoCi,
   isTerminalDeployPhase
 } = deployStatus;
 const {
@@ -619,4 +623,71 @@ test('ordena pendencias de deploy e git no topo mantendo ordem estavel por prior
     'Dirty A',
     'Clean'
   ]);
+});
+
+const PROBEABLE_REPO = {
+  path: 'C:/repos/modculture',
+  headSha: 'abc123',
+  branch: 'main',
+  remoteUrl: 'https://github.com/ronydrop/modculture.git',
+  ahead: 0,
+  behind: 0
+};
+
+test('consulta CI de repo sincronizado sem deploy state registrado', () => {
+  assert.strictEqual(shouldRefreshRepoCi(PROBEABLE_REPO, null, null, 1000), true);
+});
+
+test('nao consulta CI de repo com commit local nao pushado ou atras do remote', () => {
+  assert.strictEqual(isProbeableRepo({ ...PROBEABLE_REPO, ahead: 2 }), false);
+  assert.strictEqual(isProbeableRepo({ ...PROBEABLE_REPO, behind: 1 }), false);
+  assert.strictEqual(isProbeableRepo({ ...PROBEABLE_REPO, deployEnabled: false }), false);
+  assert.strictEqual(isProbeableRepo({ ...PROBEABLE_REPO, remoteUrl: '' }), false);
+});
+
+test('respeita intervalo minimo entre consultas para o mesmo commit', () => {
+  const lastProbe = { sha: 'abc123', branch: 'main', checkedAt: 1000 };
+  assert.strictEqual(
+    shouldRefreshRepoCi(PROBEABLE_REPO, null, lastProbe, 1000 + CI_PROBE_INTERVAL_MS - 1),
+    false
+  );
+  assert.strictEqual(
+    shouldRefreshRepoCi(PROBEABLE_REPO, null, lastProbe, 1000 + CI_PROBE_INTERVAL_MS),
+    true
+  );
+});
+
+test('consulta imediatamente quando o commit ou branch local muda', () => {
+  const lastProbe = { sha: 'abc123', branch: 'main', checkedAt: 1000 };
+  assert.strictEqual(
+    shouldRefreshRepoCi({ ...PROBEABLE_REPO, headSha: 'def456' }, null, lastProbe, 1001),
+    true
+  );
+  assert.strictEqual(
+    shouldRefreshRepoCi({ ...PROBEABLE_REPO, branch: 'release' }, null, lastProbe, 1001),
+    true
+  );
+});
+
+test('deploy em andamento ignora throttle e repo nao consultavel', () => {
+  const lastProbe = { sha: 'abc123', branch: 'main', checkedAt: 1000 };
+  assert.strictEqual(
+    shouldRefreshRepoCi({ ...PROBEABLE_REPO, ahead: 3 }, { phase: 'running' }, lastProbe, 1001),
+    true
+  );
+  assert.strictEqual(
+    shouldRefreshRepoCi(PROBEABLE_REPO, { phase: 'waiting' }, lastProbe, 1001),
+    true
+  );
+});
+
+test('adota apenas falha e execucao em andamento na consulta passiva de CI', () => {
+  assert.strictEqual(isAdoptedProbePhase('failure'), true);
+  assert.strictEqual(isAdoptedProbePhase('running'), true);
+  assert.strictEqual(isAdoptedProbePhase('waiting'), true);
+  assert.strictEqual(isAdoptedProbePhase('success'), false);
+  assert.strictEqual(isAdoptedProbePhase('no-ci'), false);
+  assert.strictEqual(isAdoptedProbePhase('no-token'), false);
+  assert.strictEqual(isAdoptedProbePhase('no-github'), false);
+  assert.strictEqual(isAdoptedProbePhase('error'), false);
 });
