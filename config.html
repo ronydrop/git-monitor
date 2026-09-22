@@ -1293,7 +1293,7 @@
     const selected = {
       anthropic: configSafe.anthropicModel || 'claude-haiku-4-5',
       openai: configSafe.openaiModel || 'gpt-4o-mini',
-      openrouter: configSafe.openrouterModel || 'tencent/hy3-preview'
+      openrouter: configSafe.openrouterModel || 'deepseek/deepseek-v4-flash'
     };
     ['anthropic', 'openai', 'openrouter'].forEach(agent => {
       const el = document.getElementById(agent + 'Model');

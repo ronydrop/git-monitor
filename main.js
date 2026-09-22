@@ -40,6 +40,8 @@ const {
 const {
   buildCommitArgs,
   ensureCommitMessage,
+  generateCommitMessageWithFallback,
+  generateOpenAiCompatibleCommitMessage,
   parseCommitMessage,
   textFromContent
 } = require('./commit-message');
@@ -270,8 +272,8 @@ const AI_MODEL_OPTIONS = {
     { id: 'gpt-4o-mini', name: 'GPT-4o mini', detail: 'fallback rapido' }
   ],
   openrouter: [
-    { id: 'tencent/hy3-preview', name: 'Hy3 preview', detail: 'Tencent' },
-    { id: 'deepseek/deepseek-v4-flash', name: 'DeepSeek V4 Flash', detail: 'DeepSeek' },
+    { id: 'deepseek/deepseek-v4-flash', name: 'DeepSeek V4 Flash', detail: 'melhor custo-benefício' },
+    { id: 'tencent/hy3', name: 'Hy3', detail: 'alternativa estável' },
     { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6', detail: 'Anthropic' },
     { id: 'anthropic/claude-opus-4.7', name: 'Claude Opus 4.7', detail: 'Anthropic' },
     { id: 'openrouter/owl-alpha', name: 'Owl Alpha', detail: 'OpenRouter' }
@@ -1841,28 +1843,6 @@ REGRAS OBRIGATÓRIAS:
 Mudanças:
 ${diff}`;
 
-function friendlyAiError(provider, err) {
-  const msg = err.message || String(err);
-  // Extrai mensagem legível de erros JSON da API
-  try {
-    const json = JSON.parse(msg.match(/\{.*\}/s)?.[0] || '{}');
-    const detail = json?.error?.message || json?.message || '';
-    if (detail) {
-      if (/credit|balance|billing|quota|insufficient/i.test(detail)) return `${provider}: saldo insuficiente — verifique seu plano`;
-      if (/invalid.*key|api.key|authentication|unauthorized|no auth|forbidden/i.test(detail)) return `${provider}: API key inválida`;
-      if (/rate.limit|too many/i.test(detail)) return `${provider}: limite de requisições atingido`;
-      return `${provider}: ${detail.substring(0, 80)}`;
-    }
-  } catch (_) {}
-  if (/key não configurada|sem credencial/i.test(msg)) return `${provider}: key não configurada`;
-  if (/resposta vazia ao gerar commit/i.test(msg)) return msg;
-  if (/credit|balance|billing/i.test(msg)) return `${provider}: saldo insuficiente`;
-  if (/oauth|token.*expirado|expirado.*token/i.test(msg)) return `${provider}: token OAuth expirado — faça login no CLI`;
-  if (/invalid.*key|authentication|unauthorized|no auth|401|403/i.test(msg)) return `${provider}: API key inválida`;
-  if (/rate.limit|429/i.test(msg)) return `${provider}: limite atingido`;
-  return `${provider}: erro ao gerar commit`;
-}
-
 function providerHasConfiguredCredential(provider) {
   if (provider === 'anthropic') {
     if (config.anthropicAuthMode === 'oauth') {
@@ -1919,13 +1899,15 @@ async function generateCommitMessage(diff) {
     }
   };
 
-  const callOpenAiCompatible = async (client, model, providerLabel) => {
-    const msg = await client.chat.completions.create({
+  const callOpenAiCompatible = async (client, model, providerLabel, reasoningEffort) => {
+    return generateOpenAiCompatibleCommitMessage({
+      client,
       model,
-      max_tokens: 300,
-      messages: [{ role: 'user', content: COMMIT_PROMPT(diff) }]
+      provider: providerLabel,
+      prompt: COMMIT_PROMPT(diff),
+      reasoningEffort,
+      onRetry: diagnostic => console.warn('[commit-ai] resposta vazia; repetindo:', diagnostic)
     });
-    return ensureCommitMessage(textFromContent(msg.choices?.[0]?.message?.content), providerLabel);
   };
 
   const tryOpenAI = async () => {
@@ -1957,20 +1939,24 @@ async function generateCommitMessage(diff) {
         'X-OpenRouter-Title': 'Git Monitor'
       }
     });
-    return await callOpenAiCompatible(client, normalizeAiModel('openrouter', config.openrouterModel), 'OpenRouter');
+    return await callOpenAiCompatible(
+      client,
+      normalizeAiModel('openrouter', config.openrouterModel),
+      'OpenRouter',
+      'none'
+    );
   };
 
   const providers = { anthropic: tryAnthropic, openai: tryOpenAI, openrouter: tryOpenRouter };
-  const errors = [];
-  for (const provider of buildProviderAttemptOrder(primary)) {
-    try {
-      return await providers[provider]();
-    } catch (err) {
-      const label = provider === 'openrouter' ? 'OpenRouter' : provider === 'openai' ? 'OpenAI' : 'Anthropic';
-      errors.push(friendlyAiError(label, err));
-    }
-  }
-  throw new Error(errors.join(' · '));
+  const attempts = buildProviderAttemptOrder(primary).map(provider => ({
+    provider: provider === 'openrouter' ? 'OpenRouter' : provider === 'openai' ? 'OpenAI' : 'Anthropic',
+    generate: providers[provider]
+  }));
+  return generateCommitMessageWithFallback({
+    attempts,
+    fallbackMessage: 'Atualiza arquivos do projeto',
+    onFailure: failure => console.warn('[commit-ai] provedor indisponível:', failure)
+  });
 }
 
 function createDeployWatchId(repoPath, sha) {

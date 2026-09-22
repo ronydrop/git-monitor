@@ -39,3 +39,10 @@ Nessa situacao, carregue e siga a skill local do seu agente; nao use nenhuma ski
 - Claude Code: `.claude/skills/push/SKILL.md`
 
 As duas sao launchers do mesmo script `.codex/skills/push/scripts/git_monitor_push.ps1`. Nao peca uma confirmacao adicional para commit, tag ou push. Fora dessa invocacao explicita, continue pedindo confirmacao antes de qualquer commit, tag, push, branch, PR ou release.
+
+
+<!-- brain:start -->
+## Second brain
+
+Antes da primeira ação substantiva, aplique as regras canônicas do brain e resolva o contexto deste projeto com `~/brain/scripts/resolve-brain-project.sh`.
+<!-- brain:end -->

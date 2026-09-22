@@ -89,6 +89,18 @@ test('commit errors render as inline widget alerts instead of external toast win
   assert.match(notch, /function showCommitToast\s*\([\s\S]*showNotchAlert/);
 });
 
+test('OpenRouter mantém DeepSeek como padrão e oferece Hy3 estável', () => {
+  const main = read('main.js');
+  const config = read('config.html');
+
+  const options = main.match(/openrouter:\s*\[[\s\S]*?\n\s*\]/);
+  assert.ok(options, 'OpenRouter model options should exist');
+  assert.match(options[0], /openrouter:\s*\[\s*\{ id:\s*'deepseek\/deepseek-v4-flash'/);
+  assert.match(options[0], /id:\s*'tencent\/hy3'/);
+  assert.doesNotMatch(options[0], /tencent\/hy3-preview/);
+  assert.match(config, /openrouter:\s*configSafe\.openrouterModel\s*\|\|\s*'deepseek\/deepseek-v4-flash'/);
+});
+
 test('commit-and-push valida acesso remoto antes de criar commit local', () => {
   const main = read('main.js');
   const commitAndPush = main.match(/ipcMain\.handle\('commit-and-push'[\s\S]*?ipcMain\.handle\('open-folder'/);

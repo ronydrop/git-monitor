@@ -1,4 +1,6 @@
 const EMPTY_COMMIT_MESSAGE_ERROR = 'IA retornou mensagem de commit vazia. Tente novamente ou troque o modelo/provedor.';
+const COMMIT_COMPLETION_TOKEN_LIMIT = 600;
+const COMMIT_COMPLETION_RETRY_TOKEN_LIMIT = 1200;
 
 function cleanCommitMessage(msg) {
   let text = String(msg || '');
@@ -32,6 +34,68 @@ function ensureCommitMessage(msg, provider) {
     throw new Error(`${provider}: resposta vazia ao gerar commit`);
   }
   return cleaned;
+}
+
+function completionRetryDiagnostic(response, provider, model) {
+  const choice = response?.choices?.[0];
+  return {
+    provider,
+    model,
+    finishReason: choice?.finish_reason || null,
+    completionTokens: response?.usage?.completion_tokens ?? null,
+    reasoningTokens: response?.usage?.completion_tokens_details?.reasoning_tokens ?? null
+  };
+}
+
+async function generateOpenAiCompatibleCommitMessage({
+  client,
+  model,
+  provider,
+  prompt,
+  reasoningEffort,
+  onRetry
+}) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const request = {
+      model,
+      max_completion_tokens: attempt === 0
+        ? COMMIT_COMPLETION_TOKEN_LIMIT
+        : COMMIT_COMPLETION_RETRY_TOKEN_LIMIT,
+      messages: [{ role: 'user', content: prompt }]
+    };
+    if (reasoningEffort) request.reasoning = { effort: reasoningEffort };
+
+    const response = await client.chat.completions.create(request);
+    const content = textFromContent(response?.choices?.[0]?.message?.content);
+    if (cleanCommitMessage(content)) return ensureCommitMessage(content, provider);
+
+    if (attempt === 0 && typeof onRetry === 'function') {
+      onRetry(completionRetryDiagnostic(response, provider, model));
+    }
+  }
+
+  return ensureCommitMessage('', provider);
+}
+
+async function generateCommitMessageWithFallback({
+  attempts,
+  fallbackMessage,
+  onFailure
+}) {
+  for (const attempt of attempts) {
+    try {
+      return ensureCommitMessage(await attempt.generate(), attempt.provider);
+    } catch (error) {
+      if (typeof onFailure === 'function') {
+        onFailure({
+          provider: attempt.provider,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+  }
+
+  return ensureCommitMessage(fallbackMessage, 'Fallback');
 }
 
 function parseCommitMessage(msg) {
@@ -70,6 +134,8 @@ module.exports = {
   buildCommitArgs,
   cleanCommitMessage,
   ensureCommitMessage,
+  generateCommitMessageWithFallback,
+  generateOpenAiCompatibleCommitMessage,
   parseCommitMessage,
   textFromContent
 };
