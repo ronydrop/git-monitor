@@ -32,6 +32,7 @@ const {
 } = require('./repo-state');
 const {
   formatGitError,
+  formatGitOperationError,
   isGitAuthError,
   isRebaseConflictError,
   pullRebaseCommand,
@@ -47,7 +48,8 @@ const {
 } = require('./commit-message');
 const {
   loadConfigFile,
-  saveConfigFile
+  saveConfigFile,
+  createDebouncedSave
 } = require('./config-store');
 const {
   mergeRepoGithubSecrets,
@@ -83,9 +85,12 @@ if (extraPaths) {
 
 function execAsync(cmd, opts) {
   return new Promise((resolve, reject) => {
-    exec(cmd, { windowsHide: true, ...opts }, (err, stdout) => {
-      if (err) reject(err);
-      else resolve(stdout);
+    exec(cmd, { windowsHide: true, ...opts }, (err, stdout, stderr) => {
+      if (err) {
+        err.stdout = stdout;
+        err.stderr = stderr;
+        reject(err);
+      } else resolve(stdout);
     });
   });
 }
@@ -463,6 +468,7 @@ let mainWindow;
 let configWindow;
 let tray;
 let config;
+const windowPositionSave = createDebouncedSave(() => saveConfig(config));
 const WIDGET_TOPMOST_WATCHDOG_MS = 3000;
 let widgetTopmostWatchdog = null;
 // Pollers de cursor pausam com a sessão bloqueada e desaceleram com o cursor longe.
@@ -653,9 +659,10 @@ function createFloatingWindow() {
   mainWindow.on('moved', () => {
     if (resizeInterval) return; // ignora durante resize
     const [x, y] = mainWindow.getPosition();
+    if (config.windowX === x && config.windowY === y) return;
     config.windowX = x;
     config.windowY = y;
-    saveConfig(config);
+    windowPositionSave.schedule();
   });
 
   // ---- Ghost mode: polling de cursor vs zona definida ----
@@ -762,6 +769,7 @@ function createFloatingWindow() {
   ghostLoop();
 
   mainWindow.on('closed', () => {
+    windowPositionSave.flush();
     if (fadeAnim) { clearInterval(fadeAnim); fadeAnim = null; }
     if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = null; }
   });
@@ -1975,6 +1983,7 @@ function isDeployStatePending(state) {
 ipcMain.handle('commit-and-push', async (_, repoPath) => {
   const release = await acquireRepoLock(repoPath);
   markWriting(repoPath, true);
+  let stage = 'na preparação';
   try {
     cleanStaleLock(repoPath);
 
@@ -2012,6 +2021,7 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
     let body = '';
 
     if (hasUncommitted) {
+      stage = 'na validação do acesso remoto';
       await verifyGitRemoteAccess(repoPath, initialBranch);
 
       let diff = '';
@@ -2024,18 +2034,22 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
       if (!diff) diff = statusOutput || 'Mudanças sem diff disponível';
 
       const diffTruncated = diff.length > 6000 ? diff.substring(0, 6000) + '\n\n[diff truncado]' : diff;
+      stage = 'ao gerar a mensagem do commit';
       const commitMsg = await generateCommitMessage(diffTruncated);
       const parsedCommit = parseCommitMessage(commitMsg);
       title = parsedCommit.title;
       body = parsedCommit.body;
 
+      stage = 'ao selecionar os arquivos';
       await gitExec('git add .', { cwd: repoPath, timeout: 10000 });
+      stage = 'ao criar o commit';
       await gitExecFile(buildCommitArgs(title, body), { cwd: repoPath, timeout: 15000 });
     }
 
     const branch = (await gitExec('git rev-parse --abbrev-ref HEAD', { cwd: repoPath, timeout: 5000 })).trim();
 
     // Pull rebase para sincronizar com o remote, depois push
+    stage = 'no pull --rebase';
     try {
       await gitExec(pullRebaseCommand(branch), { cwd: repoPath, timeout: 30000 });
     } catch (e) {
@@ -2052,12 +2066,14 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
       gitExec('git rev-parse HEAD', { cwd: repoPath, timeout: 5000 }).then(o => o.trim()),
       gitExec('git config --get remote.origin.url', { cwd: repoPath, timeout: 5000 }).then(o => o.trim()).catch(() => '')
     ]);
+    stage = 'no push';
     await gitExec(pushCommand(branch), { cwd: repoPath, timeout: 30000 });
 
     if (!deployConfigured) {
       return { ok: true, title, body, deploy: null, deploySkipped: true, deployDetail: 'Sem deploy' };
     }
 
+    stage = 'no acompanhamento do deploy';
     const gh = parseGithubRemote(remoteUrl);
     const deploy = {
       phase: 'waiting',
@@ -2085,7 +2101,7 @@ ipcMain.handle('commit-and-push', async (_, repoPath) => {
 
     return { ok: true, title, body, deploy };
   } catch (e) {
-    return { ok: false, error: e.message ? e.message.substring(0, 200) : String(e) };
+    return { ok: false, error: formatGitOperationError(stage, e) };
   } finally {
     markWriting(repoPath, false);
     release();
@@ -2912,6 +2928,7 @@ ipcMain.handle('notch-toggle-minimize', () => {
 });
 
 app.on('will-quit', () => {
+  windowPositionSave.flush();
   globalShortcut.unregisterAll();
 });
 

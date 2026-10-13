@@ -1,5 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const { isDeepStrictEqual } = require('util');
+
+const MAX_CONFIG_BACKUPS = 20;
 
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -99,15 +102,16 @@ function copyFileAtomic(source, target) {
 
 function uniqueTimestampedFile(dir, prefix, options = {}) {
   const stamp = formatTimestamp(getNow(options));
-  let target = path.join(dir, `${prefix}.${stamp}.json`);
-  let index = 1;
-
-  while (fs.existsSync(target)) {
-    target = path.join(dir, `${prefix}.${stamp}.${index}.json`);
-    index += 1;
+  const stem = `${prefix}.${stamp}`;
+  let index = -1;
+  for (const name of fs.readdirSync(dir)) {
+    if (name === `${stem}.json`) index = Math.max(index, 0);
+    if (name.startsWith(`${stem}.`) && name.endsWith('.json')) {
+      const suffix = name.slice(stem.length + 1, -5);
+      if (/^\d+$/.test(suffix)) index = Math.max(index, Number(suffix));
+    }
   }
-
-  return target;
+  return path.join(dir, index < 0 ? `${stem}.json` : `${stem}.${index + 1}.json`);
 }
 
 function writeTimestampedConfig(configFile, prefix, contents, options = {}) {
@@ -129,6 +133,28 @@ function defaultBackupFile(configFile) {
   return path.join(path.dirname(configFile), 'config.backup.json');
 }
 
+function pruneConfigBackups(configFile, options = {}) {
+  const dir = path.dirname(configFile);
+  const pattern = /^config\.backup-(?:before|after)-save\.(\d{8}-\d{6})(?:\.(\d+))?\.json$/;
+  const candidates = fs.readdirSync(dir, { withFileTypes: true })
+    .filter(entry => entry.isFile() && pattern.test(entry.name))
+    .map(entry => ({ name: entry.name, match: entry.name.match(pattern) }))
+    .sort((a, b) => b.match[1].localeCompare(a.match[1]) || Number(b.match[2] || 0) - Number(a.match[2] || 0));
+  let valid = 0;
+  for (const candidate of candidates) {
+    const file = path.join(dir, candidate.name);
+    if (valid < MAX_CONFIG_BACKUPS) {
+      if (readJsonFile(file).ok) valid += 1;
+      continue;
+    }
+    try {
+      fs.unlinkSync(file);
+    } catch (error) {
+      (options.logger || console).warn('[config] falha ao remover backup excedente:', error.message);
+    }
+  }
+}
+
 function saveConfigFile(configFile, config, options = {}) {
   const backupFile = options.backupFile || defaultBackupFile(configFile);
   const json = JSON.stringify(config, null, 2);
@@ -137,6 +163,7 @@ function saveConfigFile(configFile, config, options = {}) {
   }
 
   const current = readJsonFile(configFile);
+  if (current.ok && isDeepStrictEqual(current.value, JSON.parse(json))) return;
   if (!options.skipBackup && backupFile && current.ok) {
     writeTimestampedConfig(configFile, 'config.backup-before-save', current.raw, options);
   }
@@ -145,8 +172,25 @@ function saveConfigFile(configFile, config, options = {}) {
 
   if (!options.skipBackup && backupFile) {
     copyFileAtomic(configFile, backupFile);
-    writeTimestampedConfig(configFile, 'config.backup-after-save', json, options);
+    pruneConfigBackups(configFile, options);
   }
+}
+
+function createDebouncedSave(save, delayMs = 500) {
+  let timer = null;
+  function flush() {
+    if (timer === null) return;
+    clearTimeout(timer);
+    timer = null;
+    save();
+  }
+  return {
+    schedule() {
+      clearTimeout(timer);
+      timer = setTimeout(flush, delayMs);
+    },
+    flush
+  };
 }
 
 function isHistoricalBackupName(name, backupFile) {
@@ -177,7 +221,7 @@ function findHistoricalBackup(configFile, backupFile) {
       return { file, stat, parsed };
     })
     .filter(candidate => candidate.parsed.ok)
-    .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+    .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs || b.file.localeCompare(a.file, undefined, { numeric: true }));
 
   return candidates[0] || null;
 }
@@ -190,6 +234,7 @@ function loadConfigFile(configFile, defaultFactory, options = {}) {
   if (primary.ok) {
     try {
       copyFileAtomic(configFile, backupFile);
+      pruneConfigBackups(configFile, options);
     } catch (error) {
       if (logger && typeof logger.warn === 'function') {
         logger.warn('[config] falha ao atualizar backup:', error.message);
@@ -244,6 +289,7 @@ function loadConfigFile(configFile, defaultFactory, options = {}) {
 
 module.exports = {
   atomicWriteFile,
+  createDebouncedSave,
   formatTimestamp,
   loadConfigFile,
   readJsonFile,

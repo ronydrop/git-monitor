@@ -32,6 +32,11 @@ function formatGitError(error) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+function formatGitOperationError(stage, error) {
+  const timedOut = error && (error.code === 'ETIMEDOUT' || (error.killed && error.signal === 'SIGTERM'));
+  return `Falha ${stage}${timedOut ? ' (tempo limite excedido)' : ''}: ${formatGitError(error)}`;
+}
+
 function assertSafeBranchName(branch) {
   if (!branch || branch === 'HEAD') {
     throw new Error('Branch atual invalida para push automatico.');
@@ -59,6 +64,7 @@ function pushCommand(branch) {
 module.exports = {
   assertSafeBranchName,
   formatGitError,
+  formatGitOperationError,
   gitErrorText,
   isGitAuthError,
   isRebaseConflictError,

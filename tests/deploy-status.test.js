@@ -36,6 +36,32 @@ function test(name, fn) {
   }
 }
 
+test('consultas repetidas não alteram datas nem solicitam persistência', () => {
+  for (const phase of ['waiting', 'running', 'failure', 'timeout', 'no-ci']) {
+    const repo = 'C:/repo/app';
+    const initial = markDeployState({}, repo, phase, 'Estado estável', 1000, { sha: 'abc', watchId: 'watch' });
+    const update = applyDeployWatchUpdate(initial, repo, { phase, detail: 'Estado estável', watchId: 'watch' }, 5000);
+    assert.strictEqual(update.applied, false, phase);
+    assert.strictEqual(update.stale, false);
+    assert.deepStrictEqual(update.deployStates, initial);
+  }
+});
+
+test('mudanças reais são persistidas sem reiniciar a data da mesma falha', () => {
+  const repo = 'C:/repo/app';
+  const initial = markDeployState({}, repo, 'failure', 'Falha inicial', 1000, { sha: 'abc', watchId: 'watch' });
+  const changed = applyDeployWatchUpdate(initial, repo, { phase: 'failure', detail: 'Detalhe atualizado', watchId: 'watch' }, 5000);
+  assert.strictEqual(changed.applied, true);
+  assert.strictEqual(changed.deployStates[repoKey(repo)].updatedAt, 5000);
+  assert.strictEqual(changed.deployStates[repoKey(repo)].failedAt, 1000);
+  const newCommit = applyDeployWatchUpdate(changed.deployStates, repo, { phase: 'failure', detail: 'Outra falha', sha: 'def', watchId: 'watch' }, 6000);
+  assert.strictEqual(newCommit.applied, true);
+  assert.strictEqual(newCommit.deployStates[repoKey(repo)].failedAt, 6000);
+  const running = applyDeployWatchUpdate(newCommit.deployStates, repo, { phase: 'running', detail: 'Executando', watchId: 'watch' }, 7000);
+  assert.strictEqual(running.applied, true);
+  assert.strictEqual(running.deployStates[repoKey(repo)].failedAt, null);
+});
+
 test('mantem pendente quando um workflow falhou e outro ainda esta rodando', () => {
   const result = resolveDeployPhase({
     checkRuns: [],

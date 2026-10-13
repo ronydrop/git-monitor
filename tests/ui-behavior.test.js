@@ -1,6 +1,8 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
+const { createDebouncedSave } = require('../config-store');
 
 function read(file) {
   return fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
@@ -16,6 +18,55 @@ function test(name, fn) {
     process.exitCode = 1;
   }
 }
+
+test('movimento da janela persiste somente a posição final e descarrega ao sair', () => {
+  const source = read('main.js');
+  const moved = source.match(/mainWindow\.on\('moved', (\(\) => \{[\s\S]*?\n  \})\);/);
+  const closed = source.match(/mainWindow\.on\('closed', (\(\) => \{[\s\S]*?\n  \})\);/);
+  const quit = source.match(/app\.on\('will-quit', (\(\) => \{[\s\S]*?\n\})\);/);
+  assert.ok(moved && closed && quit);
+  const originalSet = global.setTimeout;
+  const originalClear = global.clearTimeout;
+  const timers = new Map();
+  let id = 0;
+  global.setTimeout = fn => { timers.set(++id, fn); return id; };
+  global.clearTimeout = timer => timers.delete(timer);
+  let position = [0, 0];
+  const saved = [];
+  const config = { windowX: 0, windowY: 0 };
+  const context = {
+    config,
+    mainWindow: { getPosition: () => position },
+    resizeInterval: null,
+    fadeAnim: null,
+    ghostTimer: null,
+    globalShortcut: { unregisterAll() {} },
+    windowPositionSave: createDebouncedSave(() => saved.push({ ...config }))
+  };
+  try {
+    const onMoved = vm.runInNewContext(`(${moved[1]})`, context);
+    onMoved();
+    assert.strictEqual(timers.size, 0);
+    position = [10, 20]; onMoved();
+    position = [30, 40]; onMoved();
+    assert.strictEqual(timers.size, 1);
+    assert.deepStrictEqual(saved, []);
+    vm.runInNewContext(`(${closed[1]})()`, context);
+    assert.deepStrictEqual(saved, [{ windowX: 30, windowY: 40 }]);
+    assert.strictEqual(timers.size, 0);
+    position = [50, 60]; onMoved();
+    vm.runInNewContext(`(${quit[1]})()`, context);
+    assert.deepStrictEqual(saved[1], { windowX: 50, windowY: 60 });
+    assert.strictEqual(timers.size, 0);
+    context.resizeInterval = 1;
+    position = [70, 80]; onMoved();
+    assert.strictEqual(timers.size, 0);
+    assert.strictEqual(config.windowX, 50);
+  } finally {
+    global.setTimeout = originalSet;
+    global.clearTimeout = originalClear;
+  }
+});
 
 test('tray left click focuses widget instead of opening config in notch mode', () => {
   const main = read('main.js');
@@ -89,6 +140,76 @@ test('commit errors render as inline widget alerts instead of external toast win
   assert.match(notch, /function showCommitToast\s*\([\s\S]*showNotchAlert/);
 });
 
+test('alertas compactos preservam o erro completo no tooltip nos dois modos', () => {
+  const message = ('Falha ao criar o commit: ' + 'Inventário financeiro exige revisão. '.repeat(20)).trim();
+  for (const file of ['index.html', 'notch.html']) {
+    const source = read(file);
+    const nodes = [];
+    const element = () => ({ classList: { toggle() {} }, replaceChildren() {}, appendChild(child) { this.children.push(child); }, children: [] });
+    const target = element();
+    const context = {
+      widgetAlerts: [], document: { getElementById: () => target, createElement() { const node = element(); nodes.push(node); return node; } },
+      icon: () => element(), setTimeout() {}, updateShape() {}, miniAlertsEl: target, expandedAlertsEl: element()
+    };
+    const functions = file === 'index.html'
+      ? ['renderWidgetAlerts', 'showWidgetAlert', 'showCommitToast']
+      : ['renderAlertContainer', 'renderNotchAlerts', 'showNotchAlert', 'showCommitToast'];
+    for (const name of functions) {
+      const match = source.match(new RegExp('  function ' + name + '\\([^]*?\\n  }'));
+      assert.ok(match, name);
+      vm.runInNewContext(match[0], context);
+    }
+    context.showCommitToast('err', message);
+    assert.strictEqual(context.widgetAlerts[0].text, message);
+    assert.strictEqual(nodes[0].title, message);
+    assert.ok(nodes[1].textContent.length <= 240);
+  }
+});
+
+require('node:test').test('IPC preserva o motivo do hook e separa commit, timeout e push', async () => {
+  const main = read('main.js');
+  const source = main.slice(main.indexOf("ipcMain.handle('commit-and-push'"), main.indexOf("ipcMain.handle('open-folder'"));
+  const { formatGitError, formatGitOperationError } = require('../git-sync');
+  const { buildCommitArgs } = require('../commit-message');
+  for (const failedStage of ['commit', 'timeout', 'push']) {
+    let handler;
+    let released = false;
+    const commands = [];
+    const reason = 'Commit bloqueado: UNCLASSIFIED_UNRESOLVED: ' + 'PostbackQueryRepository.history '.repeat(15);
+    const error = Object.assign(new Error('Command failed: git commit -m ' + 'Descrição '.repeat(40)), {
+      stderr: reason, stdout: 'Revisão do inventário',
+      ...(failedStage === 'timeout' ? { killed: true, signal: 'SIGTERM' } : {})
+    });
+    const context = {
+      ipcMain: { handle(channel, callback) { handler = callback; } }, acquireRepoLock: async () => () => { released = true; },
+      markWriting() {}, cleanStaleLock() {}, findConfiguredRepo: () => null, repoDeployEnabled: () => false,
+      getDeployStateForRepo: () => null, isDeployStatePending: () => false, clearDeployState: value => value, saveConfig() {},
+      config: { anthropicKey: 'fixture' }, verifyGitRemoteAccess: async () => { commands.push('remote-preflight'); },
+      generateCommitMessage: async () => 'Correção de teste', parseCommitMessage: () => ({ title: 'Correção de teste', body: '' }),
+      buildCommitArgs, pullRebaseCommand: () => 'git pull --rebase', pushCommand: () => 'git push', formatGitError, formatGitOperationError,
+      isGitAuthError: () => false, isRebaseConflictError: () => false,
+      gitExec: async command => {
+        commands.push(command);
+        if (command === 'git push') throw error;
+        if (command.includes('--abbrev-ref')) return 'dev';
+        if (command === 'git rev-parse HEAD') return 'abcdef';
+        if (command.includes('status')) return 'M arquivo.ts';
+        return '';
+      },
+      gitExecFile: async () => { if (failedStage !== 'push') throw error; }
+    };
+    vm.runInNewContext(source, context);
+    const result = await handler(null, 'fixture');
+    assert.strictEqual(result.ok, false);
+    assert.ok(result.error.includes(reason));
+    assert.ok(result.error.startsWith(failedStage === 'push' ? 'Falha no push' : 'Falha ao criar o commit'));
+    assert.strictEqual(result.error.includes('tempo limite excedido'), failedStage === 'timeout');
+    assert.strictEqual(commands.includes('git push'), failedStage === 'push');
+    assert.ok(commands.indexOf('remote-preflight') < commands.indexOf('git add .'));
+    assert.ok(released);
+  }
+});
+
 test('OpenRouter mantém DeepSeek como padrão e oferece Hy3 estável', () => {
   const main = read('main.js');
   const config = read('config.html');
@@ -108,7 +229,7 @@ test('commit-and-push valida acesso remoto antes de criar commit local', () => {
   assert.ok(commitAndPush, 'commit-and-push handler should exist');
   assert.match(main, /async function verifyGitRemoteAccess\s*\(repoPath,\s*branch\)/);
   assert.match(main, /gitExecFile\(\['ls-remote', '--heads', 'origin', branch\]/);
-  assert.match(commitAndPush[0], /if \(hasUncommitted\) \{\s*await verifyGitRemoteAccess\(repoPath, initialBranch\);[\s\S]*await gitExec\('git add \.'/);
+  assert.match(commitAndPush[0], /if \(hasUncommitted\) \{\s*stage = 'na validação do acesso remoto';\s*await verifyGitRemoteAccess\(repoPath, initialBranch\);[\s\S]*await gitExec\('git add \.'/);
 });
 
 test('notch reveal does not force hover expansion and uses shared geometry fallback', () => {

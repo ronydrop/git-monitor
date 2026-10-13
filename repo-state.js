@@ -178,7 +178,7 @@ function markDeployState(deployStates, repoPath, phase, detail, now = Date.now()
   const next = sanitizeDeployStates(deployStates);
   const key = repoKey(repoPath);
   const previous = next[key] || null;
-  next[key] = {
+  const entry = {
     phase,
     detail: detail || defaultDeployDetail(phase),
     failedAt: DEPLOY_ERROR_PHASES.has(phase) ? now : null,
@@ -191,6 +191,12 @@ function markDeployState(deployStates, repoPath, phase, detail, now = Date.now()
     repo: pickMeta(meta, previous, 'repo'),
     watchId: pickMeta(meta, previous, 'watchId')
   };
+  const sameAttempt = previous && previous.sha === entry.sha && previous.watchId === entry.watchId && previous.startedAt === entry.startedAt;
+  if (sameAttempt && previous.phase === phase && DEPLOY_ERROR_PHASES.has(phase)) {
+    entry.failedAt = previous.failedAt;
+  }
+  if (previous && Object.keys(entry).every(field => field === 'updatedAt' || previous[field] === entry[field])) return next;
+  next[key] = entry;
   return next;
 }
 
@@ -254,16 +260,17 @@ function applyDeployWatchUpdate(deployStates, repoPath, update = {}, now = Date.
       : ((current && current.startedAt) || update.startedAt || now)
   };
 
+  const next = markDeployState(
+    currentStates,
+    repoPath,
+    update.phase,
+    update.detail || update.failedDetail || '',
+    now,
+    meta
+  );
   return {
-    deployStates: markDeployState(
-      currentStates,
-      repoPath,
-      update.phase,
-      update.detail || update.failedDetail || '',
-      now,
-      meta
-    ),
-    applied: true,
+    deployStates: next,
+    applied: JSON.stringify(currentStates) !== JSON.stringify(next),
     stale: false
   };
 }

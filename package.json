@@ -1,6 +1,6 @@
 {
   "name": "git-monitor",
-  "version": "1.2.76",
+  "version": "1.2.77",
   "description": "Mini widget desktop para monitorar repositórios Git em tempo real",
   "main": "main.js",
   "author": {
@@ -76,12 +76,17 @@
     }
   },
   "devDependencies": {
-    "electron": "^42.2.0",
+    "electron": "^42.10.0",
     "electron-builder": "^26.8.1"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.77.0",
     "electron-updater": "^6.8.3",
     "openai": "^6.23.0"
+  },
+  "overrides": {
+    "@electron/get@^3.0.0": {
+      "global-agent": "^4.1.3"
+    }
   }
 }

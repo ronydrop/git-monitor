@@ -973,7 +973,7 @@
       const iconName = alert.type === 'ok' ? 'check' : alert.type === 'info' ? 'timer' : 'alert';
       row.appendChild(icon(iconName, { size: 13 }));
       const span = document.createElement('span');
-      span.textContent = alert.text;
+      span.textContent = alert.text.substring(0, 240);
       row.appendChild(span);
       target.appendChild(row);
     });
@@ -996,7 +996,7 @@
     const displayDuration = type === 'err'
       ? Math.max(Number(duration) || 0, 10000)
       : (duration || 3500);
-    const alert = { id: Date.now() + Math.random(), text: msg.substring(0, 240), type };
+    const alert = { id: Date.now() + Math.random(), text: msg, type };
     widgetAlerts.unshift(alert);
     widgetAlerts.splice(4);
     renderNotchAlerts();
@@ -1301,7 +1301,7 @@
       const rname = btn.dataset.name || p;
       if (!ok) {
         markRowResult(p, 'fail', errMsg);
-        if (errMsg) rowToast('err', rname + ': ' + errMsg.substring(0, 160), 6000);
+        if (errMsg) rowToast('err', rname + ': ' + errMsg, 6000);
       } else if (act === 'pull') {
         markRowResult(p, 'done', '');
         rowToast('ok', rname + ': Pull concluído!');
@@ -1359,7 +1359,7 @@
     const displayDuration = type === 'err'
       ? Math.max(Number(duration) || 0, 10000)
       : (duration || 3000);
-    showNotchAlert(String(text).substring(0, 200), type, displayDuration);
+    showNotchAlert(String(text), type, displayDuration);
   }
 
   function rowToast(type, text, duration) {

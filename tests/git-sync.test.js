@@ -2,6 +2,7 @@ const assert = require('assert');
 const {
   assertSafeBranchName,
   formatGitError,
+  formatGitOperationError,
   isGitAuthError,
   isRebaseConflictError,
   pullRebaseCommand,
@@ -78,4 +79,19 @@ test('formata stderr real antes da mensagem do comando', () => {
   };
 
   assert.strictEqual(formatGitError(error), 'fatal: could not read Username Command failed: git pull --rebase');
+});
+
+test('preserva o motivo completo e distingue a etapa da falha', () => {
+  const reason = 'Commit bloqueado: UNCLASSIFIED_UNRESOLVED: ' + 'PostbackQueryRepository.history '.repeat(12);
+  const error = { stderr: reason, stdout: 'Inventário financeiro', message: 'Command failed: git commit -m ' + 'Descrição '.repeat(40) };
+  const message = formatGitOperationError('ao criar o commit', error);
+  assert.ok(message.startsWith('Falha ao criar o commit: ' + reason));
+  assert.ok(message.includes(error.stdout));
+  assert.ok(message.endsWith(error.message.trim()));
+  assert.ok(formatGitOperationError('no push', error).startsWith('Falha no push: '));
+});
+
+test('identifica timeout sem confundir com rejeição do hook', () => {
+  assert.match(formatGitOperationError('ao criar o commit', { killed: true, signal: 'SIGTERM', message: 'Command failed' }), /tempo limite excedido/);
+  assert.doesNotMatch(formatGitOperationError('ao criar o commit', { code: 1, stderr: 'Commit bloqueado' }), /tempo limite/);
 });

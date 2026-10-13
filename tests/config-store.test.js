@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const {
   atomicWriteFile,
+  createDebouncedSave,
   loadConfigFile,
   readJsonFile,
   saveConfigFile
@@ -47,7 +48,7 @@ test('cria config default quando nao existe config nem backup', () => {
   assert.strictEqual(fs.existsSync(backupFile), false);
 });
 
-test('salva config de forma atomica com backup antes e depois', () => {
+test('salva atomicamente com um histórico anterior e backup fixo atual', () => {
   const dir = makeTempDir();
   const configFile = path.join(dir, 'config.json');
   const backupFile = path.join(dir, 'config.backup.json');
@@ -60,8 +61,115 @@ test('salva config de forma atomica com backup antes e depois', () => {
   assert.deepStrictEqual(readJson(configFile), next);
   assert.deepStrictEqual(readJson(backupFile), next);
   assert.deepStrictEqual(readJson(path.join(dir, 'config.backup-before-save.20260102-030405.json')), current);
-  assert.deepStrictEqual(readJson(path.join(dir, 'config.backup-after-save.20260102-030405.json')), next);
+  assert.strictEqual(fs.existsSync(path.join(dir, 'config.backup-after-save.20260102-030405.json')), false);
   assert.deepStrictEqual(fs.readdirSync(dir).filter(name => name.endsWith('.tmp')), []);
+});
+
+test('configuração equivalente não regrava arquivos nem gera históricos', () => {
+  const dir = makeTempDir();
+  const file = path.join(dir, 'config.json');
+  const raw = '{"repos":[],"theme":"obsidian"}';
+  fs.writeFileSync(file, raw);
+  const originalOpen = fs.openSync;
+  fs.openSync = (target, flags, ...args) => {
+    assert.ok(!String(flags).includes('w'), 'não deve abrir arquivos para escrita');
+    return originalOpen(target, flags, ...args);
+  };
+  try {
+    saveConfigFile(file, { theme: 'obsidian', repos: [] });
+    saveConfigFile(file, { repos: [], theme: 'obsidian' });
+  } finally {
+    fs.openSync = originalOpen;
+  }
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), raw);
+  assert.deepStrictEqual(fs.readdirSync(dir), ['config.json']);
+});
+
+test('retém os 20 históricos válidos mais recentes, inclusive colisões no mesmo segundo', () => {
+  const dir = makeTempDir();
+  const file = path.join(dir, 'config.json');
+  for (let version = 0; version <= 35; version += 1) {
+    saveConfigFile(file, { repos: [], version }, { now: fixedNow });
+  }
+  const histories = fs.readdirSync(dir).filter(name => name.startsWith('config.backup-before-save.'));
+  assert.strictEqual(histories.length, 20);
+  assert.deepStrictEqual(histories.map(name => readJson(path.join(dir, name)).version).sort((a, b) => a - b),
+    Array.from({ length: 20 }, (_, i) => i + 15));
+  assert.strictEqual(readJson(path.join(dir, 'config.backup.json')).version, 35);
+  fs.writeFileSync(file, '{');
+  fs.writeFileSync(path.join(dir, 'config.backup.json'), '{');
+  const restored = loadConfigFile(file, () => ({ repos: [] }));
+  assert.strictEqual(restored.source, 'backup-history');
+  assert.strictEqual(restored.config.version, 34);
+});
+
+test('rotação na abertura inclui os históricos existentes e preserva cópias especiais', () => {
+  const dir = makeTempDir();
+  const file = path.join(dir, 'config.json');
+  fs.writeFileSync(file, JSON.stringify({ repos: [], version: 50 }));
+  for (let i = 0; i < 25; i += 1) {
+    fs.writeFileSync(path.join(dir, `config.backup-after-save.20260102-030405.${i}.json`), JSON.stringify({ version: i }));
+  }
+  fs.writeFileSync(path.join(dir, 'config.backup-after-save.20260103-030405.json'), '{');
+  fs.writeFileSync(path.join(dir, 'config.before-manual.json'), '{"original":true}');
+  fs.writeFileSync(path.join(dir, 'config.invalid.20260101-000000.json'), '{');
+  loadConfigFile(file, () => ({ repos: [] }));
+  const valid = fs.readdirSync(dir).filter(name => name.startsWith('config.backup-after-save.') && readJsonFile(path.join(dir, name)).ok);
+  assert.strictEqual(valid.length, 20);
+  assert.strictEqual(Math.min(...valid.map(name => readJson(path.join(dir, name)).version)), 5);
+  assert.deepStrictEqual(readJson(path.join(dir, 'config.before-manual.json')), { original: true });
+  assert.strictEqual(fs.readFileSync(path.join(dir, 'config.invalid.20260101-000000.json'), 'utf8'), '{');
+});
+
+test('falha de gravação não remove os históricos de recuperação', () => {
+  const dir = makeTempDir();
+  const file = path.join(dir, 'config.json');
+  fs.writeFileSync(file, '{"version":0}');
+  for (let i = 0; i < 25; i += 1) {
+    fs.writeFileSync(path.join(dir, `config.backup-after-save.20260101-000000.${i}.json`), '{"version":0}');
+  }
+  const originalRename = fs.renameSync;
+  fs.renameSync = (from, to) => {
+    if (to === file) throw new Error('falha simulada');
+    return originalRename(from, to);
+  };
+  try {
+    assert.throws(() => saveConfigFile(file, { version: 1 }), /falha simulada/);
+  } finally {
+    fs.renameSync = originalRename;
+  }
+  assert.strictEqual(readJson(file).version, 0);
+  assert.strictEqual(fs.readdirSync(dir).filter(name => name.startsWith('config.backup-after-save.')).length, 25);
+});
+
+test('salvamento agrupado usa a posição final e descarrega a pendência ao fechar', () => {
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+  const timers = new Map();
+  let id = 0;
+  global.setTimeout = (fn, delay) => { assert.strictEqual(delay, 500); timers.set(++id, fn); return id; };
+  global.clearTimeout = timer => timers.delete(timer);
+  let position = 0;
+  const saved = [];
+  try {
+    const writer = createDebouncedSave(() => saved.push(position));
+    for (position = 1; position <= 10; position += 1) writer.schedule();
+    position = 10;
+    assert.deepStrictEqual(saved, []);
+    assert.strictEqual(timers.size, 1);
+    [...timers.values()][0]();
+    assert.deepStrictEqual(saved, [10]);
+    assert.strictEqual(timers.size, 0);
+    position = 20;
+    writer.schedule();
+    writer.flush();
+    writer.flush();
+    assert.deepStrictEqual(saved, [10, 20]);
+    assert.strictEqual(timers.size, 0);
+  } finally {
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+  }
 });
 
 test('restaura backup quando config principal esta truncado', () => {
