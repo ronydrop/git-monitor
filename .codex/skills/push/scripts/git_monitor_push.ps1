@@ -2,7 +2,7 @@
 param(
     [switch]$PlanOnly,
     [switch]$SelfTest,
-    [string]$RemoteHost = 'jarvis',
+    [string]$RemoteHost = 'friday',
     [string]$RemoteCommand = 'git-monitor-release'
 )
 
@@ -340,7 +340,7 @@ function New-ReleasePackage {
     )
 
     if ($SafePaths.Count -eq 0) {
-        Fail "Nenhuma mudanca segura para enviar ao Jarvis"
+        Fail "Nenhuma mudança segura para enviar ao Friday"
     }
 
     $baseHead = Capture 'git' @('rev-parse', 'HEAD')
@@ -479,7 +479,7 @@ $releasePackage = New-ReleasePackage -SafePaths $paths.Safe -IgnoredPaths $paths
 
 try {
     $remotePackage = "/srv/git-monitor/incoming/git-monitor-local-$([System.IO.Path]::GetFileName($releasePackage.Path))"
-    Write-Step 'Enviar pacote para Jarvis'
+    Write-Step 'Enviar pacote para Friday'
     Run 'ssh' @($RemoteHost, 'mkdir -p /srv/git-monitor/incoming')
     Run 'scp' @('-O', $releasePackage.Path, "${RemoteHost}:$remotePackage")
 

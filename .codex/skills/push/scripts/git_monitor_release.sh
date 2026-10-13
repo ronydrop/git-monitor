@@ -63,7 +63,7 @@ publish_github_bridge_release() {
   local setup_exe="$artifact_dir/GitMonitor-Setup-$version.exe"
   local setup_blockmap="$artifact_dir/GitMonitor-Setup-$version.exe.blockmap"
   local portable_exe="$artifact_dir/GitMonitor-portable.exe"
-  local notes="Release ponte para clientes antigos do Git Monitor que ainda consultam GitHub Releases. Versoes novas usam https://updates.botjarvis.com.br/git-monitor/."
+  local notes="Release ponte para clientes antigos do Git Monitor que ainda consultam GitHub Releases. Versões novas usam https://updates.fridaybot.com.br/git-monitor/."
 
   [[ -f "$latest_yml" ]] || fail "latest.yml ausente no artifact: $latest_yml"
   [[ -f "$setup_exe" ]] || fail "setup NSIS ausente no artifact: $setup_exe"

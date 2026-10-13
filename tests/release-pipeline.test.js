@@ -18,12 +18,12 @@ function test(name, fn) {
   }
 }
 
-test('electron updater usa provider generico da VPS Jarvis', () => {
+test('electron updater usa provider genérico da VPS Friday', () => {
   const pkg = JSON.parse(read('package.json'));
 
   assert.deepStrictEqual(pkg.build.publish, {
     provider: 'generic',
-    url: 'https://updates.botjarvis.com.br/git-monitor/'
+    url: 'https://updates.fridaybot.com.br/git-monitor/'
   });
 });
 
@@ -51,7 +51,7 @@ test('workflow builda no Windows e publica artefatos no GitHub', () => {
   assert.doesNotMatch(workflow, /gh release edit/);
 });
 
-test('wrapper local envia pacote seguro para o runner remoto Jarvis', () => {
+test('wrapper local envia pacote seguro para o runner remoto Friday', () => {
   const script = read('.codex/skills/push/scripts/git_monitor_push.ps1');
 
   assert.match(script, /ssh/i);
