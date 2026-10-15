@@ -77,6 +77,20 @@ test('repete resposta OpenRouter truncada sem raciocinio e com limite maior', as
   }]);
 });
 
+test('OpenAI recebe o parâmetro nativo para desativar raciocínio em commits curtos', async () => {
+  let request;
+  const client = { chat: { completions: { create: async value => {
+    request = value;
+    return { choices: [{ message: { content: 'Atualiza modelos disponíveis' } }] };
+  } } } };
+  const result = await generateOpenAiCompatibleCommitMessage({
+    client, model: 'gpt-6-luna', provider: 'OpenAI', prompt: 'diff de teste', reasoningEffort: 'none'
+  });
+  assert.strictEqual(result, 'Atualiza modelos disponíveis');
+  assert.strictEqual(request.reasoning_effort, 'none');
+  assert.ok(!Object.hasOwn(request, 'reasoning'));
+});
+
 test('usa fallback deterministico quando todos os provedores falham', async () => {
   const failures = [];
   const message = await generateCommitMessageWithFallback({

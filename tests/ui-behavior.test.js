@@ -104,13 +104,109 @@ test('visible widget has a lightweight topmost watchdog without stealing focus',
   const guard = main.match(/function shouldRunWidgetTopmostWatchdog\s*\(\s*\)\s*{[\s\S]*?return true;\s*\n}/);
   assert.ok(guard, 'watchdog guard should exist');
   assert.match(guard[0], /mainWindow\.isVisible\(\)/);
-  assert.match(guard[0], /configWindow[\s\S]*isDestroyed\(\)/);
   assert.match(guard[0], /zoneWindow[\s\S]*isDestroyed\(\)/);
-  assert.match(guard[0], /diffWindows\.values\(\)/);
 
   assert.match(main, /setInterval\(\s*\(\)\s*=>\s*{[\s\S]*shouldRunWidgetTopmostWatchdog\(\)[\s\S]*ensureWidgetOnTop\('topmost-watchdog'\)/);
   assert.doesNotMatch(main, /ensureWidgetOnTop\('topmost-watchdog',\s*\{[\s\S]*(show|focus):/);
   assert.match(main, /createWindowForMode\(\);[\s\S]*startWidgetTopmostWatchdog\(\);/);
+});
+
+function topmostScenario(mode = 'notch') {
+  const order = [];
+  let focused = 'outro aplicativo';
+  const window = name => ({
+    visible: true, minimized: false, destroyed: false, topmost: false,
+    isDestroyed() { return this.destroyed; },
+    isVisible() { return this.visible; },
+    isMinimized() { return this.minimized; },
+    isFocused() { return focused === name; },
+    setAlwaysOnTop(value) { this.topmost = value; },
+    setVisibleOnAllWorkspaces() {},
+    moveTop() { this.visible = true; order.push(name); },
+    show() { this.visible = true; focused = name; },
+    showInactive() { this.visible = true; },
+    focus() { focused = name; }
+  });
+  const context = {
+    mainWindow: window('widget'), config: { widgetMode: mode },
+    configWindow: null, zoneWindow: null, diffWindows: new Map(),
+    inputPollersPaused: false, widgetTopmostWatchdog: null,
+    WIDGET_TOPMOST_WATCHDOG_MS: 3000,
+    setInterval(callback) { context.tick = callback; return { unref() {} }; }
+  };
+  const main = read('main.js');
+  for (const name of ['ensureWidgetOnTop', 'shouldRunWidgetTopmostWatchdog', 'startWidgetTopmostWatchdog']) {
+    const source = main.match(new RegExp('function ' + name + '\\([^]*?\\n}'));
+    assert.ok(source, name);
+    vm.runInNewContext(source[0], context);
+  }
+  context.startWidgetTopmostWatchdog();
+  return { context, window, order, focused: () => focused };
+}
+
+test('recupera a prioridade com configurações e diffs abertos nos dois modos sem roubar foco', () => {
+  for (const mode of ['floating', 'notch']) {
+    const { context, window, order, focused } = topmostScenario(mode);
+    context.configWindow = window('configurações');
+    const diff = window('diff');
+    context.diffWindows.set('repositório', diff);
+    context.tick();
+    assert.strictEqual(context.mainWindow.topmost, true, mode);
+    assert.strictEqual(context.configWindow.topmost, true);
+    assert.strictEqual(diff.topmost, true);
+    assert.deepStrictEqual(order, ['widget', 'configurações', 'diff']);
+    assert.strictEqual(focused(), 'outro aplicativo');
+
+    context.configWindow.focus();
+    order.length = 0;
+    context.tick();
+    assert.deepStrictEqual(order, ['widget', 'diff', 'configurações']);
+    assert.strictEqual(focused(), 'configurações');
+  }
+});
+
+test('janelas auxiliares ocultas, minimizadas ou destruídas não impedem a recuperação', () => {
+  for (const state of ['hidden', 'minimized', 'destroyed']) {
+    const { context, window, order } = topmostScenario();
+    const auxiliary = window('auxiliar');
+    auxiliary.visible = state !== 'hidden';
+    auxiliary.minimized = state === 'minimized';
+    auxiliary.destroyed = state === 'destroyed';
+    context.configWindow = auxiliary;
+    context.diffWindows.set('repositório', auxiliary);
+    context.tick();
+    assert.strictEqual(context.mainWindow.topmost, true, state);
+    assert.deepStrictEqual(order, ['widget']);
+    assert.strictEqual(auxiliary.visible, state !== 'hidden');
+  }
+});
+
+test('recuperação automática respeita widget oculto, minimizado e sessão bloqueada', () => {
+  for (const mode of ['floating', 'notch']) {
+    for (const state of ['hidden', 'minimized', 'locked']) {
+      const { context, order } = topmostScenario(mode);
+      context.mainWindow.visible = state !== 'hidden';
+      context.mainWindow.minimized = state === 'minimized';
+      context.inputPollersPaused = state === 'locked';
+      context.tick();
+      context.ensureWidgetOnTop('power-resume');
+      assert.deepStrictEqual(order, [], `${mode}: ${state}`);
+      assert.strictEqual(context.mainWindow.visible, state !== 'hidden');
+    }
+  }
+});
+
+test('seleção de zona suspende a recuperação e exibição explícita preserva foco do notch', () => {
+  const { context, window, order, focused } = topmostScenario();
+  context.zoneWindow = window('seleção');
+  context.tick();
+  assert.deepStrictEqual(order, []);
+  context.zoneWindow = null;
+  context.mainWindow.visible = false;
+  context.ensureWidgetOnTop('shortcut-toggle', { show: true });
+  assert.strictEqual(context.mainWindow.visible, true);
+  assert.strictEqual(context.mainWindow.topmost, true);
+  assert.strictEqual(focused(), 'outro aplicativo');
 });
 
 test('widget roots hide overflow and use internal shadow padding', () => {
@@ -210,16 +306,55 @@ require('node:test').test('IPC preserva o motivo do hook e separa commit, timeou
   }
 });
 
-test('OpenRouter mantém DeepSeek como padrão e oferece Hy3 estável', () => {
+test('seletores mostram preços sem perder o modelo salvo e normalizam modelos removidos', () => {
   const main = read('main.js');
   const config = read('config.html');
-
-  const options = main.match(/openrouter:\s*\[[\s\S]*?\n\s*\]/);
-  assert.ok(options, 'OpenRouter model options should exist');
-  assert.match(options[0], /openrouter:\s*\[\s*\{ id:\s*'deepseek\/deepseek-v4-flash'/);
-  assert.match(options[0], /id:\s*'tencent\/hy3'/);
-  assert.doesNotMatch(options[0], /tencent\/hy3-preview/);
-  assert.match(config, /openrouter:\s*configSafe\.openrouterModel\s*\|\|\s*'deepseek\/deepseek-v4-flash'/);
+  const catalog = {};
+  vm.runInNewContext(main.slice(main.indexOf('const AI_PROVIDERS ='), main.indexOf('function isDeployModeDisabled')) +
+    '\nthis.options = AI_MODEL_OPTIONS; this.defaults = DEFAULT_AI_MODELS; this.normalize = normalizeAiModel;', catalog);
+  const selects = {};
+  for (const provider of Object.keys(catalog.options)) {
+    const models = catalog.options[provider];
+    const saved = models[models.length - 1].id;
+    assert.strictEqual(catalog.normalize(provider, saved), saved);
+    assert.strictEqual(catalog.normalize(provider, 'modelo-removido'), catalog.defaults[provider]);
+    assert.strictEqual(new Set(models.map(model => model.id)).size, models.length);
+    for (const model of models) {
+      assert.ok(Number.isFinite(model.pricing.input) && model.pricing.input >= 0, model.id);
+      assert.ok(Number.isFinite(model.pricing.output) && model.pricing.output >= 0, model.id);
+    }
+    selects[provider + 'Model'] = {
+      children: [],
+      appendChild(option) { this.children.push(option); },
+      get selectedOptions() { return this.children.filter(option => option.value === this.value); }
+    };
+  }
+  const configSafe = { aiModelOptions: catalog.options };
+  for (const provider of Object.keys(catalog.options)) {
+    configSafe[provider + 'Model'] = catalog.options[provider].at(-1).id;
+  }
+  const context = {
+    configSafe,
+    clearEl: el => { el.children = []; },
+    document: { getElementById: id => selects[id], createElement: () => ({}) }
+  };
+  const render = config.slice(config.indexOf('  function populateModelSelects()'), config.indexOf('  const modeHints ='));
+  vm.runInNewContext(render + '\npopulateModelSelects();', context);
+  for (const provider of Object.keys(catalog.options)) {
+    const select = selects[provider + 'Model'];
+    assert.strictEqual(select.value, configSafe[provider + 'Model']);
+    assert.strictEqual(select.children.length, catalog.options[provider].length);
+    assert.ok(select.children.every(option => /US\$.*ent\..*saída/.test(option.textContent)));
+    assert.strictEqual(select.title, select.selectedOptions[0].textContent);
+  }
+  assert.match(selects.anthropicModel.children[0].textContent, /0,10.*0,50/);
+  const deepseek = selects.openrouterModel.children.find(option => option.value === 'deepseek/deepseek-v4.1-flash');
+  assert.match(deepseek.textContent, /0,01368.*0,891/);
+  for (const provider of Object.keys(catalog.options)) delete configSafe[provider + 'Model'];
+  vm.runInNewContext('populateModelSelects();', context);
+  for (const provider of Object.keys(catalog.options)) {
+    assert.strictEqual(selects[provider + 'Model'].value, catalog.defaults[provider]);
+  }
 });
 
 test('commit-and-push valida acesso remoto antes de criar commit local', () => {
