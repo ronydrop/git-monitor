@@ -63,7 +63,10 @@ async function generateOpenAiCompatibleCommitMessage({
         : COMMIT_COMPLETION_RETRY_TOKEN_LIMIT,
       messages: [{ role: 'user', content: prompt }]
     };
-    if (reasoningEffort) request.reasoning = { effort: reasoningEffort };
+    if (reasoningEffort) {
+      if (provider === 'OpenAI') request.reasoning_effort = reasoningEffort;
+      else request.reasoning = { effort: reasoningEffort };
+    }
 
     const response = await client.chat.completions.create(request);
     const content = textFromContent(response?.choices?.[0]?.message?.content);

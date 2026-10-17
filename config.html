@@ -954,6 +954,7 @@
     <div class="section-label">IA para mensagens de commit</div>
     <div class="config-card provider-summary">
       <div class="provider-help">Provider principal. Se ele falhar, o app tenta outro provider configurado.</div>
+      <div class="provider-help">Preços nos modelos: entrada / saída em US$ por 1 milhão de tokens. Referência de API padrão, sem cache, consultada em 15/10/2026; pode mudar.</div>
       <div class="provider-buttons">
         <button id="btnProviderAnthropic" class="provider-btn" onclick="setProvider('anthropic')">Anthropic</button>
         <button id="btnProviderOpenai" class="provider-btn" onclick="setProvider('openai')">OpenAI</button>
@@ -973,6 +974,7 @@
       <div class="model-row">
         <label class="model-label" for="anthropicModel">Modelo</label>
         <select id="anthropicModel" class="model-select" onchange="setModel('anthropic', this.value)"></select>
+        <div class="model-note">Haiku 5.5: acima de 100 mil tokens de entrada, US$ 0,50 entrada / 2,50 saída por milhão. OAuth usa a assinatura e os limites do plano; os preços exibidos são da API.</div>
       </div>
       <div class="auth-mode-row">
         <label class="auth-mode-opt">
@@ -1003,6 +1005,7 @@
       <div class="model-row">
         <label class="model-label" for="openaiModel">Modelo</label>
         <select id="openaiModel" class="model-select" onchange="setModel('openai', this.value)"></select>
+        <div class="model-note">GPT-6: acima de 272 mil tokens de entrada, a tarifa de entrada dobra e a de saída aumenta 50%. Codex CLI usa uma chave de API; assinatura ChatGPT não cobre estas chamadas.</div>
       </div>
       <div class="auth-mode-row">
         <label class="auth-mode-opt">
@@ -1030,7 +1033,7 @@
       <div class="model-row">
         <label class="model-label" for="openrouterModel">Modelo</label>
         <select id="openrouterModel" class="model-select" onchange="setModel('openrouter', this.value)"></select>
-        <div class="model-note">Top 5 do ranking semanal OpenRouter em 21/05/2026. Custo e disponibilidade podem variar.</div>
+        <div class="model-note">Tarifas iniciais do catálogo OpenRouter, por milhão de tokens. O preço final varia conforme a rota e o tamanho do contexto; taxas de compra de créditos não estão incluídas.</div>
       </div>
       <div id="authDetailOpenrouter" class="auth-detail"></div>
     </div>
@@ -1290,11 +1293,7 @@
 
   function populateModelSelects() {
     const options = configSafe.aiModelOptions || {};
-    const selected = {
-      anthropic: configSafe.anthropicModel || 'claude-haiku-4-5',
-      openai: configSafe.openaiModel || 'gpt-4o-mini',
-      openrouter: configSafe.openrouterModel || 'deepseek/deepseek-v4-flash'
-    };
+    const formatPrice = value => value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 5 });
     ['anthropic', 'openai', 'openrouter'].forEach(agent => {
       const el = document.getElementById(agent + 'Model');
       if (!el) return;
@@ -1302,10 +1301,12 @@
       (options[agent] || []).forEach(model => {
         const opt = document.createElement('option');
         opt.value = model.id;
-        opt.textContent = model.name + (model.detail ? ' — ' + model.detail : '');
+        opt.textContent = model.name + ' — US$ ' + formatPrice(model.pricing.input) + ' ent. / ' + formatPrice(model.pricing.output) + ' saída' + (model.detail ? ' · ' + model.detail : '');
+        opt.title = opt.textContent;
         el.appendChild(opt);
       });
-      el.value = selected[agent];
+      el.value = configSafe[agent + 'Model'] || (options[agent] || [])[0]?.id || '';
+      el.title = el.selectedOptions[0]?.textContent || '';
     });
   }
 
@@ -1401,6 +1402,8 @@
     if (!handlers[agent]) return;
     await ipcRenderer.invoke(handlers[agent], model);
     configSafe[agent + 'Model'] = model;
+    const select = document.getElementById(agent + 'Model');
+    select.title = select.selectedOptions[0]?.textContent || '';
   }
 
   async function setAuthMode(agent, mode) {
